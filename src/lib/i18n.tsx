@@ -1,0 +1,104 @@
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import ar from "../translations/ar.json";
+import en from "../translations/en.json";
+
+export type Lang = "ar" | "en";
+
+type Dict = Record<string, unknown>;
+const tables: Record<Lang, Dict> = { ar, en };
+
+type Bundle = {
+  brand: { ar: string; en: string };
+  ads: boolean;
+  sounds: Record<string, string>;
+  plans: {
+    id: string;
+    nameAr: string;
+    nameEn: string;
+    priceSar: number;
+    interval: string;
+    featuresAr: string[];
+    featuresEn: string[];
+  }[];
+};
+
+const emptyBundle: Bundle = {
+  brand: { ar: "العش", en: "The Nest" },
+  ads: false,
+  sounds: {},
+  plans: [],
+};
+
+type Ctx = {
+  lang: Lang;
+  dir: "rtl" | "ltr";
+  setLang: (lang: Lang) => void;
+  t: (key: string, vars?: Record<string, string | number>) => string;
+  bundle: Bundle;
+};
+
+const I18nContext = createContext<Ctx | null>(null);
+
+function lookup(obj: Dict, path: string): string | null {
+  const value = path.split(".").reduce<unknown>((acc, key) => {
+    if (acc && typeof acc === "object" && key in (acc as Dict)) return (acc as Dict)[key];
+    return undefined;
+  }, obj);
+  return typeof value === "string" ? value : null;
+}
+
+export function I18nProvider({ children }: { children: ReactNode }) {
+  const [lang, setLangState] = useState<Lang>("ar");
+  const [overrides, setOverrides] = useState<{ ar: Record<string, string>; en: Record<string, string> }>({ ar: {}, en: {} });
+  const [bundle, setBundle] = useState<Bundle>(emptyBundle);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("lamma-lang");
+    if (saved === "en" || saved === "ar") setLangState(saved);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+    localStorage.setItem("lamma-lang", lang);
+  }, [lang]);
+
+  useEffect(() => {
+    let on = true;
+    void import("./lamma/rpc").then(async ({ getPublicConfig }) => {
+      const config = await getPublicConfig();
+      if (!on) return;
+      setBundle({ brand: config.brand, ads: config.ads, sounds: config.sounds, plans: config.plans });
+      setOverrides(config.strings);
+    }).catch(() => undefined);
+    return () => {
+      on = false;
+    };
+  }, []);
+
+  const value = useMemo<Ctx>(() => {
+    const t = (key: string, vars?: Record<string, string | number>) => {
+      const override = overrides[lang][key] || overrides.ar[key];
+      let s = override || lookup(tables[lang], key) || lookup(tables.ar, key) || key;
+      if (vars) {
+        for (const [name, repl] of Object.entries(vars)) s = s.replaceAll(`{${name}}`, String(repl));
+      }
+      return s;
+    };
+    return {
+      lang,
+      dir: lang === "ar" ? "rtl" : "ltr",
+      setLang: setLangState,
+      t,
+      bundle,
+    };
+  }, [bundle, lang, overrides]);
+
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+}
+
+export function useI18n() {
+  const ctx = useContext(I18nContext);
+  if (!ctx) throw new Error("i18n");
+  return ctx;
+}
