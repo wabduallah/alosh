@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Cairo", "IBM Plex Sans Arabic", "Segoe UI", tahoma, sans-serif;
+  --font-display: "Fraunces", "Cairo", serif;
+  --color-ink: #1a120c;
+  --color-sand: #f4e6cc;
+  --color-ivory: #fff6e6;
+  --color-forest: #6a3e1c;
+  --color-forest-deep: #1a120c;
+  --color-moss: #a36b32;
+  --color-bronze: #c9842a;
+  --color-muted: #b89a78;
+  --color-neon: #f2b63a;
+  --color-night: #1a120c;
+  --color-gold: #ffe08a;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+  }
+  body {
+    background: var(--color-night);
+    color: var(--color-ivory);
+  }
+}
+
+.bg-ivory,
+.bg-sand {
+  color: var(--color-ink);
+}
+
+.nest {
+  background-color: var(--color-night);
+  background-image:
+    radial-gradient(720px 320px at 100% -10%, color-mix(in srgb, var(--color-neon) 22%, transparent), transparent 62%),
+    radial-gradient(560px 280px at 0% 0%, color-mix(in srgb, var(--color-gold) 14%, transparent), transparent 60%);
+  color: var(--color-ivory);
+}
+
+.nest .bg-ivory,
+.nest .bg-sand {
+  background-color: color-mix(in srgb, white 7%, var(--color-night));
+  color: var(--color-ivory);
+  border-color: color-mix(in srgb, var(--color-neon) 22%, transparent);
+}
+
+.nest .text-ink,
+.nest .text-forest {
+  color: var(--color-ivory);
+}
+
+.nest .text-muted {
+  color: var(--color-ivory);
+  opacity: 0.72;
+}
+
+.neon-card {
+  border: 1px solid color-mix(in srgb, var(--color-neon) 28%, transparent);
+  background: color-mix(in srgb, white 5%, transparent);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 22%);
+  transition: border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+}
+
+.neon-card:hover {
+  border-color: color-mix(in srgb, var(--color-neon) 70%, transparent);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--color-neon) 16%, transparent);
+}
+
+.gold-card {
+  border-color: color-mix(in srgb, var(--color-gold) 55%, transparent);
+}
+
+.stage {
+  background:
+    radial-gradient(640px 280px at 100% -10%, color-mix(in srgb, var(--color-neon) 18%, transparent), transparent 70%),
+    var(--color-night);
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+.rise {
+  animation: rise 0.35s ease-out;
+}
+
+@keyframes cheer-rise {
+  0% { opacity: 0; transform: translate3d(0, 16px, 0) scale(0.92); }
+  14% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+  100% { opacity: 0; transform: translate3d(var(--cheer-drift), -46vh, 0) scale(1.05); }
+}
+
+.cheer-rise {
+  animation: cheer-rise 3.4s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise,
+  .cheer-rise,
+  .neon-card {
+    animation: none;
+    transition: none;
+  }
+  .cheer-rise { opacity: 1; }
+}
