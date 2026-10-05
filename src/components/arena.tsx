@@ -311,6 +311,7 @@ function RevealBoard({
                 {LETTER_CATS.map((cat) => (
                   <th key={cat} className="px-2 py-2">{t(`letter.${cat}`)}</th>
                 ))}
+                <th className="px-2 py-2">+</th>
               </tr>
             </thead>
             <tbody>
