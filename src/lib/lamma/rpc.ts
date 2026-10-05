@@ -170,3 +170,4 @@ export const startCheckout = createServerFn({ method: "POST" })
     const { checkoutNow } = await import("./payments.server");
     return checkoutNow(data, { userId: context.userId, email: context.email });
   });
+
