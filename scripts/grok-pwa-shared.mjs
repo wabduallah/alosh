@@ -30,21 +30,21 @@ const SHARE_META_KEYS = new Set([
 
 export function escapeHtml(value) {
   return String(value)
-    .replaceAll("&", "&")
-    .replaceAll("<", "<")
-    .replaceAll(">", ">")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
     .replaceAll('"', """)
     .replaceAll("'", "&#39;");
 }
 
-/** Inverse of escapeHtml. Decode & last so a single pass undoes one encode. */
+/** Inverse of escapeHtml. Decode &amp; last so a single pass undoes one encode. */
 function unescapeHtml(value) {
   return String(value)
-    .replaceAll("<", "<")
-    .replaceAll(">", ">")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
     .replaceAll(""", '"')
     .replaceAll("&#39;", "'")
-    .replaceAll("&", "&");
+    .replaceAll("&amp;", "&");
 }
 
 /** 6-digit hex for the og.grok.me placeholder, or "" if site.color is missing/invalid. */
