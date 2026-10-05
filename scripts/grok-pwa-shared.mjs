@@ -33,7 +33,7 @@ export function escapeHtml(value) {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll('"', """)
+    .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
 
@@ -42,7 +42,7 @@ function unescapeHtml(value) {
   return String(value)
     .replaceAll("&lt;", "<")
     .replaceAll("&gt;", ">")
-    .replaceAll(""", '"')
+    .replaceAll("&quot;", '"')
     .replaceAll("&#39;", "'")
     .replaceAll("&amp;", "&");
 }
