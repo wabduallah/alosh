@@ -13,3 +13,4 @@ function HostPage() {
   const games = Route.useLoaderData() as GameCard[];
   return <HostScreen code={code.toUpperCase()} games={games} />;
 }
+
