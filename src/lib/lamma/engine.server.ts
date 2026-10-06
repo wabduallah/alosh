@@ -1284,7 +1284,7 @@ export async function redeemNow(input: { promo: string; roomCode?: string; hostT
 export async function profileNow(ctx: Ctx): Promise<Fail | { ok: true; profile: { name: string; email: string | null; image: string | null; role: string; premium: boolean }; history: { gameId: string; score: number; placement: number | null; playedAt: string }[]; favorites: string[] }> {
   if (!ctx.userId) return fail("ASK_SIGNIN");
   const sql = await db();
-  const users = await sql<{ name: string; email: string | null; image: string | null }>`select "name", "email", "image" from "user" where "id" = ${ctx.userId}`;
+  const users = await sql<{ name: string; email: string | null; image: string | null }>`select "name", "email", "image" from users where "id" = ${ctx.userId}`;
   const user = users[0];
   if (!user) return fail("ASK_SIGNIN");
   await sql`insert into profiles (user_id, display_name, avatar_url) values (${ctx.userId}, ${user.name}, ${user.image}) on conflict (user_id) do nothing`;
@@ -1339,7 +1339,7 @@ export async function claimAdminNow(input: { studio: string }, ctx: Ctx): Promis
   const studio = await setting(sql, "studio", { code: "", open: false });
   const given = input.studio.trim().toUpperCase();
   if (!studio.open || !studio.code || given !== studio.code.toUpperCase()) return fail("FORBIDDEN");
-  const users = await sql<{ name: string }>`select "name" from "user" where "id" = ${ctx.userId}`;
+  const users = await sql<{ name: string }>`select "name" from users where "id" = ${ctx.userId}`;
   await sql`insert into profiles (user_id, display_name, role) values (${ctx.userId}, ${users[0]?.name ?? ""}, 'admin') on conflict (user_id) do update set role = 'admin'`;
   await sql`update settings set value = ${JSON.stringify({ code: "", open: false })}::jsonb where key = 'studio'`;
   return { ok: true };

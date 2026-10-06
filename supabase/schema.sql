@@ -19,7 +19,15 @@
 -- the string 'dev-user'), then scope every query to the authenticated user
 -- server-side (see the `neon` + `auth` skills and src/lib/auth/verify.server.ts).
 
-create table if not exists "user" (
+-- USER كلمة محجوزة. إن وُجد الجدول القديم من تشغيل سابق يُنقل إلى users ثم يُكمَل الملف.
+do $$
+begin
+  if to_regclass('public."user"') is not null and to_regclass('public.users') is null then
+    alter table public."user" rename to users;
+  end if;
+end $$;
+
+create table if not exists users (
   "id" text not null primary key,
   "name" text not null,
   "email" text not null unique,
@@ -37,14 +45,14 @@ create table if not exists "session" (
   "updatedAt" timestamptz not null,
   "ipAddress" text,
   "userAgent" text,
-  "userId" text not null references "user" ("id") on delete cascade
+  "userId" text not null references users ("id") on delete cascade
 );
 
 create table if not exists "account" (
   "id" text not null primary key,
   "accountId" text not null,
   "providerId" text not null,
-  "userId" text not null references "user" ("id") on delete cascade,
+  "userId" text not null references users ("id") on delete cascade,
   "accessToken" text,
   "refreshToken" text,
   "idToken" text,
@@ -322,6 +330,9 @@ alter table public.room_signals enable row level security;
 drop policy if exists room_signals_read on public.room_signals;
 create policy room_signals_read on public.room_signals for select to anon, authenticated using (true);
 grant select on public.room_signals to anon, authenticated;
+
+-- جدول الهوية اسمه users لأن USER كلمة محجوزة في PostgreSQL.
+alter table users enable row level security;
 
 do $$
 begin

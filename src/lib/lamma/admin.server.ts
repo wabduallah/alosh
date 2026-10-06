@@ -24,7 +24,7 @@ export async function adminQueryNow(section: string, ctx: Ctx) {
   const sql = await gate(ctx);
   if (!sql) return { ok: false as const, error: "FORBIDDEN" };
   if (section === "dashboard" || section === "reports") {
-    const users = await sql<{ n: number }>`select count(*) as n from "user"`;
+    const users = await sql<{ n: number }>`select count(*) as n from users`;
     const roomsToday = await sql<{ n: number }>`select count(*) as n from rooms where created_at > now() - interval '1 day'`;
     const playersToday = await sql<{ n: number }>`select count(*) as n from players where joined_at > now() - interval '1 day' and is_bot = false`;
     const games = await sql<{ n: number }>`select count(*) as n from games`;
@@ -60,7 +60,7 @@ export async function adminQueryNow(section: string, ctx: Ctx) {
     return { ok: true as const, data: await sql`select * from categories order by sort_order` };
   }
   if (section === "users") {
-    const rows = await sql`select u."id", u."name", u."email", u."createdAt", p.role from "user" u left join profiles p on p.user_id = u."id" order by u."createdAt" desc limit 100`;
+    const rows = await sql`select u."id", u."name", u."email", u."createdAt", p.role from users u left join profiles p on p.user_id = u."id" order by u."createdAt" desc limit 100`;
     return { ok: true as const, data: rows };
   }
   if (section === "rooms") {
