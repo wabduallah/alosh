@@ -49,8 +49,10 @@ function AdminPage() {
   if (!user) {
     return (
       <Shell>
-        <h1 className="text-4xl font-extrabold">{t("admin.title")}</h1>
-        <Link to="/login" className="mt-4 inline-flex"><Button type="button">{t("nav.signin")}</Button></Link>
+        <p className="text-sm text-neon">المشرف العام</p>
+        <h1 className="text-4xl font-extrabold">لوحة التحكم</h1>
+        <p className="mt-2 text-ivory/70">الدخول مخصص للإدارة فقط.</p>
+        <Link to="/login" className="mt-4 inline-flex"><Button type="button">دخول الإدارة</Button></Link>
       </Shell>
     );
   }
@@ -81,8 +83,9 @@ function AdminPage() {
 
   return (
     <Shell>
-      <h1 className="text-4xl font-extrabold">{t("admin.title")}</h1>
-      <p className="mt-3 max-w-3xl text-sm text-ivory/65">{t("admin.guide")}</p>
+      <p className="text-sm text-neon">المشرف العام</p>
+      <h1 className="text-4xl font-extrabold">لوحة التحكم</h1>
+      <p className="mt-3 max-w-3xl text-sm text-ivory/65">نظرة عامة على النظام والاستيراد والإضافات.</p>
       <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
         {TABS.map((item) => (
           <button key={item} type="button" onClick={() => setTab(item)} className={`min-h-11 shrink-0 rounded-full px-3 text-sm font-extrabold ${tab === item ? "bg-neon text-night" : "border border-white/15 text-ivory/80"}`}>
