@@ -2,10 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Shell } from "@/components/shell";
 import { Button, Field, inputClass } from "@/components/ui";
-import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { useI18n } from "@/lib/i18n";
-import { adminMutate, adminQuery } from "@/lib/lamma/admin.rpc";
-import { claimAdmin } from "@/lib/lamma/rpc";
+import { adminMutate, adminQuery, unlockAdmin } from "@/lib/lamma/admin.rpc";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({ meta: [{ title: "الإدارة — العش" }] }),
@@ -16,12 +14,12 @@ const TABS = ["dashboard", "games", "questions", "import", "ai", "categories", "
 
 function AdminPage() {
   const { t } = useI18n();
-  const { user, isPending } = useCurrentUserState();
   const [tab, setTab] = useState<(typeof TABS)[number]>("dashboard");
   const [data, setData] = useState<unknown>(null);
   const [note, setNote] = useState<string | null>(null);
   const [allowed, setAllowed] = useState<boolean | null>(null);
-  const [studio, setStudio] = useState("LAMMA-HOST");
+  const [studio, setStudio] = useState("");
+  const [codeError, setCodeError] = useState<string | null>(null);
 
   async function load(section = tab) {
     const res = await adminQuery({ data: { section } });
@@ -34,10 +32,9 @@ function AdminPage() {
   }
 
   useEffect(() => {
-    if (!user) return;
     void load(tab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, tab]);
+  }, [tab]);
 
   async function mutate(op: string, payload: Record<string, unknown>) {
     const res = await adminMutate({ data: { op, payload } });
@@ -45,37 +42,31 @@ function AdminPage() {
     if (res.ok) await load(tab);
   }
 
-  if (isPending) return <Shell><div className="h-40 animate-pulse rounded-3xl bg-ivory" /></Shell>;
-  if (!user) {
+  if (allowed !== true) {
     return (
       <Shell>
         <p className="text-sm text-neon">المشرف العام</p>
         <h1 className="text-4xl font-extrabold">لوحة التحكم</h1>
-        <p className="mt-2 text-ivory/70">الدخول مخصص للإدارة فقط.</p>
-        <Link to="/login" className="mt-4 inline-flex"><Button type="button">دخول الإدارة</Button></Link>
-      </Shell>
-    );
-  }
-  if (allowed === false) {
-    return (
-      <Shell>
-        <h1 className="text-4xl font-extrabold">{t("admin.title")}</h1>
-        <p className="mt-3 max-w-lg text-ivory/70">{t("admin.claim")}</p>
+        <p className="mt-2 text-ivory/70">الدخول برمز الإدارة فقط.</p>
         <form
           className="mt-4 max-w-md space-y-3"
           onSubmit={(e) => {
             e.preventDefault();
-            void claimAdmin({ data: { studio } }).then((res) => {
-              if (!res.ok) setNote(t("admin.denied"));
-              else void load("dashboard");
+            void unlockAdmin({ data: { code: studio } }).then(async (res) => {
+              if (!res.ok) {
+                setCodeError("الرمز غير صحيح");
+                return;
+              }
+              setCodeError(null);
+              await load("dashboard");
             });
           }}
         >
-          <Field label={t("admin.studio")}>
-            <input className={inputClass} value={studio} onChange={(e) => setStudio(e.target.value)} />
+          <Field label="رمز الإدارة">
+            <input className={inputClass} value={studio} onChange={(e) => setStudio(e.target.value)} autoComplete="off" />
           </Field>
-          <Button type="submit">{t("admin.become")}</Button>
-          {note ? <p className="text-sm">{note}</p> : null}
+          <Button type="submit">دخول</Button>
+          {codeError ? <p className="text-sm text-gold">{codeError}</p> : null}
         </form>
       </Shell>
     );

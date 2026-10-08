@@ -47,7 +47,6 @@ export function Shell({ children, paper = false }: { children: ReactNode; paper?
           <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-8 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-lg font-extrabold text-neon">{brand}</p>
             <p className="text-sm text-ivory/55">{t("footer")}</p>
-            <Link to="/admin" className="text-sm text-ivory/45">{t("nav.admin")}</Link>
           </div>
         </footer>
       )}
@@ -88,7 +87,6 @@ function SiteHeader({
           <Link to="/premium" className={`min-h-11 items-center px-2 lg:inline-flex ${paper ? "" : "text-gold"}`}>{t("nav.premium")}</Link>
           <Link to="/join" className={`min-h-11 items-center px-2 lg:inline-flex ${paper ? "" : "text-ivory/75"}`}>{t("nav.join")}</Link>
           <Link to="/play" search={{ game: "" }} className="inline-flex min-h-11 items-center rounded-full bg-neon px-4 font-extrabold text-night">{t("nav.play")}</Link>
-          <Link to="/admin" className="inline-flex min-h-11 items-center rounded-full border border-neon/40 px-4 font-extrabold text-neon">لوحة التحكم</Link>
           <button
             type="button"
             className={`min-h-11 rounded-full px-3 font-extrabold ${paper ? "border border-ink/15" : "border border-white/15 text-ivory"}`}
@@ -107,7 +105,6 @@ function MobileDock() {
   const { t } = useI18n();
   return (
     <nav className="dock" aria-label="main">
-      <Link to="/admin"><span aria-hidden="true">▦</span><span>الإدارة</span></Link>
       <Link to="/rank"><span aria-hidden="true">🏆</span><span>{t("nav.rank")}</span></Link>
       <Link to="/"><span aria-hidden="true">🏠</span><span>{t("nav.home")}</span></Link>
       <Link to="/questions"><span aria-hidden="true">💬</span><span>{t("nav.questions")}</span></Link>

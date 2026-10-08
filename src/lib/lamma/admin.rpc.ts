@@ -11,6 +11,16 @@ function pack(value: unknown): Json {
   return JSON.parse(JSON.stringify(value)) as Json;
 }
 
+export const unlockAdmin = createServerFn({ method: "POST" })
+  .validator((input: { code?: string }) => ({ code: text(input?.code, 40) }))
+  .handler(async ({ data }) => {
+    const expected = (process.env.ADMIN_BOOTSTRAP_CODE || "LAMMA-HOST").trim().toUpperCase();
+    if (data.code.trim().toUpperCase() !== expected) return { ok: false as const, error: "FORBIDDEN" };
+    const { setResponseHeader } = await import("@tanstack/react-start/server");
+    setResponseHeader("Set-Cookie", "alosh_admin=ok; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000");
+    return { ok: true as const };
+  });
+
 export const adminQuery = createServerFn({ method: "POST" })
   .middleware([optionalUser])
   .validator((input: { section?: string }) => ({ section: text(input?.section, 40) }))
