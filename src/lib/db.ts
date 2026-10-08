@@ -113,9 +113,10 @@ function createNeonSql(): Promise<Sql> {
 async function createPgliteSql(): Promise<Sql> {
   const onWorker =
     typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers";
-  if (onWorker) {
+  const production = process.env.VERCEL_ENV === "production" || process.env.CF_PAGES === "1";
+  if (onWorker || production) {
     throw new Error(
-      "DATABASE_URL is required on Cloudflare. Use the Supabase session-pooler Postgres URI.",
+      "DATABASE_URL is required in production. Use the Supabase session-pooler Postgres URI.",
     );
   }
   // Embedded Postgres, imported on demand so it never loads on the Neon path.
