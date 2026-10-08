@@ -106,3 +106,45 @@
   }
   .cheer-rise { opacity: 1; }
 }
+
+.game-shell {
+  background:
+    radial-gradient(900px 420px at 110% -10%, color-mix(in srgb, #3ee0c5 18%, transparent), transparent 60%),
+    radial-gradient(700px 360px at -10% 0%, color-mix(in srgb, var(--color-neon) 16%, transparent), transparent 62%),
+    linear-gradient(180deg, #120e0b 0%, #1a120c 40%, #0e0c0a 100%);
+}
+.glass {
+  background: color-mix(in srgb, #fff 6%, transparent);
+  border: 1px solid color-mix(in srgb, #fff 12%, transparent);
+  backdrop-filter: blur(14px);
+}
+.dock {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 2px;
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, #0e0c0a 88%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--color-neon) 28%, transparent);
+  backdrop-filter: blur(16px);
+}
+.dock a {
+  min-height: 48px;
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  border-radius: 14px;
+  font-size: 11px;
+  font-weight: 800;
+  color: color-mix(in srgb, var(--color-ivory) 72%, transparent);
+}
+.dock a[data-active="true"] {
+  color: #1a120c;
+  background: var(--color-neon);
+}
+@media (min-width: 900px) {
+  .dock { display: none; }
+}

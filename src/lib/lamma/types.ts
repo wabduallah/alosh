@@ -96,6 +96,8 @@ export type Snapshot = {
     subjectId: string | null;
     minPlayers: number;
     maxPlayers: number;
+    hostMode: "player" | "narrator";
+    hostAnswer: string | null;
   };
   players: SnapPlayer[];
 };

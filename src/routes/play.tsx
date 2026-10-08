@@ -33,6 +33,7 @@ function CreatePage() {
   const [sound, setSound] = useState(true);
   const [music, setMusic] = useState(false);
   const [promo, setPromo] = useState("");
+  const [hostMode, setHostMode] = useState<"player" | "narrator">("player");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const selected = games.find((game) => game.id === gameId);
@@ -55,7 +56,7 @@ function CreatePage() {
     setBusy(true);
     setError(null);
     const res = await createRoom({
-      data: { gameId, rounds, seconds, difficulty, sound, music, maxPlayers, locale: lang, promo: promo || undefined, hostName },
+      data: { gameId, rounds, seconds, difficulty, sound, music, maxPlayers, locale: lang, promo: promo || undefined, hostName, hostMode },
     });
     setBusy(false);
     if (!res.ok) {
@@ -150,6 +151,12 @@ function CreatePage() {
             {t("create.music")}
             <input type="checkbox" checked={music} onChange={(e) => setMusic(e.target.checked)} />
           </label>
+          <Field label="وضع المضيف">
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" className={`min-h-11 rounded-2xl font-extrabold ${hostMode === "player" ? "bg-neon text-night" : "border border-white/15"}`} onClick={() => setHostMode("player")}>{t("hostMode.player")}</button>
+              <button type="button" className={`min-h-11 rounded-2xl font-extrabold ${hostMode === "narrator" ? "bg-neon text-night" : "border border-white/15"}`} onClick={() => setHostMode("narrator")}>{t("hostMode.narrator")}</button>
+            </div>
+          </Field>
           <Field label={t("create.promo")}>
             <input className={inputClass} value={promo} onChange={(e) => setPromo(e.target.value)} />
           </Field>

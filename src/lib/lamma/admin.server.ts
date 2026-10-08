@@ -85,6 +85,18 @@ export async function adminQueryNow(section: string, ctx: Ctx) {
   if (section === "lexicon") {
     return { ok: true as const, data: await sql`select id, locale, letter, category, word, source from lexicon order by id desc limit 200` };
   }
+  if (section === "imports") {
+    return sql`select * from imports order by id desc limit 30`;
+  }
+  if (section === "ai") {
+    return sql`select * from ai_drafts order by id desc limit 40`;
+  }
+  if (section === "addons") {
+    return sql`select * from addons order by id`;
+  }
+  if (section === "sections") {
+    return sql`select * from sections order by sort_order`;
+  }
   if (section === "plans") {
     return { ok: true as const, data: await sql`select * from plans order by sort_order` };
   }
@@ -208,6 +220,52 @@ export async function adminMutateNow(op: string, payload: Record<string, unknown
   if (op === "generateQuestions" || op === "draftGame") {
     return ai(sql, op, payload);
   }
+  if (op === "previewCsv") {
+    const rows = Array.isArray(payload.rows) ? payload.rows.slice(0, 20) : [];
+    const headers = rows[0] && typeof rows[0] === "object" ? Object.keys(rows[0] as object) : [];
+    await sql`insert into imports (filename, game_id, mapping, row_count, status) values (${text(payload.filename, 120) || "upload.csv"}, ${text(payload.gameId, 80) || null}, ${JSON.stringify(payload.mapping ?? {})}::jsonb, ${Array.isArray(payload.rows) ? payload.rows.length : 0}, 'preview')`;
+    return { ok: true as const, headers, sample: rows };
+  }
+  if (op === "commitCsv") {
+    const rows = Array.isArray(payload.rows) ? payload.rows : [];
+    const mapping = (payload.mapping ?? {}) as Record<string, string>;
+    const gameId = text(payload.gameId, 80);
+    if (!gameId) return { ok: false as const, error: "BAD_INPUT" };
+    let n = 0;
+    for (const row of rows.slice(0, 500)) {
+      if (!row || typeof row !== "object") continue;
+      const rec = row as Record<string, unknown>;
+      const promptAr = text(rec[mapping.promptAr || "prompt_ar"], 400);
+      const answer = text(rec[mapping.answer || "correct"], 200);
+      if (!promptAr || !answer) continue;
+      const choices = ["a", "b", "c", "d"].map((key, i) => {
+        const col = mapping[`choice${i + 1}`];
+        const value = col ? text(rec[col], 200) : "";
+        return value ? { id: key, ar: value, en: value } : null;
+      }).filter(Boolean);
+      await sql`insert into questions (game_id, prompt_ar, prompt_en, kind, choices, correct, difficulty, points, category, status, source) values (${gameId}, ${promptAr}, ${text(rec[mapping.promptEn || "prompt_en"], 400) || promptAr}, ${choices.length ? "mcq" : "text"}, ${JSON.stringify(choices)}::jsonb, ${answer}, ${text(rec[mapping.difficulty || "difficulty"], 20) || "medium"}, ${num(rec[mapping.points || "points"], 10)}, ${text(rec[mapping.category || "category"], 80) || null}, 'pending', 'csv')`;
+      n += 1;
+    }
+    await sql`insert into imports (filename, game_id, mapping, row_count, status) values (${text(payload.filename, 120) || "upload.csv"}, ${gameId}, ${JSON.stringify(mapping)}::jsonb, ${n}, 'imported')`;
+    return { ok: true as const, imported: n };
+  }
+  if (op === "toggleAddon") {
+    const id = text(payload.id, 40);
+    await sql`update addons set enabled = not enabled where id = ${id}`;
+    return { ok: true as const };
+  }
+  if (op === "saveSection") {
+    const id = text(payload.id, 40);
+    if (!id) return { ok: false as const, error: "BAD_INPUT" };
+    await sql`insert into sections (id, name_ar, name_en, icon, href, description_ar, description_en, visible, sort_order) values (${id}, ${text(payload.nameAr, 80) || id}, ${text(payload.nameEn, 80) || id}, ${text(payload.icon, 40) || "Gamepad2"}, ${text(payload.href, 80) || "/"}, ${text(payload.descriptionAr, 200)}, ${text(payload.descriptionEn, 200)}, ${payload.visible !== false}, ${num(payload.sort, 50)}) on conflict (id) do update set name_ar = excluded.name_ar, name_en = excluded.name_en, icon = excluded.icon, href = excluded.href, description_ar = excluded.description_ar, visible = excluded.visible, sort_order = excluded.sort_order`;
+    return { ok: true as const };
+  }
+  if (op === "reviewDraft") {
+    const id = num(payload.id, 0);
+    const status = text(payload.status, 20) || "review";
+    await sql`update ai_drafts set status = ${status}, note = ${text(payload.note, 400)} where id = ${id}`;
+    return { ok: true as const };
+  }
   return { ok: false as const, error: "BAD_INPUT" };
 }
 
@@ -260,6 +318,7 @@ async function ai(sql: Sql, op: string, payload: Record<string, unknown>) {
     await sql`insert into questions (game_id, prompt_ar, prompt_en, kind, choices, correct, difficulty, status, source) values (${target}, ${promptAr}, ${promptEn}, 'mcq', ${JSON.stringify(q.choices ?? [])}::jsonb, ${text(q.correct, 8) || null}, ${text(payload.difficulty, 20) || "medium"}, 'pending', 'ai')`;
     n += 1;
   }
+  await sql`insert into ai_drafts (kind, payload, status, note) values (${op}, ${JSON.stringify({ gameId: target, count: n, topic })}::jsonb, 'review', 'بانتظار اعتماد المدير')`;
   return { ok: true as const, imported: n, gameId: target };
 }
 

@@ -12,7 +12,7 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-const TABS = ["dashboard", "games", "questions", "categories", "users", "rooms", "plans", "subscriptions", "payments", "promos", "translations", "settings", "lexicon", "reports"] as const;
+const TABS = ["dashboard", "games", "questions", "import", "ai", "categories", "sections", "addons", "users", "rooms", "plans", "subscriptions", "payments", "promos", "translations", "settings", "lexicon", "reports"] as const;
 
 function AdminPage() {
   const { t } = useI18n();
@@ -104,6 +104,10 @@ function AdminPage() {
         {tab === "lexicon" ? <Lexicon data={data} onAdd={(payload) => void mutate("addLexicon", payload)} /> : null}
         {tab === "translations" ? <Strings data={data} onSave={(payload) => void mutate("setString", payload)} /> : null}
         {tab === "categories" ? <Cats data={data} onSave={(payload) => void mutate("saveCategory", payload)} /> : null}
+        {tab === "import" ? <CsvImport onPreview={(payload) => void mutate("previewCsv", payload)} onCommit={(payload) => void mutate("commitCsv", payload)} /> : null}
+        {tab === "ai" ? <AiDesk data={data} onGenerate={(payload) => void mutate("generateQuestions", payload)} onReview={(payload) => void mutate("reviewDraft", payload)} /> : null}
+        {tab === "sections" ? <Sections data={data} onSave={(payload) => void mutate("saveSection", payload)} /> : null}
+        {tab === "addons" ? <Addons data={data} onToggle={(id) => void mutate("toggleAddon", { id })} /> : null}
         {tab === "subscriptions" ? <Raw data={data} /> : null}
       </div>
     </Shell>
@@ -434,4 +438,122 @@ function Cats({ data, onSave }: { data: unknown; onSave: (payload: Record<string
 function Raw({ data }: { data: unknown }) {
   const rows = Array.isArray(data) ? data as { id?: string; plan_id?: string; status?: string; user_id?: string }[] : [];
   return <ul className="space-y-2">{rows.map((row) => <li key={row.id} className="rounded-2xl bg-ivory px-4 py-3">{row.user_id} · {row.plan_id} · {row.status}</li>)}</ul>;
+}
+
+function parseCsv(raw: string): Record<string, string>[] {
+  const lines = raw.split(/\r?\n/).filter((line) => line.trim());
+  if (!lines.length) return [];
+  const headers = lines[0].split(",").map((h) => h.trim());
+  return lines.slice(1).map((line) => {
+    const cells = line.split(",");
+    return Object.fromEntries(headers.map((header, i) => [header, (cells[i] ?? "").trim()]));
+  });
+}
+
+function CsvImport({ onPreview, onCommit }: { onPreview: (payload: Record<string, unknown>) => void; onCommit: (payload: Record<string, unknown>) => void }) {
+  const [gameId, setGameId] = useState("general");
+  const [raw, setRaw] = useState("");
+  const [rows, setRows] = useState<Record<string, string>[]>([]);
+  const headers = rows[0] ? Object.keys(rows[0]) : [];
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-ivory/70">ارفع CSV، طابق الأعمدة، ثم استورد كمسودة. لن تُنشر الأسئلة قبل الاعتماد من تبويب الأسئلة.</p>
+      <div className="flex flex-wrap gap-2 text-sm">
+        <a className="underline" href="/templates/mcq.csv">قالب اختيار من متعدد</a>
+        <a className="underline" href="/templates/truefalse.csv">قالب صح وخطأ</a>
+        <a className="underline" href="/templates/nest.csv">قالب العش</a>
+        <a className="underline" href="/templates/generic.csv">قالب عام</a>
+      </div>
+      <input className={inputClass} value={gameId} onChange={(e) => setGameId(e.target.value)} placeholder="game id" />
+      <input type="file" accept=".csv,text/csv" onChange={async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const text = await file.text();
+        setRaw(text);
+        setRows(parseCsv(text));
+      }} />
+      <textarea className={`${inputClass} min-h-28`} value={raw} onChange={(e) => { setRaw(e.target.value); setRows(parseCsv(e.target.value)); }} />
+      {headers.length ? (
+        <div className="grid gap-2 md:grid-cols-2">
+          {["promptAr", "promptEn", "answer", "choice1", "choice2", "choice3", "choice4", "difficulty", "points", "category"].map((field) => (
+            <label key={field} className="text-sm">
+              {field}
+              <select className={inputClass} value={mapping[field] ?? ""} onChange={(e) => setMapping({ ...mapping, [field]: e.target.value })}>
+                <option value="">—</option>
+                {headers.map((header) => <option key={header} value={header}>{header}</option>)}
+              </select>
+            </label>
+          ))}
+        </div>
+      ) : null}
+      <div className="flex gap-2">
+        <Button type="button" tone="ghost" onClick={() => onPreview({ gameId, rows, mapping, filename: "upload.csv" })}>معاينة</Button>
+        <Button type="button" onClick={() => onCommit({ gameId, rows, mapping, filename: "upload.csv" })}>استيراد كمسودة</Button>
+      </div>
+      {rows[0] ? <p className="text-sm text-ivory/60">صف نموذجي: {JSON.stringify(rows[0])}</p> : null}
+    </div>
+  );
+}
+
+function AiDesk({ data, onGenerate, onReview }: { data: unknown; onGenerate: (payload: Record<string, unknown>) => void; onReview: (payload: Record<string, unknown>) => void }) {
+  const rows = Array.isArray(data) ? data as { id: number; kind: string; status: string; note: string }[] : [];
+  const [topic, setTopic] = useState("التاريخ");
+  const [count, setCount] = useState(4);
+  const [difficulty, setDifficulty] = useState("hard");
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-ivory/70">التوليد يضع الأسئلة بحالة pending ولا ينشرها. راجعها ثم اعتمدها من تبويب الأسئلة. المراجعة بالذكاء تحتاج XAI_API_KEY.</p>
+      <div className="grid gap-2 md:grid-cols-4">
+        <input className={inputClass} value={topic} onChange={(e) => setTopic(e.target.value)} />
+        <input className={inputClass} type="number" min={1} max={8} value={count} onChange={(e) => setCount(Number(e.target.value))} />
+        <select className={inputClass} value={difficulty} onChange={(e) => setDifficulty(e.target.value)}>
+          <option value="easy">سهل</option>
+          <option value="medium">متوسط</option>
+          <option value="hard">صعب</option>
+        </select>
+        <Button type="button" onClick={() => onGenerate({ gameId: "general", topic, count, difficulty, language: "ar" })}>توليد للمراجعة</Button>
+      </div>
+      <ul className="space-y-2">
+        {rows.map((row) => (
+          <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-ivory px-4 py-3">
+            <span>{row.kind} · {row.status} · {row.note}</span>
+            <Button type="button" tone="ghost" onClick={() => onReview({ id: row.id, status: "approved", note: "اعتُمد" })}>اعتماد السجل</Button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function Sections({ data, onSave }: { data: unknown; onSave: (payload: Record<string, unknown>) => void }) {
+  const rows = Array.isArray(data) ? data as { id: string; name_ar: string; href: string; visible: boolean }[] : [];
+  const [id, setId] = useState("");
+  const [nameAr, setNameAr] = useState("");
+  const [href, setHref] = useState("/");
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-2 md:grid-cols-4">
+        <input className={inputClass} placeholder="id" value={id} onChange={(e) => setId(e.target.value)} />
+        <input className={inputClass} placeholder="الاسم" value={nameAr} onChange={(e) => setNameAr(e.target.value)} />
+        <input className={inputClass} placeholder="/path" value={href} onChange={(e) => setHref(e.target.value)} />
+        <Button type="button" onClick={() => onSave({ id, nameAr, nameEn: nameAr, href })}>حفظ القسم</Button>
+      </div>
+      <ul className="space-y-2">{rows.map((row) => <li key={row.id} className="rounded-2xl bg-ivory px-4 py-3">{row.name_ar} · {row.href} · {row.visible ? "ظاهر" : "مخفي"}</li>)}</ul>
+    </div>
+  );
+}
+
+function Addons({ data, onToggle }: { data: unknown; onToggle: (id: string) => void }) {
+  const rows = Array.isArray(data) ? data as { id: string; name_ar: string; description_ar: string; enabled: boolean }[] : [];
+  return (
+    <ul className="space-y-2">
+      {rows.map((row) => (
+        <li key={row.id} className="flex items-center justify-between gap-3 rounded-2xl bg-ivory px-4 py-3">
+          <span><b>{row.name_ar}</b><span className="mt-1 block text-sm text-muted">{row.description_ar}</span></span>
+          <Button type="button" tone={row.enabled ? "bronze" : "ghost"} onClick={() => onToggle(row.id)}>{row.enabled ? "مفعل" : "متوقف"}</Button>
+        </li>
+      ))}
+    </ul>
+  );
 }

@@ -38,12 +38,13 @@ export function Shell({ children, paper = false }: { children: ReactNode; paper?
   const { isPending } = useCurrentUserState();
   const brand = lang === "en" ? bundle.brand.en : bundle.brand.ar;
   return (
-    <div className={paper ? "min-h-screen bg-sand text-ink" : "nest min-h-screen"}>
+    <div className={paper ? "min-h-screen bg-sand text-ink" : "nest game-shell min-h-screen"}>
       <SiteHeader brand={brand} lang={lang} setLang={setLang} t={t} isPending={isPending} paper={paper} />
       {bundle.ads ? (
         <div className="border-b border-white/10 bg-white/5 px-4 py-2 text-center text-sm text-ivory/70">{t("ads")}</div>
       ) : null}
-      <div className="mx-auto max-w-6xl px-4 py-8">{children}</div>
+      <div className="mx-auto max-w-6xl px-4 py-8 pb-28 lg:pb-8">{children}</div>
+      {paper ? null : <MobileDock />}
       {paper ? null : (
         <footer className="mt-10 border-t border-white/10">
           <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-8 sm:flex-row sm:items-center sm:justify-between">
@@ -84,12 +85,13 @@ function SiteHeader({
             {paper ? null : <span className="ms-2 hidden text-[10px] font-bold tracking-[0.22em] text-neon sm:inline">THE NEST</span>}
           </span>
         </Link>
-        <nav className="ms-auto flex items-center gap-1 text-sm sm:gap-2">
-          <Link to="/" className={`hidden min-h-11 items-center px-2 lg:inline-flex ${paper ? "" : "text-ivory/75"}`}>{t("nav.home")}</Link>
-          <Link to="/games" search={{ cat: "" }} className={`hidden min-h-11 items-center px-2 sm:inline-flex ${paper ? "" : "text-ivory/75"}`}>{t("nav.games")}</Link>
-          <a href="/#how" className={`hidden min-h-11 items-center px-2 lg:inline-flex ${paper ? "" : "text-ivory/75"}`}>{t("nav.how")}</a>
-          <Link to="/premium" className={`hidden min-h-11 items-center px-2 md:inline-flex ${paper ? "" : "text-gold"}`}>{t("nav.premium")}</Link>
-          <Link to="/join" className={`hidden min-h-11 items-center px-2 sm:inline-flex ${paper ? "" : "text-ivory/75"}`}>{t("nav.join")}</Link>
+        <nav className="ms-auto hidden items-center gap-1 text-sm sm:gap-2 lg:flex">
+          <Link to="/" className={`min-h-11 items-center px-2 lg:inline-flex ${paper ? "" : "text-ivory/75"}`}>{t("nav.home")}</Link>
+          <Link to="/games" search={{ cat: "" }} className={`min-h-11 items-center px-2 lg:inline-flex ${paper ? "" : "text-ivory/75"}`}>{t("nav.games")}</Link>
+          <Link to="/questions" className={`min-h-11 items-center px-2 lg:inline-flex ${paper ? "" : "text-ivory/75"}`}>{t("nav.questions")}</Link>
+          <Link to="/rank" className={`min-h-11 items-center px-2 lg:inline-flex ${paper ? "" : "text-ivory/75"}`}>{t("nav.rank")}</Link>
+          <Link to="/premium" className={`min-h-11 items-center px-2 lg:inline-flex ${paper ? "" : "text-gold"}`}>{t("nav.premium")}</Link>
+          <Link to="/join" className={`min-h-11 items-center px-2 lg:inline-flex ${paper ? "" : "text-ivory/75"}`}>{t("nav.join")}</Link>
           <Link to="/play" search={{ game: "" }} className="inline-flex min-h-11 items-center rounded-full bg-neon px-4 font-extrabold text-night">{t("nav.play")}</Link>
           <button
             type="button"
@@ -103,12 +105,27 @@ function SiteHeader({
             <Link to="/login" className="min-h-11 rounded-full px-2 py-2">{t("nav.signin")}</Link>
           </SignedOut>
           <SignedIn>
+            <Link to="/settings" className="hidden sm:inline">{t("nav.settings")}</Link>
             <Link to="/profile" className="hidden sm:inline">{t("nav.account")}</Link>
             <UserButton />
           </SignedIn>
         </nav>
       </div>
     </header>
+  );
+}
+
+
+function MobileDock() {
+  const { t } = useI18n();
+  return (
+    <nav className="dock" aria-label="main">
+      <Link to="/"><span aria-hidden="true">🏠</span><span>{t("nav.home")}</span></Link>
+      <Link to="/games" search={{ cat: "" }}><span aria-hidden="true">🎮</span><span>{t("nav.games")}</span></Link>
+      <Link to="/questions"><span aria-hidden="true">🧠</span><span>{t("nav.questions")}</span></Link>
+      <Link to="/rank"><span aria-hidden="true">🏆</span><span>{t("nav.rank")}</span></Link>
+      <Link to="/profile"><span aria-hidden="true">👤</span><span>{t("nav.account")}</span></Link>
+    </nav>
   );
 }
 

@@ -51,6 +51,7 @@ export const createRoom = createServerFn({ method: "POST" })
     locale: input.locale === "en" ? ("en" as const) : ("ar" as const),
     promo: text(input.promo, 24) || undefined,
     hostName: text(input.hostName, 24) || undefined,
+    hostMode: input.hostMode === "narrator" ? ("narrator" as const) : ("player" as const),
   }))
   .handler(async ({ data, context }) => {
     const { createRoomNow } = await import("./engine.server");

@@ -190,6 +190,9 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
 
         {note ? <p className="rise rounded-full bg-ivory/10 px-4 py-2 text-sm">{note}</p> : null}
         {!snap.youAreHost ? <p className="text-sm text-ivory/70">{t("host.spectator")}</p> : null}
+        {snap.youAreHost && snap.room.hostMode === "narrator" ? (
+          <p className="rounded-2xl border border-neon/40 bg-neon/10 px-3 py-2 text-sm">وضع الراوي: اللاعبون لا يرون الإجابة. {snap.room.hostAnswer ? `الإجابة: ${snap.room.hostAnswer}` : "ابدأ الجولة لرؤية الإجابة."}</p>
+        ) : null}
 
         {snap.room.status === "WAITING" ? (
           <section className="grid items-start gap-6 lg:grid-cols-[16rem_1fr]">

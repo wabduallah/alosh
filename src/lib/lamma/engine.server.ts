@@ -104,6 +104,7 @@ type Settings = {
   music: boolean;
   maxPlayers: number;
   locale: Locale;
+  hostMode: "player" | "narrator";
 };
 
 type RoundState = {
@@ -208,6 +209,7 @@ function asSettings(value: unknown, fallback?: Partial<Settings>): Settings {
     music: raw.music === true,
     maxPlayers: clamp(raw.maxPlayers, 2, 14, fallback?.maxPlayers ?? 14),
     locale: raw.locale === "en" ? "en" : "ar",
+    hostMode: raw.hostMode === "narrator" ? "narrator" : "player",
   };
 }
 
@@ -393,6 +395,7 @@ export async function createRoomNow(
     locale: Locale;
     promo?: string;
     hostName?: string;
+    hostMode?: "player" | "narrator";
   },
   ctx: Ctx,
 ): Promise<Fail | { ok: true; code: string; hostToken: string; playerId?: string; playerToken?: string }> {
@@ -426,6 +429,7 @@ export async function createRoomNow(
       music: input.music,
       maxPlayers: Math.min(14, Math.max(game.min_players, input.maxPlayers || game.max_players)),
       locale: input.locale,
+      hostMode: input.hostMode === "narrator" ? "narrator" : "player",
     },
     { rounds: game.default_rounds, seconds: game.default_seconds },
   );
@@ -561,6 +565,8 @@ async function buildSnap(sql: Sql, code: string, hostToken?: string, playerToken
       subjectId: roundState.subjectId ?? null,
       minPlayers: fresh.game.min_players,
       maxPlayers: settings.maxPlayers,
+      hostMode: settings.hostMode,
+      hostAnswer: tokensMatch(fresh.room.host_token, hostToken) && settings.hostMode === "narrator" ? (q?.correct ?? null) : null,
     },
     players,
   };

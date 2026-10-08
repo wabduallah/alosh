@@ -8,7 +8,11 @@
     "play": "Create a room",
     "signin": "Sign in",
     "account": "Account",
-    "admin": "Admin"
+    "admin": "Admin",
+    "questions": "Questions",
+    "nest": "Nest",
+    "rank": "Ranks",
+    "settings": "Settings"
   },
   "hero": {
     "kicker": "The Nest",
@@ -148,7 +152,10 @@
     "2": "Second",
     "3": "Third"
   },
-  "tier": { "free": "Free", "premium": "Premium" },
+  "tier": {
+    "free": "Free",
+    "premium": "Premium"
+  },
   "err": {
     "ROOM_NOT_FOUND": "That room is missing or expired.",
     "NAME_INVALID": "Use 2 to 16 characters.",
@@ -247,5 +254,9 @@
     "denied": "This account is not an admin.",
     "purge": "Remove practice data",
     "guide": "Change the site name in Settings under brand. Prices live on Plans. Card payment starts after the host has STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, MOYASAR_SECRET_KEY, or TAP_SECRET_KEY. A custom domain is attached from publish settings."
+  },
+  "hostMode": {
+    "player": "Host plays",
+    "narrator": "Host narrates only"
   }
 }

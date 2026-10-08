@@ -15,6 +15,9 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as PlayRouteImport } from './routes/play'
 import { Route as PremiumRouteImport } from './routes/premium'
 import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as QuestionsRouteImport } from './routes/questions'
+import { Route as RankRouteImport } from './routes/rank'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as GamesIndexRouteImport } from './routes/games/index'
 import { Route as GamesSlugRouteImport } from './routes/games/$slug'
@@ -55,6 +58,21 @@ const PremiumRoute = PremiumRouteImport.update({
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QuestionsRoute = QuestionsRouteImport.update({
+  id: '/questions',
+  path: '/questions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RankRoute = RankRouteImport.update({
+  id: '/rank',
+  path: '/rank',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
@@ -120,6 +138,9 @@ export interface FileRoutesByFullPath {
   '/play': typeof PlayRoute
   '/premium': typeof PremiumRoute
   '/profile': typeof ProfileRoute
+  '/questions': typeof QuestionsRoute
+  '/rank': typeof RankRoute
+  '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/games/$slug': typeof GamesSlugRoute
   '/host/$code': typeof HostCodeRoute
@@ -139,6 +160,9 @@ export interface FileRoutesByTo {
   '/play': typeof PlayRoute
   '/premium': typeof PremiumRoute
   '/profile': typeof ProfileRoute
+  '/questions': typeof QuestionsRoute
+  '/rank': typeof RankRoute
+  '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/games/$slug': typeof GamesSlugRoute
   '/host/$code': typeof HostCodeRoute
@@ -159,6 +183,9 @@ export interface FileRoutesById {
   '/play': typeof PlayRoute
   '/premium': typeof PremiumRoute
   '/profile': typeof ProfileRoute
+  '/questions': typeof QuestionsRoute
+  '/rank': typeof RankRoute
+  '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/games/$slug': typeof GamesSlugRoute
   '/host/$code': typeof HostCodeRoute
@@ -180,6 +207,9 @@ export interface FileRouteTypes {
     | '/play'
     | '/premium'
     | '/profile'
+    | '/questions'
+    | '/rank'
+    | '/settings'
     | '/sitemap.xml'
     | '/games/$slug'
     | '/host/$code'
@@ -199,6 +229,9 @@ export interface FileRouteTypes {
     | '/play'
     | '/premium'
     | '/profile'
+    | '/questions'
+    | '/rank'
+    | '/settings'
     | '/sitemap.xml'
     | '/games/$slug'
     | '/host/$code'
@@ -218,6 +251,9 @@ export interface FileRouteTypes {
     | '/play'
     | '/premium'
     | '/profile'
+    | '/questions'
+    | '/rank'
+    | '/settings'
     | '/sitemap.xml'
     | '/games/$slug'
     | '/host/$code'
@@ -238,6 +274,9 @@ export interface RootRouteChildren {
   PlayRoute: typeof PlayRoute
   PremiumRoute: typeof PremiumRoute
   ProfileRoute: typeof ProfileRoute
+    QuestionsRoute: typeof QuestionsRoute
+    RankRoute: typeof RankRoute
+    SettingsRoute: typeof SettingsRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   GamesSlugRoute: typeof GamesSlugRoute
   HostCodeRoute: typeof HostCodeRoute
@@ -382,6 +421,9 @@ const rootRouteChildren: RootRouteChildren = {
   PlayRoute: PlayRoute,
   PremiumRoute: PremiumRoute,
   ProfileRoute: ProfileRoute,
+  QuestionsRoute: QuestionsRoute,
+  RankRoute: RankRoute,
+  SettingsRoute: SettingsRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   GamesSlugRoute: GamesSlugRoute,
   HostCodeRoute: HostCodeRoute,
