@@ -21,10 +21,8 @@ function SettingsPage() {
           </div>
         </section>
         <section className="neon-card rounded-3xl p-5">
-          <h2 className="font-extrabold">الحساب والإدارة</h2>
+          <h2 className="font-extrabold">الإدارة</h2>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Link to="/profile" className="min-h-11 rounded-full border border-white/15 px-4 py-2">حسابي</Link>
-            <Link to="/login" className="min-h-11 rounded-full border border-white/15 px-4 py-2">تسجيل الدخول</Link>
             <Link to="/admin" className="min-h-11 rounded-full bg-neon px-4 py-2 font-extrabold text-night">لوحة التحكم</Link>
           </div>
         </section>

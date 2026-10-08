@@ -1,6 +1,4 @@
 import { Link } from "@tanstack/react-router";
-import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
-import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { useI18n, type Lang } from "@/lib/i18n";
 import type { ReactNode } from "react";
 
@@ -35,11 +33,10 @@ export function NestMark({ className }: { className?: string }) {
 
 export function Shell({ children, paper = false }: { children: ReactNode; paper?: boolean }) {
   const { t, lang, setLang, bundle } = useI18n();
-  const { isPending } = useCurrentUserState();
   const brand = lang === "en" ? bundle.brand.en : bundle.brand.ar;
   return (
     <div className={paper ? "min-h-screen bg-sand text-ink" : "nest game-shell min-h-screen"}>
-      <SiteHeader brand={brand} lang={lang} setLang={setLang} t={t} isPending={isPending} paper={paper} />
+      <SiteHeader brand={brand} lang={lang} setLang={setLang} t={t} paper={paper} />
       {bundle.ads ? (
         <div className="border-b border-white/10 bg-white/5 px-4 py-2 text-center text-sm text-ivory/70">{t("ads")}</div>
       ) : null}
@@ -63,14 +60,12 @@ function SiteHeader({
   lang,
   setLang,
   t,
-  isPending,
   paper = false,
 }: {
   brand: string;
   lang: Lang;
   setLang: (lang: Lang) => void;
   t: (key: string, vars?: Record<string, string | number>) => string;
-  isPending: boolean;
   paper?: boolean;
 }) {
   return (
@@ -100,15 +95,6 @@ function SiteHeader({
           >
             {lang === "ar" ? "EN" : "ع"}
           </button>
-          {isPending ? <span className="h-8 w-16 animate-pulse rounded-full bg-white/10" /> : null}
-          <SignedOut>
-            <Link to="/login" className="min-h-11 rounded-full px-2 py-2">{t("nav.signin")}</Link>
-          </SignedOut>
-          <SignedIn>
-            <Link to="/settings" className="hidden sm:inline">{t("nav.settings")}</Link>
-            <Link to="/profile" className="hidden sm:inline">{t("nav.account")}</Link>
-            <UserButton />
-          </SignedIn>
         </nav>
       </div>
     </header>
@@ -120,7 +106,6 @@ function MobileDock() {
   const { t } = useI18n();
   return (
     <nav className="dock" aria-label="main">
-      <Link to="/profile"><span aria-hidden="true">👤</span><span>{t("nav.account")}</span></Link>
       <Link to="/rank"><span aria-hidden="true">🏆</span><span>{t("nav.rank")}</span></Link>
       <Link to="/"><span aria-hidden="true">🏠</span><span>{t("nav.home")}</span></Link>
       <Link to="/questions"><span aria-hidden="true">💬</span><span>{t("nav.questions")}</span></Link>
