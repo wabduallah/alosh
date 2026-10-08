@@ -120,11 +120,11 @@ function MobileDock() {
   const { t } = useI18n();
   return (
     <nav className="dock" aria-label="main">
-      <Link to="/"><span aria-hidden="true">🏠</span><span>{t("nav.home")}</span></Link>
-      <Link to="/games" search={{ cat: "" }}><span aria-hidden="true">🎮</span><span>{t("nav.games")}</span></Link>
-      <Link to="/questions"><span aria-hidden="true">🧠</span><span>{t("nav.questions")}</span></Link>
-      <Link to="/rank"><span aria-hidden="true">🏆</span><span>{t("nav.rank")}</span></Link>
       <Link to="/profile"><span aria-hidden="true">👤</span><span>{t("nav.account")}</span></Link>
+      <Link to="/rank"><span aria-hidden="true">🏆</span><span>{t("nav.rank")}</span></Link>
+      <Link to="/"><span aria-hidden="true">🏠</span><span>{t("nav.home")}</span></Link>
+      <Link to="/questions"><span aria-hidden="true">💬</span><span>{t("nav.questions")}</span></Link>
+      <Link to="/games" search={{ cat: "" }}><span aria-hidden="true">🎮</span><span>{t("nav.games")}</span></Link>
     </nav>
   );
 }

@@ -1,8 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { CategoryCards, GameTile } from "@/components/game-tile";
 import { Shell } from "@/components/shell";
-import { Button } from "@/components/ui";
-import { useI18n } from "@/lib/i18n";
 import { listGames } from "@/lib/lamma/rpc";
 import type { GameCard } from "@/lib/lamma/types";
 
@@ -11,53 +8,49 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "العش — ألعاب جماعية للعائلة والأصدقاء" },
-      { name: "description", content: "اختاروا لعبتكم، اقرأوا القوانين، وافتحوا غرفة. التلفزيون يعرض والجوال يتحكم." },
+      { name: "description", content: "اختاروا لعبتكم، اقرأوا القوانين، وافتحوا غرفة." },
     ],
   }),
   component: Home,
 });
 
 function Home() {
-  const games = Route.useLoaderData() as GameCard[];
-  const { t } = useI18n();
-  const featured = games.filter((game) => game.tier === "free").slice(0, 6);
+  Route.useLoaderData() as GameCard[];
   return (
     <Shell>
-      <section className="mx-auto max-w-3xl text-center">
-        <p className="text-xs font-extrabold tracking-[0.28em] text-neon">{t("hero.kicker")}</p>
-        <h1 className="mt-4 text-4xl font-extrabold leading-[1.2] sm:text-6xl">{t("hero.title")}</h1>
-        <p className="mx-auto mt-4 max-w-xl text-lg text-ivory/70">{t("hero.subtitle")}</p>
-        <div className="mt-7 flex flex-wrap justify-center gap-3">
-          <Link to="/play" search={{ game: "" }}><Button type="button">{t("hero.start")}</Button></Link>
-          <Link to="/join"><Button type="button" tone="glass">{t("hero.join")}</Button></Link>
+      <section className="mx-auto max-w-xl text-center">
+        <div className="flex items-center justify-center gap-3">
+          <span className="text-4xl text-neon" aria-hidden="true">🪺</span>
+          <h1 className="text-5xl font-extrabold text-ivory">العش</h1>
+        </div>
+        <div className="mx-auto mt-6 h-px w-full bg-gradient-to-l from-transparent via-neon/50 to-transparent" />
+        <h2 className="mt-10 text-5xl font-extrabold leading-tight text-sand">اختاروا لعبتكم</h2>
+        <p className="mt-4 text-lg text-ivory/70">لعب جماعي بسيط، ممتع، وجاهز في ثواني.</p>
+        <div className="mx-auto mt-5 h-px w-40 bg-neon/40" />
+        <div className="mt-8 flex items-center justify-center gap-3">
+          <Link to="/join" className="inline-flex min-h-14 items-center gap-2 rounded-full border border-neon/40 px-6 font-extrabold">انضم</Link>
+          <Link to="/play" search={{ game: "" }} className="inline-flex min-h-14 items-center gap-2 rounded-full bg-neon px-7 font-extrabold text-night">العب الآن</Link>
         </div>
       </section>
-
-      <section className="mt-14">
-        <h2 className="text-2xl font-extrabold">{t("browse.title")}</h2>
-        <div className="mt-4">
-          <CategoryCards />
+      <section className="mx-auto mt-12 max-w-xl">
+        <div className="mb-4 flex items-center justify-between">
+          <span className="grid size-8 place-items-center rounded-full border border-neon/40 text-sm">؟</span>
+          <h2 className="text-2xl font-extrabold">كيف تلعب؟</h2>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {[
+            ["1", "أنشئوا الغرفة", "استضف غرفة أو انضم إلى غرفة أصدقائك."],
+            ["2", "اختاروا اللعبة", "اختاروا من مجموعة الألعاب الجماعية المفضلة لديكم."],
+            ["3", "العبوا واستمتعوا", "لعبوا معاً، تنافسوا واصنعوا أجمل اللحظات."],
+          ].map(([n, title, body]) => (
+            <article key={n} className="neon-card relative rounded-3xl p-4 text-center">
+              <span className="absolute end-3 top-3 grid size-7 place-items-center rounded-full bg-neon text-xs font-extrabold text-night">{n}</span>
+              <h3 className="mt-8 text-lg font-extrabold">{title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-ivory/65">{body}</p>
+            </article>
+          ))}
         </div>
       </section>
-
-      <section id="how" className="mt-14 grid gap-3 md:grid-cols-3">
-        {[1, 2, 3].map((n) => (
-          <article key={n} className="neon-card rounded-3xl p-5">
-            <p className="text-xs font-extrabold text-neon">0{n}</p>
-            <h2 className="mt-2 text-lg">{t(`how.${n}t`)}</h2>
-            <p className="mt-1 text-sm leading-relaxed text-ivory/65">{t(`how.${n}d`)}</p>
-          </article>
-        ))}
-      </section>
-
-      {featured.length ? (
-        <section className="mt-14">
-          <h2 className="text-2xl font-extrabold">{t("browse.freeShelf")}</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {featured.map((game) => <GameTile key={game.id} game={game} />)}
-          </div>
-        </section>
-      ) : null}
     </Shell>
   );
 }

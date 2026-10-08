@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { GameIcon } from "@/components/icons";
 import { Shell } from "@/components/shell";
@@ -68,102 +68,61 @@ function CreatePage() {
     void navigate({ to: "/host/$code", params: { code: res.code } });
   }
 
+  const roundChoices = [10, 7, 5, 3];
+  const timeChoices = [60, 20, 30, 10];
   return (
     <Shell>
-      <h1 className="text-4xl font-extrabold sm:text-5xl">{t("create.title")}</h1>
-      <p className="mt-3 max-w-2xl text-ivory/70">{t("create.lead")}</p>
-      <div className="mt-6 flex gap-2 overflow-x-auto pb-1">
-        {shelves.map((cat) => (
-          <button
-            key={cat.id}
-            type="button"
-            onClick={() => setShelf(cat.id)}
-            className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full px-4 text-sm font-extrabold ${shelf === cat.id ? "bg-neon text-night" : "border border-white/15 text-ivory/80"}`}
-          >
-            <GameIcon name={cat.icon} className="size-4" />
-            {lang === "en" ? cat.en : cat.ar}
-          </button>
-        ))}
-      </div>
-      <div className="mt-4 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-        <div className="grid gap-2 sm:grid-cols-2">
-          {shown.map((game) => {
-            const active = gameId === game.id;
-            const premium = game.tier === "premium";
-            return (
-              <button
-                key={game.id}
-                type="button"
-                onClick={() => choose(game)}
-                className={`neon-card flex items-center gap-3 rounded-2xl px-3 py-3 text-start ${active ? "border-neon" : ""} ${premium ? "gold-card" : ""}`}
-              >
-                <span className={`grid size-11 shrink-0 place-items-center rounded-xl ${premium ? "bg-gold/15 text-gold" : "bg-neon/15 text-neon"}`}>
-                  <GameIcon name={game.icon} className="size-5" />
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate font-extrabold">{lang === "en" ? game.nameEn : game.nameAr}</span>
-                  <span className="block text-xs text-ivory/60">
-                    {t("browse.players", { min: game.minPlayers, max: game.maxPlayers })} · {premium ? t("tier.premium") : t("tier.free")}
-                  </span>
-                </span>
-              </button>
-            );
-          })}
-          {shown.length === 0 ? <p className="text-sm text-ivory/60">{t("browse.soon")}</p> : null}
+      <header className="mb-5 flex items-center justify-between">
+        <Link to="/games" search={{ cat: "" }} className="text-2xl">←</Link>
+        <h1 className="text-3xl font-extrabold text-neon">إنشاء غرفة</h1>
+        <span className="text-2xl text-neon" aria-hidden="true">🛡️</span>
+      </header>
+      <form
+        className="neon-card space-y-5 rounded-3xl p-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <input className="sr-only" value={hostName} onChange={(e) => setHostName(e.target.value)} placeholder="اسم المضيف" />
+        <div>
+          <p className="mb-2 text-end font-extrabold">نوع الغرفة</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" className={`min-h-14 rounded-2xl border font-extrabold ${hostMode === "narrator" ? "border-neon bg-neon text-night" : "border-white/15"}`} onClick={() => setHostMode("narrator")}>المضيف يدير فقط</button>
+            <button type="button" className={`min-h-14 rounded-2xl border font-extrabold ${hostMode === "player" ? "border-neon bg-neon text-night" : "border-white/15"}`} onClick={() => setHostMode("player")}>المضيف يشارك</button>
+          </div>
         </div>
-        <form
-          className="neon-card space-y-4 rounded-3xl p-5 lg:sticky lg:top-24 lg:self-start"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void submit();
-          }}
-        >
-          <p className="text-lg font-extrabold">{selected ? (lang === "en" ? selected.nameEn : selected.nameAr) : t("create.game")}</p>
-          {selected ? (
-            <p className="text-sm text-ivory/65">
-              {t(`mode.${selected.playMode}`)} · {t("browse.minutes", { min: selected.durationMin, max: selected.durationMax })}
-            </p>
-          ) : null}
-          <Field label={t("create.hostName")}>
-            <input className={inputClass} value={hostName} onChange={(e) => setHostName(e.target.value)} required minLength={2} maxLength={16} />
-          </Field>
-          <Field label={t("create.players")}>
-            <input className={inputClass} type="number" min={selected?.minPlayers ?? 2} max={14} value={maxPlayers} onChange={(e) => setMaxPlayers(Number(e.target.value))} />
-          </Field>
-          <Field label={t("create.diff")}>
-            <select className={inputClass} value={difficulty} onChange={(e) => setDifficulty(e.target.value as typeof difficulty)}>
-              {(["mixed", "easy", "medium", "hard"] as const).map((item) => (
-                <option key={item} value={item}>{t(`diff.${item}`)}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label={t("create.time")}>
-            <input className={inputClass} type="number" min={8} max={180} value={seconds} onChange={(e) => setSeconds(Number(e.target.value))} />
-          </Field>
-          <Field label={t("create.rounds")}>
-            <input className={inputClass} type="number" min={1} max={15} value={rounds} onChange={(e) => setRounds(Number(e.target.value))} />
-          </Field>
-          <label className="flex items-center justify-between text-sm">
-            {t("create.sfx")}
-            <input type="checkbox" checked={sound} onChange={(e) => setSound(e.target.checked)} />
-          </label>
-          <label className="flex items-center justify-between text-sm">
-            {t("create.music")}
-            <input type="checkbox" checked={music} onChange={(e) => setMusic(e.target.checked)} />
-          </label>
-          <Field label="وضع المضيف">
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" className={`min-h-11 rounded-2xl font-extrabold ${hostMode === "player" ? "bg-neon text-night" : "border border-white/15"}`} onClick={() => setHostMode("player")}>{t("hostMode.player")}</button>
-              <button type="button" className={`min-h-11 rounded-2xl font-extrabold ${hostMode === "narrator" ? "bg-neon text-night" : "border border-white/15"}`} onClick={() => setHostMode("narrator")}>{t("hostMode.narrator")}</button>
+        <div>
+          <p className="mb-2 text-end font-extrabold">عدد الجولات</p>
+          <div className="grid grid-cols-4 gap-2 rounded-2xl border border-white/10 p-1">
+            {roundChoices.map((n) => (
+              <button key={n} type="button" className={`min-h-12 rounded-xl font-extrabold ${rounds === n ? "bg-neon text-night" : ""}`} onClick={() => setRounds(n)}>{n}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="mb-2 text-end font-extrabold">الوقت لكل جولة (ثانية)</p>
+          <div className="grid grid-cols-4 gap-2 rounded-2xl border border-white/10 p-1">
+            {timeChoices.map((n) => (
+              <button key={n} type="button" className={`min-h-12 rounded-xl font-extrabold ${seconds === n ? "bg-neon text-night" : ""}`} onClick={() => setSeconds(n)}>{n}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="mb-2 text-end font-extrabold">عدد اللاعبين</p>
+          <div className="flex items-center gap-2">
+            <span aria-hidden="true">👥</span>
+            <div className="grid flex-1 grid-cols-3 items-center rounded-2xl border border-white/10">
+              <button type="button" className="min-h-12 text-xl" onClick={() => setMaxPlayers((n) => Math.max(selected?.minPlayers ?? 2, n - 1))}>−</button>
+              <span className="text-center text-2xl font-extrabold">{maxPlayers}</span>
+              <button type="button" className="min-h-12 text-xl" onClick={() => setMaxPlayers((n) => Math.min(14, n + 1))}>+</button>
             </div>
-          </Field>
-          <Field label={t("create.promo")}>
-            <input className={inputClass} value={promo} onChange={(e) => setPromo(e.target.value)} />
-          </Field>
-          {error ? <p className="text-sm text-gold">{error}</p> : null}
-          <Button type="submit" disabled={busy || !gameId || hostName.trim().length < 2}>{t("create.submit")}</Button>
-        </form>
-      </div>
+          </div>
+          <p className="mt-2 text-sm text-ivory/55">{selected?.minPlayers ?? 2} - 10 لاعبين</p>
+        </div>
+        {error ? <p className="text-sm text-gold">{error}</p> : null}
+        <Button type="submit" disabled={busy || !gameId}>ابدأ</Button>
+      </form>
     </Shell>
   );
 }
