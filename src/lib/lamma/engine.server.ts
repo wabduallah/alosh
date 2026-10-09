@@ -1339,3 +1339,21 @@ export async function isAdmin(sql: Sql, userId: string | null): Promise<boolean>
   const rows = await sql<{ role: string }>`select role from profiles where user_id = ${userId}`;
   return rows[0]?.role === "admin";
 }
+
+export async function soloQuestionNow(gameId: string) {
+  const sql = await db();
+  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points from questions where game_id = ${gameId} and status = 'published' order by random() limit 1`;
+  const q = rows[0];
+  if (!q) return fail("NO_QUESTIONS");
+  const choices = jparse<{ id: string; ar: string; en: string }[]>(q.choices, []);
+  return { ok: true as const, id: q.id, promptAr: q.prompt_ar, promptEn: q.prompt_en, choices, points: q.points };
+}
+
+export async function soloAnswerNow(input: { questionId: number; choiceId: string }) {
+  const sql = await db();
+  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points from questions where id = ${input.questionId}`;
+  const q = rows[0];
+  if (!q) return fail("NO_QUESTIONS");
+  const correct = input.choiceId === q.correct;
+  return { ok: true as const, correct, answer: q.correct, points: correct ? q.points : 0 };
+}

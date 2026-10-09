@@ -159,6 +159,23 @@ export const claimAdmin = createServerFn({ method: "POST" })
     return claimAdminNow(data, { userId: context.userId, email: context.email });
   });
 
+export const soloQuestion = createServerFn({ method: "GET" })
+  .validator((input: { gameId?: string }) => ({ gameId: text(input?.gameId, 80) }))
+  .handler(async ({ data }) => {
+    const { soloQuestionNow } = await import("./engine.server");
+    return soloQuestionNow(data.gameId);
+  });
+
+export const soloAnswer = createServerFn({ method: "POST" })
+  .validator((input: Record<string, unknown>) => ({
+    questionId: int(input.questionId, 1, 1_000_000, 0),
+    choiceId: text(input.choiceId, 40),
+  }))
+  .handler(async ({ data }) => {
+    const { soloAnswerNow } = await import("./engine.server");
+    return soloAnswerNow(data);
+  });
+
 export const startCheckout = createServerFn({ method: "POST" })
   .middleware([optionalUser])
   .validator((input: Record<string, unknown>) => ({
