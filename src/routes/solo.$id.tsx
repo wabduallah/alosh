@@ -16,6 +16,7 @@ function SoloPlay() {
   const [score, setScore] = useState(0);
   const [note, setNote] = useState("");
   const [level, setLevel] = useState<"medium" | "hard" | "mixed">("mixed");
+  const [busy, setBusy] = useState(false);
 
   async function next() {
     setBusy(true);
@@ -57,6 +58,7 @@ function SoloPlay() {
           <button key={id} type="button" onClick={() => setLevel(id)} className={`min-h-11 rounded-full border ${level === id ? "border-neon bg-neon text-night" : "border-[#3D352B]"}`}>{id === "medium" ? "متوسط" : id === "hard" ? "صعب" : "مزيج"}</button>
         ))}
       </div>
+      <div className="mt-6 flex gap-2">
         <button type="button" onClick={() => void next()} className="min-h-12 rounded-full bg-neon px-5 font-extrabold text-night">{prompt ? "سؤال آخر" : "ابدأ"}</button>
         <Link to="/games/single-player" className="inline-flex min-h-12 items-center rounded-full border border-[#3D352B] px-5">رجوع</Link>
       </div>
