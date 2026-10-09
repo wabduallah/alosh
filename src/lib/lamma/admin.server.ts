@@ -182,7 +182,19 @@ export async function adminMutateNow(op: string, payload: Record<string, unknown
     return { ok: true as const };
   }
   if (op === "closeRoom") {
-    await sql`update rooms set status = 'CLOSED', updated_at = now() where id = ${text(payload.id, 12)}`;
+    await sql`update rooms set status = 'CLOSED', revision = revision + 1, updated_at = now() where id = ${text(payload.id, 12)}`;
+    return { ok: true as const };
+  }
+  if (op === "resetRoom") {
+    const id = text(payload.id, 12);
+    await sql`delete from answers where room_id = ${id}`;
+    await sql`update players set score = 0, round_score = 0 where room_id = ${id}`;
+    await sql`update rooms set status = 'WAITING', current_round = 0, round_state = '{}'::jsonb, revision = revision + 1, updated_at = now() where id = ${id}`;
+    return { ok: true as const };
+  }
+  if (op === "kickPlayer") {
+    await sql`delete from players where id = ${text(payload.playerId, 40)} and room_id = ${text(payload.roomId, 12)}`;
+    await sql`update rooms set revision = revision + 1 where id = ${text(payload.roomId, 12)}`;
     return { ok: true as const };
   }
   if (op === "savePlan") {
