@@ -35,7 +35,7 @@ export function CategoryCards({ active }: { active?: string }) {
           key={cat.id}
           to="/games"
           search={{ cat: cat.id }}
-          className={`neon-card rounded-3xl p-4 ${active === cat.id ? "border-neon" : ""}`}
+          className={`rounded-3xl border bg-[#171513] p-4 ${active === cat.id ? "border-[#D4AF37]" : "border-[#3D352B]"}`}
         >
           <span className="grid size-10 place-items-center rounded-xl bg-neon/15 text-neon">
             <GameIcon name={cat.icon} className="size-5" />
