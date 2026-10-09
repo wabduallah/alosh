@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Flame, Heart, Laugh, Sparkles, type LucideIcon } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { Check, Flame, Heart, Laugh, Sparkles, type LucideIcon } from "lucide-react";
 import { GameIcon, PictureIcons } from "@/components/icons";
 import { QrCode } from "@/components/qr-code";
 import { Button, inputClass, joinLink } from "@/components/ui";
@@ -111,7 +112,9 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [localErr, setLocalErr] = useState<string | null>(null);
-  const prev = useRef<Snapshot | null>(null);
+  const navigate = useNavigate();
+  const [selectedId, setSelectedId] = useState("");
+  const switchTimer = useRef<number | null>(null);
   const link = joinLink(code);
 
   useEffect(() => {
@@ -147,6 +150,19 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
     setLocalErr(null);
     setSent(false);
   }, [snap?.room.round, snap?.room.status, snap?.room.gameId]);
+
+  function handleSelectGame(gameId: string) {
+    setSelectedId(gameId);
+    if (switchTimer.current) window.clearTimeout(switchTimer.current);
+    switchTimer.current = window.setTimeout(() => {
+      void act("switchGame", { gameId });
+    }, 180);
+  }
+
+  function leaveHome() {
+    void act("close");
+    void navigate({ to: "/" });
+  }
 
   async function act(action: string, extra?: Record<string, unknown>) {
     unlockAudio();
@@ -208,14 +224,24 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
               <p className="max-w-xl text-lg text-ivory/80">{t("host.need")}</p>
               <GamePicker
                 games={games}
-                currentId={snap.room.gameId}
+                currentId={selectedId}
                 disabled={!snap.youAreHost}
-                onPick={(gameId) => void act("switchGame", { gameId })}
+                onPick={handleSelectGame}
               />
-              <div className="grid gap-2 sm:grid-cols-3">
-                <Button type="button" onClick={() => void act("start")} disabled={!snap.youAreHost || snap.players.length < snap.room.minPlayers}>{t("host.start")}</Button>
-                <Button type="button" tone="ghost" onClick={() => void copy(link, setCopied)}>{copied ? t("host.copied") : t("host.copy")}</Button>
-                <a className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#3D352B] bg-[#221F1B] px-5 text-[#E5C158]" href={`https://wa.me/?text=${encodeURIComponent(link)}`}>{t("host.whatsapp")}</a>
+              <div className="grid gap-2">
+                <button
+                  type="button"
+                  onClick={() => void act("start")}
+                  disabled={!snap.youAreHost || !selectedId || snap.players.length < snap.room.minPlayers}
+                  className="min-h-12 w-full rounded-full bg-[#D4AF37] font-extrabold text-black disabled:cursor-not-allowed disabled:bg-[#3a342c] disabled:text-[#A89F91]"
+                >
+                  {t("host.start")}
+                </button>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Button type="button" tone="ghost" onClick={() => void copy(link, setCopied)}>{copied ? t("host.copied") : t("host.copy")}</Button>
+                  <a className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#3D352B] bg-[#221F1B] px-5 text-[#E5C158]" href={`https://wa.me/?text=${encodeURIComponent(link)}`}>{t("host.whatsapp")}</a>
+                </div>
+                <button type="button" onClick={leaveHome} className="w-full rounded-full border border-[#3D352B] bg-transparent py-3 font-medium text-[#A89F91] transition-all hover:border-[#D4AF37] hover:text-white">العودة إلى القائمة الرئيسية</button>
               </div>
               {snap.players.length < snap.room.minPlayers ? <p className="text-sm text-gold">{t("host.needMin", { n: snap.room.minPlayers })}</p> : null}
             </div>
@@ -507,8 +533,9 @@ function GamePicker({
             type="button"
             disabled={disabled}
             onClick={() => onPick(game.id)}
-            className={`rounded-2xl border px-3 py-3 text-start ${active ? "border-[#E5C158] bg-[#E5C158]/10 shadow-[0_0_18px_rgba(212,175,55,0.25)]" : "border-[#3D352B] bg-[#221F1B]"}`}
+            className={`pointer-events-auto relative cursor-pointer rounded-2xl border-2 px-3 py-3 text-start transition-all ${active ? "border-[#D4AF37] bg-[#2A2415] shadow-[0_0_15px_rgba(212,175,55,0.3)]" : "border-[#3D352B] bg-[#221F1B]"}`}
           >
+            {active ? <Check className="absolute end-3 top-3 size-4 text-[#D4AF37]" /> : null}
             <span className="flex items-center gap-2 font-extrabold text-[#E5C158]">
               <GameIcon name={game.icon} className="size-4 shrink-0" />
               {lang === "en" ? game.nameEn : game.nameAr}
