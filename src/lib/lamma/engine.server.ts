@@ -967,7 +967,7 @@ async function scoreLocked(sql: Sql, code: string, auto = false): Promise<void> 
     ...state,
     reveal,
     endsAt: state.endsAt ?? null,
-    autoAt: auto ? new Date(Date.now() + 4000).toISOString() : null,
+    autoAt: auto ? new Date(Date.now() + 3000).toISOString() : null,
   };
   await sql`update rooms set status = 'ROUND_END', round_state = ${JSON.stringify(nextState)}::jsonb, revision = revision + 1, updated_at = now() where id = ${code}`;
 }

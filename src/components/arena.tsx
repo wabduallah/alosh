@@ -173,14 +173,15 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
 
   async function send(payload: Record<string, unknown>) {
     if (!snap || busy || snap.yourAnswered || sent || !tokens.player) return;
-    setBusy(true);
+    setSent(true);
     unlockAudio();
     const res = await submitAnswer({
       data: { code, playerToken: tokens.player, round: snap.room.round, payload },
     });
-    setBusy(false);
-    if (!res.ok) setLocalErr(res.error);
-    else setSent(true);
+    if (!res.ok) {
+      setSent(false);
+      setLocalErr(res.error);
+    }
   }
 
   if (!snap) {
@@ -250,34 +251,16 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
         ) : null}
 
         {snap.room.status === "PLAYING" ? (
-          <section className="grid items-start gap-6 lg:grid-cols-[1fr_22rem]">
-            <div className="grid content-center gap-6 py-6 text-center">
-              {snap.room.engine === "letter" ? (
-                <p className="text-sm uppercase tracking-widest text-bronze">{t("host.letter")}</p>
-              ) : null}
-              <h2 className="font-display text-5xl sm:text-7xl">
-                {snap.room.engine === "letter" ? snap.room.letter : promptOf(snap, lang)}
-              </h2>
-              {snap.room.question ? <PictureIcons names={snap.room.question.icons} /> : null}
-              <div className="flex justify-center">
-                <Countdown endsAt={snap.room.endsAt} total={snap.room.seconds} />
-              </div>
-            </div>
-            {snap.youAreHost ? (
-              <HostDock
-                snap={snap}
-                lang={lang}
-                busy={busy}
-                sent={sent}
-                localErr={localErr}
-                fields={fields}
-                setFields={setFields}
-                text={text}
-                setText={setText}
-                onSend={send}
-                onAct={act}
-              />
+          <section className="space-y-4">
+            <article className="rounded-3xl border border-[#3D352B] bg-[#1B1917] p-6 text-center">
+              <h2 className="font-display text-4xl text-[#E5C158] sm:text-6xl">{snap.room.engine === "letter" ? snap.room.letter : promptOf(snap, lang)}</h2>
+              <div className="mt-4 flex justify-center"><Countdown endsAt={snap.room.endsAt} total={snap.room.seconds} /></div>
+              <p className="mt-3 text-sm text-[#A89F91]">{answered}/{snap.players.length} أجابوا</p>
+            </article>
+            {snap.youAreHost && snap.room.hostMode !== "narrator" && snap.yourId ? (
+              <AnswerPanel snap={snap} lang={lang} busy={busy} fields={fields} setFields={setFields} text={text} setText={setText} onSend={send} picked={sent || snap.yourAnswered} />
             ) : null}
+            {snap.youAreHost ? <button type="button" className="fixed bottom-24 start-4 z-20 rounded-full border border-[#D4AF37] bg-[#1B1917] px-4 py-2 text-sm text-[#E5C158]" onClick={() => void act("endRound")}>إنهاء مبكر</button> : null}
           </section>
         ) : null}
 
@@ -329,7 +312,7 @@ function RevealBoard({
         {snap.room.auto ? <p className="text-sm text-ivory/70">{t("host.autoNext")}</p> : null}
       </div>
       {reveal?.correctAr ? (
-        <p className="text-3xl">{lang === "en" ? reveal.correctEn || reveal.correctAr : reveal.correctAr}</p>
+        <p className="text-3xl text-emerald-400">{lang === "en" ? reveal.correctEn || reveal.correctAr : reveal.correctAr}</p>
       ) : null}
       {reveal?.letterRows ? (
         <div className="overflow-x-auto">
@@ -558,7 +541,7 @@ function AnswerPanel({
   text,
   setText,
   onSend,
-  compact,
+  picked,
 }: {
   snap: Snapshot;
   lang: "ar" | "en";
@@ -569,6 +552,7 @@ function AnswerPanel({
   setText: (value: string) => void;
   onSend: (payload: Record<string, unknown>) => void;
   compact?: boolean;
+  picked?: boolean;
 }) {
   const { t } = useI18n();
   return (
@@ -603,11 +587,11 @@ function AnswerPanel({
         <>
           {compact ? null : <h2 className="text-2xl">{promptOf(snap, lang)}</h2>}
           {snap.yourId && snap.room.subjectId === snap.yourId ? <p className="text-sm text-muted">{t("pad.subject")}</p> : null}
-          <div className="grid gap-2">
+          <div className="grid gap-2 sm:grid-cols-2">
             {snap.room.question.choices.map((choice) => (
-              <Button key={choice.id} type="button" tone="ghost" disabled={busy} onClick={() => onSend(snap.room.engine === "truth" ? { side: choice.id } : { choiceId: choice.id })}>
+              <button key={choice.id} type="button" disabled={busy || picked} onClick={() => onSend(snap.room.engine === "truth" ? { side: choice.id } : { choiceId: choice.id })} className={`min-h-14 rounded-2xl border px-4 text-start font-extrabold ${picked ? "border-[#D4AF37] bg-[#2A2415] text-[#E5C158]" : "border-[#3D352B] bg-[#1B1917]"}`}>
                 {lang === "en" ? choice.en : choice.ar}
-              </Button>
+              </button>
             ))}
           </div>
         </>
@@ -764,25 +748,25 @@ export function PadScreen({ code }: { code: string }) {
 
   async function send(payload: Record<string, unknown>) {
     if (!snap || busy || snap.yourAnswered || sent) return;
-    setBusy(true);
+    setSent(true);
     unlockAudio();
     const res = await submitAnswer({
       data: { code, playerToken: tokens.player, round: snap.room.round, payload },
     });
-    setBusy(false);
-    if (!res.ok) setLocalErr(res.error);
-    else setSent(true);
+    if (!res.ok) {
+      setSent(false);
+      setLocalErr(res.error);
+    }
   }
 
   return (
-    <main className={`min-h-screen bg-sand px-4 py-5 text-ink ${showCheer ? "pb-32" : ""}`} onPointerDown={unlockAudio}>
-      <header className="mb-5 flex items-center justify-between">
+    <main className="min-h-screen bg-[#121110] px-4 py-5 text-ivory" onPointerDown={unlockAudio}>
+      <header className="mb-5 flex items-center justify-between rounded-3xl border border-[#3D352B] bg-[#1B1917] px-4 py-3">
         <div>
-          <p className="text-sm text-muted">{me?.name}</p>
-          <p className="font-display text-3xl tabular-nums">{me?.score ?? 0}</p>
-          <p className="text-xs text-muted">{t("pad.score")}</p>
+          <p className="text-sm text-[#A89F91]">{me?.name}</p>
+          <p className="font-display text-3xl tabular-nums text-[#E5C158]">{me?.score ?? 0}</p>
         </div>
-        <p className="text-sm text-muted">{t("host.round", { n: Math.max(snap.room.round, 1) })}</p>
+        <p className="text-sm text-[#A89F91]">{t("host.round", { n: Math.max(snap.room.round, 1) })}</p>
       </header>
       {localErr ? <p className="mb-3 text-sm">{t(`err.${localErr}`)}</p> : null}
 
@@ -799,12 +783,8 @@ export function PadScreen({ code }: { code: string }) {
         </section>
       ) : null}
 
-      {snap.room.status === "PLAYING" && (snap.yourAnswered || sent) ? (
-        <h1 className="font-display text-4xl">{t("pad.locked")}</h1>
-      ) : null}
-
-      {snap.room.status === "PLAYING" && !snap.yourAnswered && !sent ? (
-        <AnswerPanel snap={snap} lang={lang} busy={busy} fields={fields} setFields={setFields} text={text} setText={setText} onSend={(payload) => void send(payload)} />
+      {snap.room.status === "PLAYING" ? (
+        <AnswerPanel snap={snap} lang={lang} busy={busy} fields={fields} setFields={setFields} text={text} setText={setText} onSend={(payload) => void send(payload)} picked={sent || snap.yourAnswered} />
       ) : null}
 
       {snap.room.status === "ROUND_END" ? (
