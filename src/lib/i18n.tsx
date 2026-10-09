@@ -58,8 +58,9 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    document.documentElement.lang = "ar";
-    document.documentElement.dir = "rtl";
+    document.documentElement.lang = lang;
+    document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+    localStorage.setItem("lamma-lang", lang);
   }, [lang]);
 
   useEffect(() => {
