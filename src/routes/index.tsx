@@ -28,7 +28,7 @@ function Home() {
         </div>
       </section>
       <section className="mx-auto mt-10 grid max-w-5xl gap-3 sm:grid-cols-3">
-        <Link to="/games/multiplayer" className="rounded-3xl border border-[#3D352B] bg-[#171513] p-5 text-start shadow-[inset_0_0_0_1px_rgba(212,175,55,0.15)]">
+        <Link to="/games/competitive" className="rounded-3xl border border-[#3D352B] bg-[#171513] p-5 text-start shadow-[inset_0_0_0_1px_rgba(212,175,55,0.15)]">
           <span className="block text-lg font-extrabold text-[#E5C158]">ألعاب تنافسية</span>
           <span className="mt-1 block text-sm text-[#A89F91]">غرف جماعية: فرق، تحدي معلومات، وأسرع إجابة</span>
         </Link>

@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { useI18n, type Lang } from "@/lib/i18n";
 import type { ReactNode } from "react";
 
@@ -38,10 +38,12 @@ export function Shell({ children, paper = false }: { children: ReactNode; paper?
 }
 
 function PageBack() {
+  const path = useRouterState({ select: (state) => state.location.pathname });
+  if (path === "/") return null;
   return (
     <div className="mb-4 flex gap-2">
-      <button type="button" className="min-h-10 rounded-full border border-white/15 px-4 text-sm font-extrabold" onClick={() => window.history.back()}>رجوع</button>
-      <Link to="/" className="inline-flex min-h-10 items-center rounded-full border border-neon/40 px-4 text-sm font-extrabold text-neon">الرئيسية</Link>
+      <button type="button" className="min-h-10 rounded-full border border-[#3D352B] px-4 text-sm font-extrabold text-[#A89F91]" onClick={() => window.history.back()}>رجوع</button>
+      <Link to="/" className="inline-flex min-h-10 items-center rounded-full border border-[#D4AF37] px-4 text-sm font-extrabold text-[#E5C158]">الرئيسية</Link>
     </div>
   );
 }
