@@ -92,8 +92,8 @@ function GamesPage() {
             }}
             className={`min-h-10 shrink-0 rounded-full px-4 text-sm font-extrabold ${
               (id === tier || id === shelf || (id === "all" && tier === "all" && !shelf))
-                ? "bg-neon text-night"
-                : "border border-white/15 text-ivory/75"
+                ? "bg-[#D4AF37] text-black"
+                : "border border-[#3D352B] text-[#A89F91]"
             }`}
           >
             {label}
