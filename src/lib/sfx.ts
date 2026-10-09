@@ -24,6 +24,7 @@ export function unlockAudio() {
 }
 
 export function playCue(name: string, url?: string) {
+  if (typeof window !== "undefined" && localStorage.getItem("alosh-muted") === "1") return;
   if (url) {
     const node = new Audio(url);
     void node.play().catch(() => synth(name));

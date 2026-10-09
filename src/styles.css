@@ -12,8 +12,9 @@
   --color-bronze: #d4af37;
   --color-muted: #a89f91;
   --color-neon: #e5c158;
-  --color-night: #0f0e0d;
-  --color-gold: #d4af37;
+  --color-night: #0f172a;
+  --color-neon: #f59e0b;
+  --color-gold: #f59e0b;
 }
 
 @layer base {
