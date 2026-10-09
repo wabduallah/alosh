@@ -38,9 +38,6 @@ function QuestionsPage() {
           </article>
         ))}
       </div>
-          </article>
-        ))}
-      </div>
     </Shell>
   );
 }
