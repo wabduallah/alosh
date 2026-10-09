@@ -90,13 +90,11 @@ function SiteHeader({
         </button>
       </div>
       <nav className="mx-auto flex max-w-6xl gap-2 overflow-x-auto px-4 pb-3 text-sm">
+        <Link to="/play" search={{ game: "" }} className="shrink-0 rounded-full bg-[#06b6d4] px-3 py-2 font-extrabold text-[#090d16] shadow-[0_0_16px_rgba(6,182,212,0.35)]">إنشاء غرفة</Link>
+        <Link to="/join" className="shrink-0 rounded-full border border-[#06b6d4] px-3 py-2 font-extrabold text-[#06b6d4]">انضمام إلى غرفة</Link>
         <Link to="/" className="shrink-0 rounded-full border border-white/10 px-3 py-2">{t("nav.home")}</Link>
-        <Link to="/games" search={{ cat: "" }} className="shrink-0 rounded-full border border-white/10 px-3 py-2">{t("nav.games")}</Link>
-        <Link to="/questions" className="shrink-0 rounded-full border border-white/10 px-3 py-2">{t("nav.questions")}</Link>
         <Link to="/rank" className="shrink-0 rounded-full border border-white/10 px-3 py-2">{t("nav.rank")}</Link>
         <Link to="/settings" className="shrink-0 rounded-full border border-white/10 px-3 py-2">{t("nav.settings")}</Link>
-        <Link to="/play" search={{ game: "" }} className="shrink-0 rounded-full bg-[#6366f1] px-3 py-2 font-extrabold text-white">إنشاء غرفة</Link>
-        <Link to="/join" className="shrink-0 rounded-full border border-[#f59e0b] px-3 py-2 font-extrabold text-[#f59e0b]">انضمام سريع</Link>
       </nav>
     </header>
   );

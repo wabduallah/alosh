@@ -8,7 +8,7 @@ export function QrCode({ text, className = "size-44" }: { text: string; classNam
       mod.toDataURL(text, {
         margin: 1,
         width: 480,
-        color: { dark: "#E5C158", light: "#121110" },
+        color: { dark: "#111111", light: "#ffffff" },
       }),
     ).then((url) => {
       if (on) setSrc(url);
@@ -18,5 +18,5 @@ export function QrCode({ text, className = "size-44" }: { text: string; classNam
     };
   }, [text]);
   if (!src) return <div className={`${className} animate-pulse rounded-lg bg-ink/10`} />;
-  return <img src={src} alt="" className={`${className} rounded-lg bg-[#121110]`} />;
+  return <img src={src} alt="" className={`${className} rounded-lg bg-white p-2`} />;
 }
