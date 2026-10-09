@@ -72,13 +72,12 @@ function CreatePage() {
   const timeChoices = [60, 20, 30, 10];
   return (
     <Shell>
-      <header className="mb-5 flex items-center justify-between">
-        <Link to="/games" search={{ cat: "" }} className="text-2xl">←</Link>
-        <h1 className="text-3xl font-extrabold text-neon">إنشاء غرفة</h1>
-        <span className="text-2xl text-neon" aria-hidden="true">🛡️</span>
+      <header className="mb-5">
+        <h1 className="text-3xl font-extrabold text-[#E5C158]">إنشاء غرفة</h1>
+        <p className="mt-1 text-sm text-[#A89F91]">مجانية بالكامل · حتى 14 لاعباً</p>
       </header>
       <form
-        className="neon-card space-y-5 rounded-3xl p-4"
+        className="space-y-5 rounded-3xl border border-[#3D352B] bg-[#171513] p-4"
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
@@ -86,54 +85,51 @@ function CreatePage() {
       >
         <input className="sr-only" value={hostName} onChange={(e) => setHostName(e.target.value)} placeholder="اسم المضيف" />
         <div>
-          <p className="mb-2 text-end font-extrabold">نوع الغرفة</p>
+          <p className="mb-2 font-extrabold">نوع الغرفة</p>
           <div className="grid grid-cols-2 gap-2">
-            <button type="button" className={`min-h-14 rounded-2xl border font-extrabold ${hostMode === "narrator" ? "border-neon bg-neon text-night" : "border-white/15"}`} onClick={() => setHostMode("narrator")}>المضيف يدير فقط</button>
-            <button type="button" className={`min-h-14 rounded-2xl border font-extrabold ${hostMode === "player" ? "border-neon bg-neon text-night" : "border-white/15"}`} onClick={() => setHostMode("player")}>المضيف يشارك</button>
+            <button type="button" className={`min-h-14 rounded-2xl border font-extrabold ${hostMode === "narrator" ? "border-[#D4AF37] bg-[#D4AF37] text-black" : "border-[#3D352B] text-[#A89F91]"}`} onClick={() => setHostMode("narrator")}>المضيف يدير فقط</button>
+            <button type="button" className={`min-h-14 rounded-2xl border font-extrabold ${hostMode === "player" ? "border-[#D4AF37] bg-[#D4AF37] text-black" : "border-[#3D352B] text-[#A89F91]"}`} onClick={() => setHostMode("player")}>المضيف يشارك</button>
           </div>
         </div>
         <div>
-          <p className="mb-2 text-end font-extrabold">عدد الجولات</p>
-          <div className="grid grid-cols-4 gap-2 rounded-2xl border border-white/10 p-1">
+          <p className="mb-2 font-extrabold">عدد الجولات</p>
+          <div className="grid grid-cols-4 gap-2 rounded-2xl border border-[#3D352B] p-1">
             {roundChoices.map((n) => (
-              <button key={n} type="button" className={`min-h-12 rounded-xl font-extrabold ${rounds === n ? "bg-neon text-night" : ""}`} onClick={() => setRounds(n)}>{n}</button>
+              <button key={n} type="button" className={`min-h-12 rounded-xl font-extrabold ${rounds === n ? "bg-[#D4AF37] text-black" : "text-[#A89F91]"}`} onClick={() => setRounds(n)}>{n}</button>
             ))}
           </div>
         </div>
         <div>
-          <p className="mb-2 text-end font-extrabold">الوقت لكل جولة (ثانية)</p>
-          <div className="grid grid-cols-4 gap-2 rounded-2xl border border-white/10 p-1">
+          <p className="mb-2 font-extrabold">الوقت لكل جولة</p>
+          <div className="grid grid-cols-4 gap-2 rounded-2xl border border-[#3D352B] p-1">
             {timeChoices.map((n) => (
-              <button key={n} type="button" className={`min-h-12 rounded-xl font-extrabold ${seconds === n ? "bg-neon text-night" : ""}`} onClick={() => setSeconds(n)}>{n}</button>
+              <button key={n} type="button" className={`min-h-12 rounded-xl font-extrabold ${seconds === n ? "bg-[#D4AF37] text-black" : "text-[#A89F91]"}`} onClick={() => setSeconds(n)}>{n}</button>
             ))}
           </div>
         </div>
         <div>
-          <p className="mb-2 text-end font-extrabold">مستوى الصعوبة</p>
+          <p className="mb-2 font-extrabold">مستوى الصعوبة</p>
           <div className="grid grid-cols-3 gap-2">
             {([
               ["medium", "متوسط"],
               ["hard", "صعب"],
               ["mixed", "مزيج"],
             ] as const).map(([id, label]) => (
-              <button key={id} type="button" className={`min-h-12 rounded-2xl border font-extrabold ${difficulty === id ? "border-neon bg-neon text-night" : "border-white/15"}`} onClick={() => setDifficulty(id)}>{label}</button>
+              <button key={id} type="button" className={`min-h-12 rounded-2xl border font-extrabold ${difficulty === id ? "border-[#D4AF37] bg-[#D4AF37] text-black" : "border-[#3D352B] text-[#A89F91]"}`} onClick={() => setDifficulty(id)}>{label}</button>
             ))}
           </div>
         </div>
         <div>
-          <p className="mb-2 text-end font-extrabold">عدد اللاعبين</p>
-          <div className="flex items-center gap-2">
-            <span aria-hidden="true">👥</span>
-            <div className="grid flex-1 grid-cols-3 items-center rounded-2xl border border-white/10">
-              <button type="button" className="min-h-12 text-xl" onClick={() => setMaxPlayers((n) => Math.max(selected?.minPlayers ?? 2, n - 1))}>−</button>
-              <span className="text-center text-2xl font-extrabold">{maxPlayers}</span>
-              <button type="button" className="min-h-12 text-xl" onClick={() => setMaxPlayers((n) => Math.min(14, n + 1))}>+</button>
-            </div>
+          <p className="mb-2 font-extrabold">عدد اللاعبين</p>
+          <div className="grid grid-cols-3 items-center rounded-2xl border border-[#3D352B]">
+            <button type="button" className="min-h-12 text-xl" onClick={() => setMaxPlayers((n) => Math.max(selected?.minPlayers ?? 2, n - 1))}>−</button>
+            <span className="text-center text-2xl font-extrabold text-[#E5C158]">{maxPlayers}</span>
+            <button type="button" className="min-h-12 text-xl" onClick={() => setMaxPlayers((n) => Math.min(14, n + 1))}>+</button>
           </div>
-          <p className="mt-2 text-sm text-ivory/55">{selected?.minPlayers ?? 2} - 14 لاعبًا</p>
+          <p className="mt-2 text-sm text-[#A89F91]">{selected?.minPlayers ?? 2}–14 لاعباً</p>
         </div>
-        {error ? <p className="text-sm text-gold">{error}</p> : null}
-        <Button type="submit" disabled={busy || !gameId}>ابدأ</Button>
+        {error ? <p className="text-sm text-[#E5C158]">{error}</p> : null}
+        <button type="submit" disabled={busy || !gameId} className="min-h-12 w-full rounded-full bg-[#D4AF37] font-extrabold text-black disabled:opacity-40">ابدأ</button>
       </form>
     </Shell>
   );
