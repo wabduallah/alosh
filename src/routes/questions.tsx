@@ -19,7 +19,7 @@ function QuestionsPage() {
   }
   return (
     <Shell>
-      <p className="text-xs font-extrabold tracking-[0.22em] text-neon">QUESTION BANK</p>
+      <p className="text-xs font-extrabold tracking-[0.22em] text-neon">بنك الأسئلة</p>
       <h1 className="mt-2 text-4xl font-extrabold">بنك الأسئلة</h1>
       <p className="mt-3 max-w-2xl text-ivory/70">الأسئلة لا تُعرض دفعة واحدة. كل لعبة تسحب سؤال الجولة من البنك المنشور فقط، والاستيراد والتوليد يمران بمراجعة المدير قبل الاعتماد.</p>
       {!games.length ? <p className="mt-8 rounded-3xl border border-white/10 p-6 text-ivory/60">لا توجد ألعاب منشورة بعد.</p> : null}

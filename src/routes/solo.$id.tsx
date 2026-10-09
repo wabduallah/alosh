@@ -15,7 +15,7 @@ function SoloPlay() {
   const [qid, setQid] = useState(0);
   const [score, setScore] = useState(0);
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [level, setLevel] = useState<"medium" | "hard" | "mixed">("mixed");
 
   async function next() {
     setBusy(true);
@@ -52,7 +52,11 @@ function SoloPlay() {
         ))}
       </div>
       {note ? <p className="mt-4 text-[#E5C158]">{note}</p> : null}
-      <div className="mt-6 flex gap-2">
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        {(["medium", "hard", "mixed"] as const).map((id) => (
+          <button key={id} type="button" onClick={() => setLevel(id)} className={`min-h-11 rounded-full border ${level === id ? "border-neon bg-neon text-night" : "border-[#3D352B]"}`}>{id === "medium" ? "متوسط" : id === "hard" ? "صعب" : "مزيج"}</button>
+        ))}
+      </div>
         <button type="button" onClick={() => void next()} className="min-h-12 rounded-full bg-neon px-5 font-extrabold text-night">{prompt ? "سؤال آخر" : "ابدأ"}</button>
         <Link to="/games/single-player" className="inline-flex min-h-12 items-center rounded-full border border-[#3D352B] px-5">رجوع</Link>
       </div>

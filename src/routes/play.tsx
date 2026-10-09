@@ -109,6 +109,18 @@ function CreatePage() {
           </div>
         </div>
         <div>
+          <p className="mb-2 text-end font-extrabold">مستوى الصعوبة</p>
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              ["medium", "متوسط"],
+              ["hard", "صعب"],
+              ["mixed", "مزيج"],
+            ] as const).map(([id, label]) => (
+              <button key={id} type="button" className={`min-h-12 rounded-2xl border font-extrabold ${difficulty === id ? "border-neon bg-neon text-night" : "border-white/15"}`} onClick={() => setDifficulty(id)}>{label}</button>
+            ))}
+          </div>
+        </div>
+        <div>
           <p className="mb-2 text-end font-extrabold">عدد اللاعبين</p>
           <div className="flex items-center gap-2">
             <span aria-hidden="true">👥</span>

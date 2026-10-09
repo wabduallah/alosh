@@ -71,13 +71,6 @@ function SiteHeader({
             <span className="mt-0.5 block text-[10px] font-bold tracking-wide text-neon">ألعاب مجانية بالكامل</span>
           </span>
         </Link>
-        <button
-          type="button"
-          className="ms-auto min-h-10 rounded-full border border-white/15 px-3 text-sm font-extrabold"
-          onClick={() => setLang(lang === "ar" ? "en" : "ar")}
-        >
-          {lang === "ar" ? "EN" : "ع"}
-        </button>
       </div>
       <nav className="mx-auto flex max-w-6xl gap-2 overflow-x-auto px-4 pb-3 text-sm">
         <Link to="/" className="shrink-0 rounded-full border border-white/10 px-3 py-2">{t("nav.home")}</Link>

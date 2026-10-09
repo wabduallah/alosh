@@ -53,14 +53,13 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [bundle, setBundle] = useState<Bundle>(emptyBundle);
 
   useEffect(() => {
-    const saved = localStorage.getItem("lamma-lang");
-    if (saved === "en" || saved === "ar") setLangState(saved);
+    setLangState("ar");
+    localStorage.setItem("lamma-lang", "ar");
   }, []);
 
   useEffect(() => {
-    document.documentElement.lang = lang;
-    document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
-    localStorage.setItem("lamma-lang", lang);
+    document.documentElement.lang = "ar";
+    document.documentElement.dir = "rtl";
   }, [lang]);
 
   useEffect(() => {
