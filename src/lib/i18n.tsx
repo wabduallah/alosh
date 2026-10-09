@@ -53,8 +53,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [bundle, setBundle] = useState<Bundle>(emptyBundle);
 
   useEffect(() => {
-    setLangState("ar");
-    localStorage.setItem("lamma-lang", "ar");
+    const saved = localStorage.getItem("lamma-lang");
+    setLangState(saved === "en" ? "en" : "ar");
   }, []);
 
   useEffect(() => {

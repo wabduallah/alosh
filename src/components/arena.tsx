@@ -45,7 +45,7 @@ export function useRoom(code: string) {
           setSnap(res);
         }
         const playing = res.ok && res.room.status !== "CLOSED" && res.room.status !== "FINISHED";
-        timer = window.setTimeout(tick, playing ? 2500 : 4000);
+        timer = window.setTimeout(tick, playing ? 1200 : 2500);
       } catch {
         if (!stop) setError("SERVER");
         timer = window.setTimeout(tick, 3000);
