@@ -401,25 +401,12 @@ export async function createRoomNow(
 ): Promise<Fail | { ok: true; code: string; hostToken: string; playerId?: string; playerToken?: string }> {
   const sql = await db();
   const ip = await ipKey();
-  if (!allow(`create:${ip}`, 12, 60 * 60 * 1000)) return fail("RATE");
+  if (!allow(`create:${ip}`, 200, 60 * 60 * 1000)) return fail("RATE");
   const games = await sql<GameRow>`select * from games where id = ${input.gameId} and visible = true and status = 'published'`;
   const game = games[0];
   if (!game) return fail("GAME");
   const hostName = input.hostName ? cleanName(input.hostName) : null;
   if (input.hostName && !hostName) return fail("NAME_INVALID");
-  const isPro = await premium(sql, ctx.userId);
-  let unlocked = false;
-  if (input.promo) {
-    const promoResult = await applyPromo(sql, input.promo, ctx.userId, null);
-    if (!promoResult.ok) return promoResult;
-    unlocked = promoResult.unlocked;
-  }
-  if (game.tier === "premium" && !isPro && !unlocked) return fail("PREMIUM");
-  if (!isPro) {
-    const limits = await setting(sql, "limits", { freeRoomsPerDay: 5, ttlHours: 6 });
-    const used = await sql<{ n: number }>`select count(*) as n from rooms where host_ip = ${ip} and created_at > now() - interval '1 day'`;
-    if (num(used[0]?.n) >= num(limits.freeRoomsPerDay, 5)) return fail("ROOM_LIMIT");
-  }
   const settings = asSettings(
     {
       rounds: input.rounds || game.default_rounds,
@@ -442,7 +429,7 @@ export async function createRoomNow(
     if (!clash.length) break;
   }
   const hostToken = hex(16);
-  await sql`insert into rooms (id, host_token, host_user_id, host_ip, game_id, status, settings, round_state, unlocked, expires_at) values (${code}, ${hostToken}, ${ctx.userId}, ${ip}, ${game.id}, 'WAITING', ${JSON.stringify(settings)}::jsonb, '{}'::jsonb, ${unlocked}, now() + (${hours} * interval '1 hour'))`;
+  await sql`insert into rooms (id, host_token, host_user_id, host_ip, game_id, status, settings, round_state, unlocked, expires_at) values (${code}, ${hostToken}, ${ctx.userId}, ${ip}, ${game.id}, 'WAITING', ${JSON.stringify(settings)}::jsonb, '{}'::jsonb, true, now() + (${hours} * interval '1 hour'))`;
   if (!hostName) return { ok: true, code, hostToken };
   const playerId = rid(8);
   const playerToken = hex(16);
@@ -1099,8 +1086,6 @@ export async function hostNow(input: { code: string; hostToken: string; action: 
     const players = await sql<{ id: string }>`select id from players where room_id = ${code}`;
     const game = await sql<{ tier: string; min_players: number }>`select tier, min_players from games where id = ${room.game_id}`;
     if (!players.length || players.length < num(game[0]?.min_players, 2)) return fail("NEED_PLAYERS");
-    const isPro = await premium(sql, ctx.userId ?? room.host_user_id);
-    if (game[0]?.tier === "premium" && !isPro && !room.unlocked) return fail("PREMIUM");
     if (room.status === "FINISHED") {
       await sql`delete from answers where room_id = ${code}`;
       await sql`update players set score = 0, round_score = 0, correct_count = 0, wrong_count = 0 where room_id = ${code}`;
@@ -1165,8 +1150,6 @@ export async function hostNow(input: { code: string; hostToken: string; action: 
     const games = await sql<GameRow>`select * from games where id = ${gameId} and visible = true and status = 'published'`;
     const next = games[0];
     if (!next) return fail("GAME");
-    const isPro = await premium(sql, ctx.userId ?? room.host_user_id);
-    if (next.tier === "premium" && !isPro && !room.unlocked) return fail("PREMIUM");
     const settings = asSettings(room.settings, { rounds: next.default_rounds, seconds: next.default_seconds });
     settings.rounds = next.default_rounds;
     settings.seconds = next.default_seconds;
