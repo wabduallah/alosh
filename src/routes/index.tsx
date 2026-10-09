@@ -24,7 +24,8 @@ function Home() {
           <h1 className="text-5xl font-extrabold text-ivory">العش</h1>
         </div>
         <div className="mx-auto mt-6 h-px w-full bg-gradient-to-l from-transparent via-neon/50 to-transparent" />
-        <h2 className="mt-10 text-5xl font-extrabold leading-tight text-sand">اختاروا لعبتكم</h2>
+        <p className="mt-3 text-sm font-extrabold text-neon">ألعاب مجانية بالكامل</p>
+        <h2 className="mt-6 text-5xl font-extrabold leading-tight text-sand">اختاروا لعبتكم</h2>
         <p className="mt-4 text-lg text-ivory/70">لعب جماعي بسيط، ممتع، وجاهز في ثواني.</p>
         <div className="mx-auto mt-5 h-px w-40 bg-neon/40" />
         <div className="mt-8 flex items-center justify-center gap-3">
