@@ -3,17 +3,17 @@
 @theme {
   --font-sans: "Cairo", "IBM Plex Sans Arabic", "Segoe UI", tahoma, sans-serif;
   --font-display: "Fraunces", "Cairo", serif;
-  --color-ink: #1a120c;
-  --color-sand: #f4e6cc;
-  --color-ivory: #fff6e6;
-  --color-forest: #6a3e1c;
-  --color-forest-deep: #1a120c;
-  --color-moss: #a36b32;
-  --color-bronze: #c9842a;
-  --color-muted: #b89a78;
-  --color-neon: #f2b63a;
-  --color-night: #1a120c;
-  --color-gold: #ffe08a;
+  --color-ink: #121110;
+  --color-sand: #221f1b;
+  --color-ivory: #f6f1e8;
+  --color-forest: #1a1815;
+  --color-forest-deep: #121110;
+  --color-moss: #a89f91;
+  --color-bronze: #d4af37;
+  --color-muted: #a89f91;
+  --color-neon: #e5c158;
+  --color-night: #121110;
+  --color-gold: #d4af37;
 }
 
 @layer base {

@@ -196,11 +196,11 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
 
         {snap.room.status === "WAITING" ? (
           <section className="grid items-start gap-6 lg:grid-cols-[16rem_1fr]">
-            <div className="rounded-3xl bg-ivory p-4 text-ink">
-              <p className="text-xs text-muted">{t("host.ready")}</p>
-              <p className="mt-1 font-display text-4xl tracking-widest text-forest">{code}</p>
-              <p className="mt-2 text-sm">{t("host.count", { n: snap.players.length, max: snap.room.maxPlayers })}</p>
-              <div className="mt-3 w-fit rounded-xl bg-sand p-2">
+            <div className="rounded-3xl border border-[#3D352B] bg-[#221F1B] p-4 text-ivory">
+              <p className="text-xs text-[#A89F91]">{t("host.ready")}</p>
+              <p className="mt-1 font-display text-4xl tracking-[0.35em] text-[#E5C158]">{code}</p>
+              <p className="mt-2 text-sm text-[#A89F91]">{t("host.count", { n: snap.players.length, max: snap.room.maxPlayers })}</p>
+              <div className="mt-3 w-fit rounded-2xl border border-[#3D352B] bg-[#121110] p-3">
                 <QrCode text={link} />
               </div>
             </div>
@@ -212,11 +212,10 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
                 disabled={!snap.youAreHost}
                 onPick={(gameId) => void act("switchGame", { gameId })}
               />
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" tone="light" onClick={() => void act("start")} disabled={!snap.youAreHost || snap.players.length < snap.room.minPlayers}>{t("host.start")}</Button>
-                <Button type="button" tone="bronze" onClick={() => void act("bots")} disabled={!snap.youAreHost}>{t("host.bots")}</Button>
-                <Button type="button" tone="bronze" onClick={() => void copy(link, setCopied)}>{copied ? t("host.copied") : t("host.copy")}</Button>
-                <a className="inline-flex min-h-11 items-center rounded-full border border-ivory/30 px-5" href={`https://wa.me/?text=${encodeURIComponent(link)}`}>{t("host.whatsapp")}</a>
+              <div className="grid gap-2 sm:grid-cols-3">
+                <Button type="button" onClick={() => void act("start")} disabled={!snap.youAreHost || snap.players.length < snap.room.minPlayers}>{t("host.start")}</Button>
+                <Button type="button" tone="ghost" onClick={() => void copy(link, setCopied)}>{copied ? t("host.copied") : t("host.copy")}</Button>
+                <a className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#3D352B] bg-[#221F1B] px-5 text-[#E5C158]" href={`https://wa.me/?text=${encodeURIComponent(link)}`}>{t("host.whatsapp")}</a>
               </div>
               {snap.players.length < snap.room.minPlayers ? <p className="text-sm text-gold">{t("host.needMin", { n: snap.room.minPlayers })}</p> : null}
             </div>
@@ -499,19 +498,22 @@ function GamePicker({
 }) {
   const { lang } = useI18n();
   return (
-    <div className="grid max-h-80 grid-cols-1 gap-1 overflow-y-auto sm:grid-cols-2">
+    <div className="grid max-h-96 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
       {games.map((game) => {
         const active = game.id === currentId;
         return (
           <button
             key={game.id}
             type="button"
-            disabled={disabled || active}
+            disabled={disabled}
             onClick={() => onPick(game.id)}
-            className={`flex items-center gap-2 rounded-xl px-3 py-2 text-start ${active ? "bg-ivory text-ink" : "text-ivory hover:bg-ivory/10"}`}
+            className={`rounded-2xl border px-3 py-3 text-start ${active ? "border-[#E5C158] bg-[#E5C158]/10 shadow-[0_0_18px_rgba(212,175,55,0.25)]" : "border-[#3D352B] bg-[#221F1B]"}`}
           >
-            <GameIcon name={game.icon} className={`size-4 shrink-0 ${active ? "text-forest" : "text-bronze"}`} />
-            <span className="truncate text-sm">{lang === "en" ? game.nameEn : game.nameAr}</span>
+            <span className="flex items-center gap-2 font-extrabold text-[#E5C158]">
+              <GameIcon name={game.icon} className="size-4 shrink-0" />
+              {lang === "en" ? game.nameEn : game.nameAr}
+            </span>
+            <span className="mt-1 block text-xs text-[#A89F91]">{lang === "en" ? game.descriptionEn : game.descriptionAr}</span>
           </button>
         );
       })}
