@@ -272,7 +272,7 @@ async function seedAll(sql: Sql): Promise<void> {
     ["brand", { ar: "العش", en: "The Nest" }],
     ["ads", { enabled: false }],
     ["limits", { freeRoomsPerDay: 5, ttlHours: 6 }],
-    ["studio", { code: "LAMMA-HOST", open: true }],
+    ["studio", { code: "", open: false }],
     ["sounds", { click: "", countdown: "", correct: "", wrong: "", winner: "", round: "", lobby: "", victory: "" }],
     ["seed", { loaded: true, purged: false, catalog: 4 }],
   ];

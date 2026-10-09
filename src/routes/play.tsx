@@ -130,7 +130,7 @@ function CreatePage() {
               <button type="button" className="min-h-12 text-xl" onClick={() => setMaxPlayers((n) => Math.min(14, n + 1))}>+</button>
             </div>
           </div>
-          <p className="mt-2 text-sm text-ivory/55">{selected?.minPlayers ?? 2} - 10 لاعبين</p>
+          <p className="mt-2 text-sm text-ivory/55">{selected?.minPlayers ?? 2} - 14 لاعبًا</p>
         </div>
         {error ? <p className="text-sm text-gold">{error}</p> : null}
         <Button type="submit" disabled={busy || !gameId}>ابدأ</Button>

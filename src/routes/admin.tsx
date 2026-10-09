@@ -47,7 +47,7 @@ function AdminPage() {
       <Shell>
         <p className="text-sm text-neon">المشرف العام</p>
         <h1 className="text-4xl font-extrabold">لوحة التحكم</h1>
-        <p className="mt-2 text-ivory/70">الدخول برمز الإدارة فقط.</p>
+        <p className="mt-2 text-ivory/70">الدخول برمز الإدارة المحدد في الخادم فقط. لا يوجد رمز افتراضي.</p>
         <form
           className="mt-4 max-w-md space-y-3"
           onSubmit={(e) => {

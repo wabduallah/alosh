@@ -1,6 +1,7 @@
 import { getRequest } from "@tanstack/react-start/server";
 import { getSql, type Sql } from "@/lib/db";
 import { isAdmin, ready } from "./engine.server";
+import { adminCookieValid } from "./admin-cookie";
 import { markPaymentPaid } from "./payments.server";
 
 type Ctx = { userId: string | null; email: string | null };
@@ -16,8 +17,7 @@ function text(value: unknown, max = 500): string {
 
 function hasAdminCookie(): boolean {
   try {
-    const cookie = getRequest().headers.get("cookie") ?? "";
-    return cookie.split(";").some((part) => part.trim() === "alosh_admin=ok");
+    return adminCookieValid(getRequest().headers.get("cookie"));
   } catch {
     return false;
   }
