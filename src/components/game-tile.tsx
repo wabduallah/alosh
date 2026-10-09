@@ -8,15 +8,11 @@ export function GameTile({ game }: { game: GameCard }) {
   const { t, lang } = useI18n();
   const name = lang === "en" ? game.nameEn : game.nameAr;
   const desc = lang === "en" ? game.descriptionEn : game.descriptionAr;
-  const premium = game.tier === "premium";
   return (
-    <article className={`neon-card flex h-full flex-col rounded-3xl p-4 ${premium ? "gold-card" : ""}`}>
+    <article className="neon-card flex h-full flex-col rounded-3xl border border-[#3D352B] bg-[#1B1917] p-4">
       <div className="flex items-start justify-between gap-3">
-        <span className={`grid size-14 place-items-center rounded-2xl ${premium ? "bg-gold/15 text-gold" : "bg-neon/15 text-neon"}`}>
+        <span className="grid size-14 place-items-center rounded-2xl bg-neon/15 text-neon">
           <GameIcon name={game.icon} className="size-7" />
-        </span>
-        <span className={`rounded-full px-3 py-1 text-[11px] font-extrabold ${premium ? "bg-gold/15 text-gold" : "bg-neon/15 text-neon"}`}>
-          {premium ? t("tier.premium") : t("tier.free")}
         </span>
       </div>
       <h3 className="mt-4 text-lg font-extrabold leading-snug">{name}</h3>

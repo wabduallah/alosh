@@ -51,8 +51,7 @@ function GamesPage() {
   const shelves = browsing
     ? [{ title: t("browse.all"), items: filtered }]
     : [
-        { title: t("browse.freeShelf"), items: games.filter((game) => game.tier === "free") },
-        { title: t("browse.premiumShelf"), items: games.filter((game) => game.tier === "premium") },
+        { title: t("browse.all"), items: games },
         { title: t("browse.hot"), items: [...games].sort((a, b) => b.plays - a.plays).slice(0, 6) },
         { title: t("browse.newest"), items: [...games].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 6) },
         { title: t("browse.big"), items: games.filter((game) => game.maxPlayers >= 10) },
@@ -73,8 +72,6 @@ function GamesPage() {
       <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
         {[
           ["all", t("browse.all")],
-          ["free", t("cat.free")],
-          ["premium", t("cat.premium")],
           ...CATALOG.map((item) => [item.id, lang === "en" ? item.en : item.ar] as const),
         ].map(([id, label]) => (
           <button

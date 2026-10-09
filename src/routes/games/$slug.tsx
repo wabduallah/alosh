@@ -1,11 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
 import { GameIcon } from "@/components/icons";
 import { Shell } from "@/components/shell";
 import { Button } from "@/components/ui";
-import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { useI18n } from "@/lib/i18n";
-import { getGame, getProfile, toggleFavorite } from "@/lib/lamma/rpc";
+import { getGame } from "@/lib/lamma/rpc";
 
 export const Route = createFileRoute("/games/$slug")({
   loader: ({ params }) => getGame({ data: { id: params.slug } }),
@@ -25,14 +23,6 @@ function lines(value: string) {
 function GamePage() {
   const game = Route.useLoaderData();
   const { t, lang } = useI18n();
-  const { user } = useCurrentUserState();
-  const [premium, setPremium] = useState(false);
-  useEffect(() => {
-    if (!user) return;
-    void getProfile().then((result) => {
-      if (result.ok) setPremium(result.profile.premium || result.profile.role === "admin");
-    });
-  }, [user]);
   if (!game) {
     return (
       <Shell>
@@ -44,18 +34,16 @@ function GamePage() {
   const desc = lang === "en" ? game.descriptionEn : game.descriptionAr;
   const rules = lines(lang === "en" ? game.rulesEn : game.rulesAr);
   const how = lines(lang === "en" ? game.howEn : game.howAr);
-  const locked = game.tier === "premium" && !premium;
   return (
     <Shell>
       <article className="mx-auto max-w-3xl">
         <p className="text-sm text-neon">{t(`cat.${game.category}`)}</p>
         <div className="mt-4 flex items-center gap-4">
-          <span className={`grid size-16 place-items-center rounded-2xl ${game.tier === "premium" ? "bg-gold/15 text-gold" : "bg-neon/15 text-neon"}`}>
+          <span className="grid size-16 place-items-center rounded-2xl bg-neon/15 text-neon">
             <GameIcon name={game.icon} className="size-8" />
           </span>
           <div>
             <h1 className="text-4xl font-extrabold">{name}</h1>
-            <p className="mt-1 text-sm text-ivory/60">{game.tier === "premium" ? t("tier.premium") : t("tier.free")}</p>
           </div>
         </div>
         <p className="mt-5 text-lg leading-relaxed text-ivory/75">{desc}</p>
@@ -87,19 +75,9 @@ function GamePage() {
           <p className="mt-2 text-sm leading-relaxed text-ivory/70">{t("how.2d")}</p>
         </section>
         <div className="mt-6 flex flex-wrap gap-3">
-          {locked ? (
-            <Link to="/premium"><Button type="button" tone="bronze">{t("browse.subscribe")}</Button></Link>
-          ) : (
-            <Link to="/play" search={{ game: game.id }}><Button type="button">{t("hero.start")}</Button></Link>
-          )}
+          <Link to="/play" search={{ game: game.id }}><Button type="button">{t("hero.start")}</Button></Link>
           <Link to="/games" search={{ cat: "" }}><Button type="button" tone="glass">{t("browse.back")}</Button></Link>
-          {user ? (
-            <Button type="button" tone="glass" onClick={() => void toggleFavorite({ data: { gameId: game.id } })}>
-              {t("profile.favorites")}
-            </Button>
-          ) : null}
         </div>
-        {locked ? <p className="mt-4 text-gold">{t("browse.locked")}</p> : null}
       </article>
     </Shell>
   );
