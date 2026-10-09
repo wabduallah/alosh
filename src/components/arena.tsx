@@ -115,6 +115,7 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
   const navigate = useNavigate();
   const [selectedId, setSelectedId] = useState("");
   const switchTimer = useRef<number | null>(null);
+  const prev = useRef<Snapshot | null>(null);
   const link = joinLink(code);
 
   useEffect(() => {
