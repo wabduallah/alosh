@@ -58,15 +58,16 @@ function GamesPage() {
       ];
   return (
     <Shell>
-      <h1 className="text-4xl font-extrabold">{t("nav.games")}</h1>
-      <p className="mt-2 max-w-2xl text-ivory/65">{t("library.lead")}</p>
+      <p className="text-sm font-extrabold text-[#E5C158]">مكتبة العش</p>
+      <h1 className="mt-1 text-4xl font-extrabold">الألعاب</h1>
+      <p className="mt-2 max-w-2xl text-[#A89F91]">اختَر لعبة، ثم أنشئ غرفة أو ابدأ فردياً. كل الألعاب مجانية.</p>
       <label className="mt-6 block">
         <span className="sr-only">{t("browse.search")}</span>
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder={t("browse.search")}
-          className="min-h-12 w-full rounded-full border border-white/15 bg-white/5 px-5 text-ivory outline-none placeholder:text-ivory/40"
+          className="min-h-12 w-full rounded-full border border-[#3D352B] bg-[#171513] px-5 text-ivory outline-none placeholder:text-[#A89F91]"
         />
       </label>
       <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
@@ -91,8 +92,8 @@ function GamesPage() {
             }}
             className={`min-h-10 shrink-0 rounded-full px-4 text-sm font-extrabold ${
               (id === tier || id === shelf || (id === "all" && tier === "all" && !shelf))
-                ? "bg-neon text-night"
-                : "border border-white/15 text-ivory/75"
+                ? "bg-[#D4AF37] text-black"
+                : "border border-[#3D352B] text-[#A89F91]"
             }`}
           >
             {label}

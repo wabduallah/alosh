@@ -94,7 +94,7 @@ function AdminPage() {
         {tab === "plans" ? <Plans data={data} onSave={(payload) => void mutate("savePlan", payload)} /> : null}
         {tab === "payments" ? <Payments data={data} onPaid={(id) => void mutate("markPayment", { id })} /> : null}
         {tab === "users" ? <Users data={data} onRole={(userId, role) => void mutate("setRole", { userId, role })} /> : null}
-        {tab === "rooms" ? <Rooms data={data} onClose={(id) => void mutate("closeRoom", { id })} /> : null}
+        {tab === "rooms" ? <Rooms data={data} onClose={(id) => void mutate("closeRoom", { id })} onReset={(id) => void mutate("resetRoom", { id })} /> : null}
         {tab === "lexicon" ? <Lexicon data={data} onAdd={(payload) => void mutate("addLexicon", payload)} /> : null}
         {tab === "translations" ? <Strings data={data} onSave={(payload) => void mutate("setString", payload)} /> : null}
         {tab === "categories" ? <Cats data={data} onSave={(payload) => void mutate("saveCategory", payload)} /> : null}
@@ -361,14 +361,17 @@ function Users({ data, onRole }: { data: unknown; onRole: (id: string, role: str
   );
 }
 
-function Rooms({ data, onClose }: { data: unknown; onClose: (id: string) => void }) {
+function Rooms({ data, onClose, onReset }: { data: unknown; onClose: (id: string) => void; onReset: (id: string) => void }) {
   const rows = Array.isArray(data) ? data as { id: string; game_id: string; status: string }[] : [];
   return (
     <ul className="space-y-2">
       {rows.map((row) => (
-        <li key={row.id} className="flex items-center justify-between rounded-2xl bg-ivory px-4 py-3">
+        <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#3D352B] bg-[#171513] px-4 py-3">
           <span>{row.id} · {row.game_id} · {row.status}</span>
-          <Button type="button" tone="ghost" onClick={() => onClose(row.id)}>close</Button>
+          <span className="flex gap-2">
+            <button type="button" className="rounded-full border border-[#D4AF37] px-3 py-1 text-sm text-[#E5C158]" onClick={() => onReset(row.id)}>تصفير</button>
+            <button type="button" className="rounded-full bg-[#D4AF37] px-3 py-1 text-sm font-extrabold text-black" onClick={() => onClose(row.id)}>إنهاء</button>
+          </span>
         </li>
       ))}
     </ul>

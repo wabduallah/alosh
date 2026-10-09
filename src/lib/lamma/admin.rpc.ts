@@ -11,9 +11,16 @@ function pack(value: unknown): Json {
   return JSON.parse(JSON.stringify(value)) as Json;
 }
 
+const unlockHits = new Map<string, number[]>();
+
 export const unlockAdmin = createServerFn({ method: "POST" })
   .validator((input: { code?: string }) => ({ code: text(input?.code, 40) }))
   .handler(async ({ data }) => {
+    const now = Date.now();
+    const hits = (unlockHits.get("gate") ?? []).filter((at) => now - at < 10 * 60 * 1000);
+    if (hits.length >= 5) return { ok: false as const, error: "RATE" };
+    hits.push(now);
+    unlockHits.set("gate", hits);
     const { adminCodeMatches, issueAdminCookie } = await import("./admin-cookie");
     if (!adminCodeMatches(data.code)) return { ok: false as const, error: "FORBIDDEN" };
     const cookie = issueAdminCookie();

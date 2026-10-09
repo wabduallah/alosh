@@ -37,13 +37,14 @@ function GamePage() {
   return (
     <Shell>
       <article className="mx-auto max-w-3xl">
-        <p className="text-sm text-neon">{t(`cat.${game.category}`)}</p>
-        <div className="mt-4 flex items-center gap-4">
-          <span className="grid size-16 place-items-center rounded-2xl bg-neon/15 text-neon">
+        <p className="text-sm font-extrabold text-[#E5C158]">{t(`cat.${game.category}`)}</p>
+        <div className="mt-4 flex items-center gap-4 rounded-3xl border border-[#3D352B] bg-[#171513] p-4">
+          <span className="grid size-16 place-items-center rounded-2xl border border-[#3D352B] bg-[#1B1917] text-[#E5C158]">
             <GameIcon name={game.icon} className="size-8" />
           </span>
           <div>
             <h1 className="text-4xl font-extrabold">{name}</h1>
+            <p className="mt-1 text-sm text-[#A89F91]">{game.minPlayers}–{game.maxPlayers} لاعبين</p>
           </div>
         </div>
         <p className="mt-5 text-lg leading-relaxed text-ivory/75">{desc}</p>
@@ -52,31 +53,27 @@ function GamePage() {
             [t("create.players"), t("browse.players", { min: game.minPlayers, max: game.maxPlayers })],
             [t("browse.minutes", { min: game.durationMin, max: game.durationMax }), t(`mode.${game.playMode}`)],
           ].map(([label, value]) => (
-            <div key={label} className="neon-card rounded-2xl px-4 py-3">
-              <dt className="text-xs text-ivory/50">{label}</dt>
-              <dd className="mt-1 font-extrabold">{value}</dd>
+            <div key={label} className="rounded-2xl border border-[#3D352B] bg-[#171513] px-4 py-3">
+              <dt className="text-xs text-[#A89F91]">{label}</dt>
+              <dd className="mt-1 font-extrabold text-[#E5C158]">{value}</dd>
             </div>
           ))}
         </dl>
-        <section className="mt-8">
+        <section className="mt-8 rounded-3xl border border-[#3D352B] bg-[#171513] p-5">
           <h2 className="text-2xl font-extrabold">{t("browse.how")}</h2>
           <ol className="mt-3 space-y-2 text-ivory/80">
             {how.map((line, index) => <li key={line}>{index + 1}. {line}</li>)}
           </ol>
         </section>
-        <section className="mt-8">
+        <section className="mt-4 rounded-3xl border border-[#3D352B] bg-[#171513] p-5">
           <h2 className="text-2xl font-extrabold">{t("browse.rules")}</h2>
           <ul className="mt-3 space-y-2 text-ivory/80">
             {rules.map((line) => <li key={line}>{line}</li>)}
           </ul>
         </section>
-        <section className="neon-card mt-8 rounded-3xl p-5">
-          <h2 className="text-xl font-extrabold">{t("browse.setup")}</h2>
-          <p className="mt-2 text-sm leading-relaxed text-ivory/70">{t("how.2d")}</p>
-        </section>
-        <div className="mt-6 flex flex-wrap gap-3">
-          <Link to="/play" search={{ game: game.id }}><Button type="button">{t("hero.start")}</Button></Link>
-          <Link to="/games" search={{ cat: "" }}><Button type="button" tone="glass">{t("browse.back")}</Button></Link>
+        <div className="mt-6 grid gap-3 sm:grid-cols-2">
+          <Link to="/play" search={{ game: game.id }} className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#D4AF37] font-extrabold text-black">إنشاء غرفة</Link>
+          <Link to="/games" search={{ cat: "" }} className="inline-flex min-h-12 items-center justify-center rounded-full border border-[#D4AF37] text-[#E5C158]">العودة للألعاب</Link>
         </div>
       </article>
     </Shell>
