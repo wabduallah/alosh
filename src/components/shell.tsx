@@ -27,9 +27,17 @@ export function Shell({ children, paper = false }: { children: ReactNode; paper?
       </div>
       {paper ? null : (
         <footer className="mt-10 border-t border-white/10">
-          <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-8 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-lg font-extrabold text-neon">{brand}</p>
-            <p className="text-sm text-ivory/55">ألعاب مجانية بالكامل</p>
+          <div className="mx-auto grid max-w-6xl gap-4 px-4 py-8 sm:grid-cols-3">
+            <div>
+              <p className="text-lg font-extrabold text-[#f59e0b]">{brand}</p>
+              <p className="mt-1 text-sm text-ivory/60">العب، نافس، وابتكر. ألعاب مجانية بالكامل.</p>
+            </div>
+            <div className="text-sm text-ivory/70">
+              <Link to="/games" search={{ cat: "" }} className="block py-1">الأقسام</Link>
+              <Link to="/questions" className="block py-1">بنك الأسئلة</Link>
+              <Link to="/join" className="block py-1">انضمام سريع</Link>
+            </div>
+            <p className="text-sm text-ivory/50">الحالة: متصل بالخادم عند فتح غرفة. لا توجد شارة نشاط مزيفة.</p>
           </div>
         </footer>
       )}
@@ -70,7 +78,7 @@ function SiteHeader({
           </span>
           <span>
             {brand}
-            <span className="mt-0.5 block text-[10px] font-bold tracking-wide text-neon">ألعاب مجانية بالكامل</span>
+            <span className="mt-0.5 block text-[10px] font-bold tracking-wide text-neon">حيث تلتقي التحديات بالمتعة الجماعية</span>
           </span>
         </Link>
         <button
@@ -87,7 +95,8 @@ function SiteHeader({
         <Link to="/questions" className="shrink-0 rounded-full border border-white/10 px-3 py-2">{t("nav.questions")}</Link>
         <Link to="/rank" className="shrink-0 rounded-full border border-white/10 px-3 py-2">{t("nav.rank")}</Link>
         <Link to="/settings" className="shrink-0 rounded-full border border-white/10 px-3 py-2">{t("nav.settings")}</Link>
-        <Link to="/play" search={{ game: "" }} className="shrink-0 rounded-full bg-neon px-3 py-2 font-extrabold text-night">{t("nav.play")}</Link>
+        <Link to="/play" search={{ game: "" }} className="shrink-0 rounded-full bg-[#6366f1] px-3 py-2 font-extrabold text-white">إنشاء غرفة</Link>
+        <Link to="/join" className="shrink-0 rounded-full border border-[#f59e0b] px-3 py-2 font-extrabold text-[#f59e0b]">انضمام سريع</Link>
       </nav>
     </header>
   );
