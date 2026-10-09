@@ -554,6 +554,7 @@ function AnswerPanel({
   text,
   setText,
   onSend,
+  compact,
   picked,
 }: {
   snap: Snapshot;
