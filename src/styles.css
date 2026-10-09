@@ -112,7 +112,7 @@
   background:
     radial-gradient(900px 420px at 110% -10%, color-mix(in srgb, #3ee0c5 18%, transparent), transparent 60%),
     radial-gradient(700px 360px at -10% 0%, color-mix(in srgb, var(--color-neon) 16%, transparent), transparent 62%),
-    linear-gradient(180deg, #120e0b 0%, #1a120c 40%, #0e0c0a 100%);
+    linear-gradient(180deg, #090d16 0%, #131b2e 40%, #0d111c 100%);
 }
 .glass {
   background: color-mix(in srgb, #fff 6%, transparent);
