@@ -96,6 +96,7 @@ export type Snapshot = {
     subjectId: string | null;
     minPlayers: number;
     maxPlayers: number;
+    hostIsPlayer: boolean;
     hostMode: "player" | "narrator";
     hostAnswer: string | null;
   };

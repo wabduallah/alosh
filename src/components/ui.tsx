@@ -4,21 +4,24 @@ export function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
+export type ButtonTone = "primary" | "violet" | "light" | "glass" | "ghost" | "danger";
+
 export function Button({
   tone = "primary",
   className,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: "primary" | "ghost" | "bronze" | "light" | "glass" }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: ButtonTone }) {
   return (
     <button
       {...props}
       className={cx(
-        "inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50",
-        tone === "primary" && "bg-neon text-night shadow-[0_0_22px_color-mix(in_srgb,var(--color-neon)_35%,transparent)] hover:brightness-110",
-        tone === "light" && "bg-ivory text-night hover:bg-sand",
-        tone === "bronze" && "bg-gold text-night",
-        tone === "glass" && "border border-neon/30 bg-white/5 text-ivory hover:border-neon/70",
-        tone === "ghost" && "border border-ink/15 bg-ivory text-ink",
+        "inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 text-sm font-bold transition-all duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50",
+        tone === "primary" && "bg-neon text-night shadow-[0_0_22px_rgb(6_182_212/0.35)] hover:brightness-110",
+        tone === "violet" && "bg-violet text-white shadow-[0_0_22px_rgb(139_92_246/0.35)] hover:brightness-110",
+        tone === "light" && "bg-ivory text-night hover:brightness-95",
+        tone === "glass" && "border border-white/10 bg-white/[0.03] text-ivory hover:border-neon/60",
+        tone === "ghost" && "border border-white/15 bg-transparent text-ivory hover:border-neon/60",
+        tone === "danger" && "border border-crimson/50 bg-crimson/10 text-red-200 hover:bg-crimson/20",
         className,
       )}
     />
@@ -41,7 +44,7 @@ export function Field({
 }
 
 export const inputClass =
-  "min-h-11 w-full rounded-xl border border-ink/15 bg-ivory px-3 text-ink outline-none";
+  "min-h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-ivory placeholder:text-muted outline-none transition focus:border-neon/70 focus:shadow-[0_0_0_3px_rgb(6_182_212/0.15)] disabled:opacity-60";
 
 export function joinLink(code: string) {
   if (typeof window === "undefined") return `/join/${code}`;

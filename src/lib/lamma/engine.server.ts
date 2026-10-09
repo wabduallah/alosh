@@ -104,6 +104,7 @@ type Settings = {
   music: boolean;
   maxPlayers: number;
   locale: Locale;
+  hostIsPlayer: boolean;
   hostMode: "player" | "narrator";
 };
 
@@ -124,6 +125,7 @@ type Choice = { id: string; ar: string; en: string; points?: number };
 const ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const hits = new Map<string, { n: number; t: number }>();
 const CHEER_TTL_MS = 6500;
+const AUTO_NEXT_MS = 2500;
 let seeding: Promise<void> | null = null;
 let lastSweep = 0;
 
@@ -201,15 +203,17 @@ function cleanName(input: string): string | null {
 function asSettings(value: unknown, fallback?: Partial<Settings>): Settings {
   const raw = jparse<Partial<Settings>>(value, {});
   const difficulty = raw.difficulty;
+  const hostIsPlayer = typeof raw.hostIsPlayer === "boolean" ? raw.hostIsPlayer : raw.hostMode !== "narrator";
   return {
     rounds: clamp(raw.rounds, 1, 15, fallback?.rounds ?? 6),
     seconds: clamp(raw.seconds, 8, 180, fallback?.seconds ?? 30),
     difficulty: difficulty === "easy" || difficulty === "medium" || difficulty === "hard" || difficulty === "mixed" ? difficulty : (fallback?.difficulty ?? "mixed"),
     sound: raw.sound !== false,
     music: raw.music === true,
-    maxPlayers: clamp(raw.maxPlayers, 2, 14, fallback?.maxPlayers ?? 14),
+    maxPlayers: clamp(raw.maxPlayers, 2, 14, fallback?.maxPlayers ?? 2),
     locale: raw.locale === "en" ? "en" : "ar",
-    hostMode: raw.hostMode === "narrator" ? "narrator" : "player",
+    hostIsPlayer,
+    hostMode: hostIsPlayer ? "player" : "narrator",
   };
 }
 
@@ -396,6 +400,7 @@ export async function createRoomNow(
     promo?: string;
     hostName?: string;
     hostMode?: "player" | "narrator";
+    hostIsPlayer?: boolean;
   },
   ctx: Ctx,
 ): Promise<Fail | { ok: true; code: string; hostToken: string; playerId?: string; playerToken?: string }> {
@@ -414,9 +419,9 @@ export async function createRoomNow(
       difficulty: input.difficulty,
       sound: input.sound,
       music: input.music,
-      maxPlayers: Math.min(14, Math.max(game.min_players, input.maxPlayers || game.max_players)),
+      maxPlayers: Math.min(14, Math.max(2, game.min_players, Math.round(input.maxPlayers) || 2)),
       locale: input.locale,
-      hostMode: input.hostMode === "narrator" ? "narrator" : "player",
+      hostIsPlayer: input.hostIsPlayer ?? input.hostMode !== "narrator",
     },
     { rounds: game.default_rounds, seconds: game.default_seconds },
   );
@@ -430,10 +435,12 @@ export async function createRoomNow(
   }
   const hostToken = hex(16);
   await sql`insert into rooms (id, host_token, host_user_id, host_ip, game_id, status, settings, round_state, unlocked, expires_at) values (${code}, ${hostToken}, ${ctx.userId}, ${ip}, ${game.id}, 'WAITING', ${JSON.stringify(settings)}::jsonb, '{}'::jsonb, true, now() + (${hours} * interval '1 hour'))`;
-  if (!hostName) return { ok: true, code, hostToken };
+  // Host-as-player: the host always gets a real seat (and therefore a Player Pad) when hostIsPlayer is set.
+  if (!settings.hostIsPlayer) return { ok: true, code, hostToken };
+  const seatName = hostName ?? (input.locale === "en" ? "Host" : "المضيف");
   const playerId = rid(8);
   const playerToken = hex(16);
-  await sql`insert into players (id, room_id, token, name, user_id) values (${playerId}, ${code}, ${playerToken}, ${hostName}, ${ctx.userId})`;
+  await sql`insert into players (id, room_id, token, name, user_id) values (${playerId}, ${code}, ${playerToken}, ${seatName}, ${ctx.userId})`;
   return { ok: true, code, hostToken, playerId, playerToken };
 }
 
@@ -552,6 +559,7 @@ async function buildSnap(sql: Sql, code: string, hostToken?: string, playerToken
       subjectId: roundState.subjectId ?? null,
       minPlayers: fresh.game.min_players,
       maxPlayers: settings.maxPlayers,
+      hostIsPlayer: settings.hostIsPlayer,
       hostMode: settings.hostMode,
       hostAnswer: tokensMatch(fresh.room.host_token, hostToken) && settings.hostMode === "narrator" ? (q?.correct ?? null) : null,
     },
@@ -742,15 +750,16 @@ async function addScore(sql: Sql, playerId: string, points: number, correct: num
   await sql`update players set score = score + ${points}, round_score = ${points}, correct_count = correct_count + ${correct}, wrong_count = wrong_count + ${wrong} where id = ${playerId}`;
 }
 
-async function autoCloseIfComplete(sql: Sql, code: string): Promise<void> {
+async function autoCloseIfComplete(sql: Sql, code: string): Promise<boolean> {
   const data = await bundle(sql, code);
-  if (!data || data.room.status !== "PLAYING") return;
+  if (!data || data.room.status !== "PLAYING") return false;
   const humans = data.players.filter((player) => !player.is_bot);
-  if (!humans.length) return;
+  if (!humans.length) return false;
   const rows = await sql<{ player_id: string }>`select player_id from answers where room_id = ${code} and round = ${data.room.current_round}`;
   const have = new Set(rows.map((row) => row.player_id));
-  if (!humans.every((player) => have.has(player.id))) return;
+  if (!humans.every((player) => have.has(player.id))) return false;
   await closeRound(sql, code, true, true);
+  return true;
 }
 
 async function advanceIfDue(sql: Sql, code: string): Promise<void> {
@@ -774,7 +783,8 @@ async function advanceIfDue(sql: Sql, code: string): Promise<void> {
   }
 }
 
-async function closeRound(sql: Sql, code: string, force: boolean, auto = false): Promise<void> {
+// Every round end auto-advances (2.5s reveal) unless the engine needs host review (letter/truth).
+async function closeRound(sql: Sql, code: string, force: boolean, auto = true): Promise<void> {
   const data = await bundle(sql, code);
   if (!data?.game || data.room.status !== "PLAYING") return;
   const state = jparse<RoundState>(data.room.round_state, {});
@@ -967,7 +977,7 @@ async function scoreLocked(sql: Sql, code: string, auto = false): Promise<void> 
     ...state,
     reveal,
     endsAt: state.endsAt ?? null,
-    autoAt: auto ? new Date(Date.now() + 3000).toISOString() : null,
+    autoAt: auto && engine !== "letter" && engine !== "truth" ? new Date(Date.now() + AUTO_NEXT_MS).toISOString() : null,
   };
   await sql`update rooms set status = 'ROUND_END', round_state = ${JSON.stringify(nextState)}::jsonb, revision = revision + 1, updated_at = now() where id = ${code}`;
 }
@@ -998,7 +1008,7 @@ async function assertHost(sql: Sql, code: string, hostToken: string) {
   return room;
 }
 
-export async function submitNow(input: { code: string; playerToken: string; round: number; payload: Record<string, unknown> }): Promise<Fail | { ok: true }> {
+export async function submitNow(input: { code: string; playerToken: string; round: number; payload: Record<string, unknown> }): Promise<Fail | { ok: true; roundClosed: boolean }> {
   const sql = await db();
   const ip = await ipKey();
   if (!allow(`answer:${ip}`, 40, 60 * 1000)) return fail("RATE");
@@ -1023,8 +1033,8 @@ export async function submitNow(input: { code: string; playerToken: string; roun
   const inserted = await sql<{ id: number }>`insert into answers (room_id, player_id, round, payload, response_ms) values (${code}, ${player.id}, ${input.round}, ${JSON.stringify(payload)}::jsonb, ${response}) on conflict (room_id, player_id, round) do nothing returning id`;
   if (!inserted.length) return fail("ALREADY");
   await sql`update rooms set revision = revision + 1, updated_at = now() where id = ${code}`;
-  await autoCloseIfComplete(sql, code);
-  return { ok: true };
+  const roundClosed = await autoCloseIfComplete(sql, code);
+  return { ok: true, roundClosed };
 }
 
 export async function cheerNow(input: { code: string; playerToken: string; kind: string }): Promise<Fail | { ok: true }> {
@@ -1085,7 +1095,8 @@ export async function hostNow(input: { code: string; hostToken: string; action: 
     if (room.status !== "WAITING" && room.status !== "FINISHED") return fail("BAD_INPUT");
     const players = await sql<{ id: string }>`select id from players where room_id = ${code}`;
     const game = await sql<{ tier: string; min_players: number }>`select tier, min_players from games where id = ${room.game_id}`;
-    if (!players.length || players.length < num(game[0]?.min_players, 2)) return fail("NEED_PLAYERS");
+    const need = Math.max(2, num(game[0]?.min_players, 2));
+    if (players.length < need) return fail("NEED_PLAYERS");
     if (room.status === "FINISHED") {
       await sql`delete from answers where room_id = ${code}`;
       await sql`update players set score = 0, round_score = 0, correct_count = 0, wrong_count = 0 where room_id = ${code}`;

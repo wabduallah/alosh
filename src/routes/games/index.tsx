@@ -58,16 +58,16 @@ function GamesPage() {
       ];
   return (
     <Shell>
-      <p className="text-sm font-extrabold text-[#E5C158]">مكتبة العش</p>
+      <p className="text-sm font-extrabold text-[#67e8f9]">مكتبة العش</p>
       <h1 className="mt-1 text-4xl font-extrabold">الألعاب</h1>
-      <p className="mt-2 max-w-2xl text-[#A89F91]">اختَر لعبة، ثم أنشئ غرفة أو ابدأ فردياً. كل الألعاب مجانية.</p>
+      <p className="mt-2 max-w-2xl text-[#94a3b8]">اختَر لعبة، ثم أنشئ غرفة أو ابدأ فردياً. كل الألعاب مجانية.</p>
       <label className="mt-6 block">
         <span className="sr-only">{t("browse.search")}</span>
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder={t("browse.search")}
-          className="min-h-12 w-full rounded-full border border-[#3D352B] bg-[#171513] px-5 text-ivory outline-none placeholder:text-[#A89F91]"
+          className="min-h-12 w-full rounded-full border border-[rgb(255_255_255/0.08)] bg-[rgb(255_255_255/0.03)] px-5 text-ivory outline-none placeholder:text-[#94a3b8]"
         />
       </label>
       <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
@@ -92,8 +92,8 @@ function GamesPage() {
             }}
             className={`min-h-10 shrink-0 rounded-full px-4 text-sm font-extrabold ${
               (id === tier || id === shelf || (id === "all" && tier === "all" && !shelf))
-                ? "bg-[#D4AF37] text-black"
-                : "border border-[#3D352B] text-[#A89F91]"
+                ? "bg-[#06b6d4] text-black"
+                : "border border-[rgb(255_255_255/0.08)] text-[#94a3b8]"
             }`}
           >
             {label}
@@ -106,7 +106,7 @@ function GamesPage() {
             key={id}
             type="button"
             onClick={() => setBand(id)}
-            className={`min-h-10 rounded-full px-4 text-sm font-extrabold ${band === id ? "bg-ivory text-night" : "border border-white/15 text-ivory/70"}`}
+            className={`min-h-10 rounded-full px-4 text-sm font-extrabold ${band === id ? "bg-neon text-night shadow-[0_0_18px_rgba(6,182,212,0.35)]" : "border border-white/15 text-ivory/70"}`}
           >
             {id === "all" ? t("browse.players", { min: 2, max: 14 }) : id}
           </button>

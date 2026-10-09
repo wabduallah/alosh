@@ -66,7 +66,7 @@ function AdminPage() {
             <input className={inputClass} value={studio} onChange={(e) => setStudio(e.target.value)} autoComplete="off" />
           </Field>
           <Button type="submit">دخول</Button>
-          {codeError ? <p className="text-sm text-gold">{codeError}</p> : null}
+          {codeError ? <p className="text-sm text-red-400">{codeError}</p> : null}
         </form>
       </Shell>
     );
@@ -115,7 +115,7 @@ function Dash({ data }: { data: unknown }) {
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-3">
         {cards.map((key) => (
-          <div key={key} className="rounded-3xl bg-ivory p-4">
+          <div key={key} className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
             <p className="text-sm text-muted">{key}</p>
             <p className="font-display text-3xl tabular-nums">{String(row[key] ?? 0)}</p>
           </div>
@@ -123,7 +123,7 @@ function Dash({ data }: { data: unknown }) {
       </div>
       <ul className="space-y-2">
         {Array.isArray(row.top) ? row.top.map((item) => (
-          <li key={item.id} className="flex justify-between rounded-2xl bg-ivory px-4 py-3">
+          <li key={item.id} className="flex justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
             <span>{item.name}</span>
             <span className="tabular-nums">{item.plays}</span>
           </li>
@@ -190,7 +190,7 @@ function Games({ data, onSave, onToggle }: { data: unknown; onSave: (payload: Re
   }
   return (
     <div className="space-y-4">
-      <form className="grid gap-2 rounded-3xl bg-ivory p-4 md:grid-cols-2" onSubmit={(e) => { e.preventDefault(); onSave(form); }}>
+      <form className="grid gap-2 rounded-3xl border border-white/10 bg-white/[0.03] p-4 md:grid-cols-2" onSubmit={(e) => { e.preventDefault(); onSave(form); }}>
         <input className={inputClass} placeholder="id" value={form.id} onChange={(e) => set("id", e.target.value)} />
         <input className={inputClass} placeholder="icon" value={form.icon} onChange={(e) => set("icon", e.target.value)} />
         <input className={inputClass} placeholder="الاسم" value={form.nameAr} onChange={(e) => set("nameAr", e.target.value)} />
@@ -219,7 +219,7 @@ function Games({ data, onSave, onToggle }: { data: unknown; onSave: (payload: Re
       </form>
       <ul className="space-y-2">
         {rows.map((game) => (
-          <li key={String(game.id)} className="flex items-center justify-between gap-3 rounded-2xl bg-ivory px-4 py-3">
+          <li key={String(game.id)} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
             <button type="button" className="text-start" onClick={() => load(game)}>
               {String(game.name_ar)} · {String(game.min_players)}–{String(game.max_players)} · {String(game.tier)}
             </button>
@@ -250,11 +250,11 @@ function Questions({
   const [topic, setTopic] = useState("السعودية");
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 rounded-3xl bg-ivory p-4 md:grid-cols-2">
+      <div className="grid gap-3 rounded-3xl border border-white/10 bg-white/[0.03] p-4 md:grid-cols-2">
         <input className={inputClass} value={gameId} onChange={(e) => setGameId(e.target.value)} />
         <input className={inputClass} value={topic} onChange={(e) => setTopic(e.target.value)} />
         <Button type="button" onClick={() => onAi({ gameId, topic, count: 4, language: "ar", difficulty: "easy" })}>Generate Questions with AI</Button>
-        <Button type="button" tone="bronze" onClick={() => onDraft({ prompt: topic, count: 6, language: "ar" })}>Create Game with AI</Button>
+        <Button type="button" tone="violet" onClick={() => onDraft({ prompt: topic, count: 6, language: "ar" })}>Create Game with AI</Button>
         <textarea className={`${inputClass} min-h-28 md:col-span-2`} value={raw} onChange={(e) => setRaw(e.target.value)} />
         <Button type="button" tone="ghost" onClick={() => {
           try {
@@ -267,7 +267,7 @@ function Questions({
       </div>
       <ul className="space-y-2">
         {rows.map((q) => (
-          <li key={q.id} className="rounded-2xl bg-ivory px-4 py-3">
+          <li key={q.id} className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
             <p className="text-sm text-muted">{q.game_id} · {q.status}</p>
             <p>{q.prompt_ar}</p>
             {q.status !== "published" ? <Button type="button" className="mt-2" onClick={() => onStatus(q.id, "published")}>approve</Button> : null}
@@ -290,7 +290,7 @@ function Settings({ data, onSave, onPurge }: { data: unknown; onSave: (key: stri
       <Field label="brand en"><input className={inputClass} value={en} onChange={(e) => setEn(e.target.value)} /></Field>
       <Button type="button" onClick={() => onSave("brand", { ar, en })}>save brand</Button>
       <Button type="button" tone="ghost" onClick={() => onSave("ads", { enabled: !ads?.enabled })}>ads: {ads?.enabled ? "on" : "off"}</Button>
-      <Button type="button" tone="bronze" onClick={onPurge}>purge seed</Button>
+      <Button type="button" tone="violet" onClick={onPurge}>purge seed</Button>
     </div>
   );
 }
@@ -312,7 +312,7 @@ function Promos({ data, onSave }: { data: unknown; onSave: (payload: Record<stri
         <input className={inputClass} type="number" value={amount} onChange={(e) => setAmount(Number(e.target.value))} />
         <Button type="button" onClick={() => onSave({ code, kind, amount })}>save</Button>
       </div>
-      <ul className="space-y-2">{rows.map((row) => <li key={row.code} className="rounded-2xl bg-ivory px-4 py-3">{row.code} · {row.kind} · {row.amount} · uses {row.uses}</li>)}</ul>
+      <ul className="space-y-2">{rows.map((row) => <li key={row.code} className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">{row.code} · {row.kind} · {row.amount} · uses {row.uses}</li>)}</ul>
     </div>
   );
 }
@@ -323,7 +323,7 @@ function Plans({ data, onSave }: { data: unknown; onSave: (payload: Record<strin
   return (
     <ul className="space-y-2">
       {rows.map((plan) => (
-        <li key={plan.id} className="flex flex-wrap items-center gap-2 rounded-2xl bg-ivory px-4 py-3">
+        <li key={plan.id} className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
           <span className="min-w-32">{plan.name_ar}</span>
           <input className={`${inputClass} max-w-28`} type="number" defaultValue={plan.price_sar} onChange={(e) => setPrices({ ...prices, [plan.id]: Number(e.target.value) })} />
           <Button type="button" onClick={() => onSave({ id: plan.id, nameAr: plan.name_ar, nameEn: plan.name_en, price: prices[plan.id] ?? plan.price_sar })}>save</Button>
@@ -338,7 +338,7 @@ function Payments({ data, onPaid }: { data: unknown; onPaid: (id: string) => voi
   return (
     <ul className="space-y-2">
       {rows.map((row) => (
-        <li key={row.id} className="flex items-center justify-between rounded-2xl bg-ivory px-4 py-3">
+        <li key={row.id} className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
           <span>{row.provider} · {row.amount_sar} · {row.status}</span>
           {row.status !== "paid" ? <Button type="button" onClick={() => onPaid(row.id)}>mark paid</Button> : null}
         </li>
@@ -352,7 +352,7 @@ function Users({ data, onRole }: { data: unknown; onRole: (id: string, role: str
   return (
     <ul className="space-y-2">
       {rows.map((row) => (
-        <li key={row.id} className="flex items-center justify-between rounded-2xl bg-ivory px-4 py-3">
+        <li key={row.id} className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
           <span>{row.name} · {row.email} · {row.role ?? "player"}</span>
           <Button type="button" tone="ghost" onClick={() => onRole(row.id, row.role === "admin" ? "player" : "admin")}>toggle admin</Button>
         </li>
@@ -366,11 +366,11 @@ function Rooms({ data, onClose, onReset }: { data: unknown; onClose: (id: string
   return (
     <ul className="space-y-2">
       {rows.map((row) => (
-        <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#3D352B] bg-[#171513] px-4 py-3">
+        <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[rgb(255_255_255/0.08)] bg-[rgb(255_255_255/0.03)] px-4 py-3">
           <span>{row.id} · {row.game_id} · {row.status}</span>
           <span className="flex gap-2">
-            <button type="button" className="rounded-full border border-[#D4AF37] px-3 py-1 text-sm text-[#E5C158]" onClick={() => onReset(row.id)}>تصفير</button>
-            <button type="button" className="rounded-full bg-[#D4AF37] px-3 py-1 text-sm font-extrabold text-black" onClick={() => onClose(row.id)}>إنهاء</button>
+            <button type="button" className="rounded-full border border-[#06b6d4] px-3 py-1 text-sm text-[#67e8f9]" onClick={() => onReset(row.id)}>تصفير</button>
+            <button type="button" className="rounded-full bg-[#06b6d4] px-3 py-1 text-sm font-extrabold text-black" onClick={() => onClose(row.id)}>إنهاء</button>
           </span>
         </li>
       ))}
@@ -391,7 +391,7 @@ function Lexicon({ data, onAdd }: { data: unknown; onAdd: (payload: Record<strin
         <input className={inputClass} value={word} onChange={(e) => setWord(e.target.value)} />
         <Button type="button" onClick={() => onAdd({ locale: "ar", letter, category, word })}>add</Button>
       </div>
-      <ul className="space-y-2">{rows.map((row) => <li key={row.id} className="rounded-2xl bg-ivory px-4 py-3">{row.letter} · {row.category} · {row.word}</li>)}</ul>
+      <ul className="space-y-2">{rows.map((row) => <li key={row.id} className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">{row.letter} · {row.category} · {row.word}</li>)}</ul>
     </div>
   );
 }
@@ -409,7 +409,7 @@ function Strings({ data, onSave }: { data: unknown; onSave: (payload: Record<str
         <input className={inputClass} value={value} onChange={(e) => setValue(e.target.value)} />
         <Button type="button" onClick={() => onSave({ locale, key, value })}>save</Button>
       </div>
-      <ul className="space-y-2">{rows.map((row) => <li key={`${row.locale}-${row.key}`} className="rounded-2xl bg-ivory px-4 py-3">{row.locale}:{row.key} = {row.value}</li>)}</ul>
+      <ul className="space-y-2">{rows.map((row) => <li key={`${row.locale}-${row.key}`} className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">{row.locale}:{row.key} = {row.value}</li>)}</ul>
     </div>
   );
 }
@@ -427,14 +427,14 @@ function Cats({ data, onSave }: { data: unknown; onSave: (payload: Record<string
         <input className={inputClass} value={nameEn} onChange={(e) => setNameEn(e.target.value)} />
         <Button type="button" onClick={() => onSave({ id, nameAr, nameEn })}>save</Button>
       </div>
-      <ul className="space-y-2">{rows.map((row) => <li key={row.id} className="rounded-2xl bg-ivory px-4 py-3">{row.id} · {row.name_ar}</li>)}</ul>
+      <ul className="space-y-2">{rows.map((row) => <li key={row.id} className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">{row.id} · {row.name_ar}</li>)}</ul>
     </div>
   );
 }
 
 function Raw({ data }: { data: unknown }) {
   const rows = Array.isArray(data) ? data as { id?: string; plan_id?: string; status?: string; user_id?: string }[] : [];
-  return <ul className="space-y-2">{rows.map((row) => <li key={row.id} className="rounded-2xl bg-ivory px-4 py-3">{row.user_id} · {row.plan_id} · {row.status}</li>)}</ul>;
+  return <ul className="space-y-2">{rows.map((row) => <li key={row.id} className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">{row.user_id} · {row.plan_id} · {row.status}</li>)}</ul>;
 }
 
 function parseCsv(raw: string): Record<string, string>[] {
@@ -513,7 +513,7 @@ function AiDesk({ data, onGenerate, onReview }: { data: unknown; onGenerate: (pa
       </div>
       <ul className="space-y-2">
         {rows.map((row) => (
-          <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-ivory px-4 py-3">
+          <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
             <span>{row.kind} · {row.status} · {row.note}</span>
             <Button type="button" tone="ghost" onClick={() => onReview({ id: row.id, status: "approved", note: "اعتُمد" })}>اعتماد السجل</Button>
           </li>
@@ -536,7 +536,7 @@ function Sections({ data, onSave }: { data: unknown; onSave: (payload: Record<st
         <input className={inputClass} placeholder="/path" value={href} onChange={(e) => setHref(e.target.value)} />
         <Button type="button" onClick={() => onSave({ id, nameAr, nameEn: nameAr, href })}>حفظ القسم</Button>
       </div>
-      <ul className="space-y-2">{rows.map((row) => <li key={row.id} className="rounded-2xl bg-ivory px-4 py-3">{row.name_ar} · {row.href} · {row.visible ? "ظاهر" : "مخفي"}</li>)}</ul>
+      <ul className="space-y-2">{rows.map((row) => <li key={row.id} className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">{row.name_ar} · {row.href} · {row.visible ? "ظاهر" : "مخفي"}</li>)}</ul>
     </div>
   );
 }
@@ -546,9 +546,9 @@ function Addons({ data, onToggle }: { data: unknown; onToggle: (id: string) => v
   return (
     <ul className="space-y-2">
       {rows.map((row) => (
-        <li key={row.id} className="flex items-center justify-between gap-3 rounded-2xl bg-ivory px-4 py-3">
+        <li key={row.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
           <span><b>{row.name_ar}</b><span className="mt-1 block text-sm text-muted">{row.description_ar}</span></span>
-          <Button type="button" tone={row.enabled ? "bronze" : "ghost"} onClick={() => onToggle(row.id)}>{row.enabled ? "مفعل" : "متوقف"}</Button>
+          <Button type="button" tone={row.enabled ? "violet" : "ghost"} onClick={() => onToggle(row.id)}>{row.enabled ? "مفعل" : "متوقف"}</Button>
         </li>
       ))}
     </ul>

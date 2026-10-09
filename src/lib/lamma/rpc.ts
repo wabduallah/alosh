@@ -47,11 +47,12 @@ export const createRoom = createServerFn({ method: "POST" })
     difficulty: diff(input.difficulty),
     sound: bool(input.sound, true),
     music: bool(input.music, false),
-    maxPlayers: int(input.maxPlayers, 2, 14, 14),
+    maxPlayers: int(input.maxPlayers, 2, 14, 2),
     locale: input.locale === "en" ? ("en" as const) : ("ar" as const),
     promo: text(input.promo, 24) || undefined,
     hostName: text(input.hostName, 24) || undefined,
     hostMode: input.hostMode === "narrator" ? ("narrator" as const) : ("player" as const),
+    hostIsPlayer: typeof input.hostIsPlayer === "boolean" ? input.hostIsPlayer : input.hostMode !== "narrator",
   }))
   .handler(async ({ data, context }) => {
     const { createRoomNow } = await import("./engine.server");
