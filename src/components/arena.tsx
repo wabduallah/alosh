@@ -158,6 +158,7 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
     if (!pool.length || pool.some((p) => !p.answered) || advanceLock.current) return;
     advanceLock.current = true;
     const round = snap.room.round;
+    if (snap.room.sound) playCue("correct", bundle.sounds.correct);
     void act("endRound");
     const timer = window.setTimeout(() => {
       if (prev.current?.room.round === round) void act("next");
@@ -272,15 +273,15 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
 
         {snap.room.status === "PLAYING" ? (
           <section className="space-y-4">
-            <article className="rounded-3xl border border-[#3D352B] bg-[#1B1917] p-6 text-center">
-              <h2 className="font-display text-4xl text-[#E5C158] sm:text-6xl">{snap.room.engine === "letter" ? snap.room.letter : promptOf(snap, lang)}</h2>
+            <article className="rounded-3xl border border-white/10 bg-white/5 p-6 text-center shadow-[0_0_20px_rgba(139,92,246,0.15)]">
+              <h2 className="font-display text-4xl text-[#00f2fe] sm:text-6xl">{snap.room.engine === "letter" ? snap.room.letter : promptOf(snap, lang)}</h2>
               <div className="mt-4 flex justify-center"><Countdown endsAt={snap.room.endsAt} total={snap.room.seconds} /></div>
-              <p className="mt-3 text-sm text-[#A89F91]">{answered}/{snap.players.length} أجابوا</p>
+              <p className="mt-3 text-sm text-white/60">{answered}/{snap.players.length} أجابوا</p>
             </article>
             {snap.youAreHost && snap.room.hostMode !== "narrator" && snap.yourId ? (
               <AnswerPanel snap={snap} lang={lang} busy={busy} fields={fields} setFields={setFields} text={text} setText={setText} onSend={send} picked={sent || snap.yourAnswered} />
             ) : null}
-            {snap.youAreHost ? <button type="button" className="fixed bottom-24 start-4 z-20 rounded-full border border-[#D4AF37] bg-[#1B1917] px-4 py-2 text-sm text-[#E5C158]" onClick={() => void act("endRound")}>إنهاء مبكر</button> : null}
+            {snap.youAreHost ? <button type="button" className="fixed bottom-24 start-4 z-20 rounded-full border border-[#8b5cf6] bg-[#131b2e] px-4 py-2 text-sm text-[#00f2fe]" onClick={() => void act("endRound")}>إنهاء مبكر</button> : null}
           </section>
         ) : null}
 
