@@ -223,7 +223,14 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
               </div>
             </div>
             <div className="space-y-4">
-              <p className="max-w-xl text-lg text-ivory/80">{t("host.need")}</p>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {snap.players.map((player) => (
+                  <div key={player.id} className={`rounded-2xl border px-3 py-3 ${player.id === snap.yourId ? "border-[#D4AF37] bg-[#2A2415]" : "border-[#3D352B] bg-[#1B1917]"}`}>
+                    <p className="font-extrabold">{player.name}</p>
+                    <p className="text-xs text-[#E5C158]">{player.id === snap.yourId ? "أنت" : "جاهز"}</p>
+                  </div>
+                ))}
+              </div>
               <GamePicker
                 games={games}
                 currentId={selectedId}
@@ -686,16 +693,12 @@ function PlayerRail({
 }) {
   const { t } = useI18n();
   return (
-    <ul className="mt-auto flex flex-wrap gap-2">
+    <ul className="mt-auto grid grid-cols-2 gap-2 sm:grid-cols-4">
       {snap.players.map((player) => (
-        <li key={player.id} className="flex items-center gap-2 rounded-full bg-ivory/10 px-3 py-2">
-          <span className={player.answered ? "text-bronze" : ""}>{player.name}</span>
-          <span className="tabular-nums text-sm text-ivory/70">{player.score}</span>
-          {player.isBot ? <span className="text-xs text-ivory/50">•</span> : null}
-          {host && player.id !== snap.yourId && (snap.room.status === "WAITING" || snap.room.status === "PLAYING" || snap.room.status === "ROUND_END") ? (
-            <button type="button" className="text-xs underline" onClick={() => onKick(player.id)}>{t("host.kick")}</button>
-          ) : null}
-          {player.id === snap.yourId ? <span className="text-xs text-bronze">{t("host.you")}</span> : null}
+        <li key={player.id} className={`rounded-2xl border px-3 py-3 ${player.answered || player.id === snap.yourId ? "border-[#D4AF37] bg-[#2A2415]" : "border-[#3D352B] bg-[#1B1917]"}`}>
+          <p className="font-extrabold">{player.name}</p>
+          <p className="text-sm tabular-nums text-[#E5C158]">{player.score}</p>
+          {host && player.id !== snap.yourId ? <button type="button" className="text-xs text-[#A89F91]" onClick={() => onKick(player.id)}>إخراج</button> : null}
         </li>
       ))}
     </ul>
@@ -773,13 +776,15 @@ export function PadScreen({ code }: { code: string }) {
       {snap.room.status === "WAITING" ? (
         <section className="space-y-3">
           <p className="text-sm text-bronze">{lang === "en" ? snap.room.nameEn : snap.room.nameAr}</p>
-          <h1 className="font-display text-4xl">{t("join.waiting")}</h1>
-          <p className="text-muted">{t("join.hint")}</p>
-          <ul className="space-y-2">
+          <h1 className="font-display text-4xl text-[#E5C158]">اللاعبون</h1>
+          <div className="grid grid-cols-2 gap-2">
             {snap.players.map((p) => (
-              <li key={p.id} className="rounded-2xl bg-ivory px-4 py-3">{p.name}{p.id === snap.yourId ? ` · ${t("pad.you")}` : ""}</li>
+              <div key={p.id} className={`rounded-2xl border px-4 py-4 ${p.id === snap.yourId ? "border-[#D4AF37] bg-[#2A2415]" : "border-[#3D352B] bg-[#1B1917]"}`}>
+                <p className="font-extrabold">{p.name}</p>
+                <p className="text-xs text-[#E5C158]">{p.id === snap.yourId ? "اختيارك" : "في الغرفة"}</p>
+              </div>
             ))}
-          </ul>
+          </div>
         </section>
       ) : null}
 

@@ -34,21 +34,22 @@ export function JoinForm({ initial = "" }: { initial?: string }) {
 
   return (
     <form
-      className="mx-auto max-w-md space-y-4 rounded-3xl bg-ivory p-5"
+      className="mx-auto max-w-md space-y-4 rounded-3xl border border-[#3D352B] bg-[#1B1917] p-5 text-ivory"
       onSubmit={(e) => {
         e.preventDefault();
         void submit();
       }}
     >
-      <h1 className="font-display text-4xl">{t("join.title")}</h1>
+      <p className="text-sm text-[#E5C158]">اختيار اللاعب</p>
+      <h1 className="font-display text-4xl">ادخل اسمك</h1>
       <Field label={t("join.code")}>
-        <input className={`${inputClass} tracking-widest`} value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} />
+        <input className="min-h-12 w-full rounded-2xl border border-[#3D352B] bg-[#121110] px-4 tracking-widest text-ivory" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} />
       </Field>
       <Field label={t("join.name")}>
-        <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
+        <input className="min-h-12 w-full rounded-2xl border border-[#3D352B] bg-[#121110] px-4 text-ivory" value={name} onChange={(e) => setName(e.target.value)} placeholder="اسمك في الغرفة" />
       </Field>
-      {error ? <p className="text-sm">{error}</p> : null}
-      <Button type="submit" disabled={busy}>{t("join.submit")}</Button>
+      {error ? <p className="text-sm text-[#E5C158]">{error}</p> : null}
+      <button type="submit" disabled={busy || name.trim().length < 2} className="min-h-12 w-full rounded-full bg-[#D4AF37] font-extrabold text-black disabled:bg-[#3a342c] disabled:text-[#A89F91]">{busy ? "..." : "دخول"}</button>
     </form>
   );
 }
