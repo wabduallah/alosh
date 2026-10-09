@@ -28,7 +28,7 @@ function CreatePage() {
   const [shelf, setShelf] = useState(picked?.category || "words");
   const [rounds, setRounds] = useState(picked?.rounds ?? 6);
   const [seconds, setSeconds] = useState(picked?.seconds ?? 30);
-  const [maxPlayers, setMaxPlayers] = useState(picked?.maxPlayers ?? 14);
+  const [maxPlayers, setMaxPlayers] = useState(2);
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard" | "mixed">("mixed");
   const [sound, setSound] = useState(true);
   const [music, setMusic] = useState(false);
@@ -49,7 +49,7 @@ function CreatePage() {
     setGameId(game.id);
     setSeconds(game.seconds);
     setRounds(game.rounds);
-    setMaxPlayers(game.maxPlayers);
+    setMaxPlayers(Math.min(14, Math.max(2, game.minPlayers || 2)));
   }
 
   async function submit() {
@@ -73,7 +73,7 @@ function CreatePage() {
   return (
     <Shell>
       <header className="mb-5">
-        <h1 className="text-3xl font-extrabold text-[#E5C158]">إنشاء غرفة</h1>
+        <h1 className="text-3xl font-extrabold text-[#06b6d4]">إنشاء غرفة</h1>
         <p className="mt-1 text-sm text-[#A89F91]">مجانية بالكامل · حتى 14 لاعباً</p>
       </header>
       <form
@@ -87,15 +87,15 @@ function CreatePage() {
         <div>
           <p className="mb-2 font-extrabold">نوع الغرفة</p>
           <div className="grid grid-cols-2 gap-2">
-            <button type="button" className={`min-h-14 rounded-2xl border font-extrabold ${hostMode === "narrator" ? "border-[#D4AF37] bg-[#D4AF37] text-black" : "border-[#3D352B] text-[#A89F91]"}`} onClick={() => setHostMode("narrator")}>المضيف يدير فقط</button>
-            <button type="button" className={`min-h-14 rounded-2xl border font-extrabold ${hostMode === "player" ? "border-[#D4AF37] bg-[#D4AF37] text-black" : "border-[#3D352B] text-[#A89F91]"}`} onClick={() => setHostMode("player")}>المضيف يشارك</button>
+            <button type="button" className={`min-h-14 rounded-2xl border font-extrabold ${hostMode === "narrator" ? "border-[#06b6d4] bg-[#06b6d4] text-black" : "border-[#3D352B] text-[#A89F91]"}`} onClick={() => setHostMode("narrator")}>المضيف يدير فقط</button>
+            <button type="button" className={`min-h-14 rounded-2xl border font-extrabold ${hostMode === "player" ? "border-[#06b6d4] bg-[#06b6d4] text-black" : "border-[#3D352B] text-[#A89F91]"}`} onClick={() => setHostMode("player")}>المضيف يشارك</button>
           </div>
         </div>
         <div>
           <p className="mb-2 font-extrabold">عدد الجولات</p>
           <div className="grid grid-cols-4 gap-2 rounded-2xl border border-[#3D352B] p-1">
             {roundChoices.map((n) => (
-              <button key={n} type="button" className={`min-h-12 rounded-xl font-extrabold ${rounds === n ? "bg-[#D4AF37] text-black" : "text-[#A89F91]"}`} onClick={() => setRounds(n)}>{n}</button>
+              <button key={n} type="button" className={`min-h-12 rounded-xl font-extrabold ${rounds === n ? "bg-[#06b6d4] text-black" : "text-[#A89F91]"}`} onClick={() => setRounds(n)}>{n}</button>
             ))}
           </div>
         </div>
@@ -103,7 +103,7 @@ function CreatePage() {
           <p className="mb-2 font-extrabold">الوقت لكل جولة</p>
           <div className="grid grid-cols-4 gap-2 rounded-2xl border border-[#3D352B] p-1">
             {timeChoices.map((n) => (
-              <button key={n} type="button" className={`min-h-12 rounded-xl font-extrabold ${seconds === n ? "bg-[#D4AF37] text-black" : "text-[#A89F91]"}`} onClick={() => setSeconds(n)}>{n}</button>
+              <button key={n} type="button" className={`min-h-12 rounded-xl font-extrabold ${seconds === n ? "bg-[#06b6d4] text-black" : "text-[#A89F91]"}`} onClick={() => setSeconds(n)}>{n}</button>
             ))}
           </div>
         </div>
@@ -115,7 +115,7 @@ function CreatePage() {
               ["hard", "صعب"],
               ["mixed", "مزيج"],
             ] as const).map(([id, label]) => (
-              <button key={id} type="button" className={`min-h-12 rounded-2xl border font-extrabold ${difficulty === id ? "border-[#D4AF37] bg-[#D4AF37] text-black" : "border-[#3D352B] text-[#A89F91]"}`} onClick={() => setDifficulty(id)}>{label}</button>
+              <button key={id} type="button" className={`min-h-12 rounded-2xl border font-extrabold ${difficulty === id ? "border-[#06b6d4] bg-[#06b6d4] text-black" : "border-[#3D352B] text-[#A89F91]"}`} onClick={() => setDifficulty(id)}>{label}</button>
             ))}
           </div>
         </div>
@@ -123,13 +123,13 @@ function CreatePage() {
           <p className="mb-2 font-extrabold">عدد اللاعبين</p>
           <div className="grid grid-cols-3 items-center rounded-2xl border border-[#3D352B]">
             <button type="button" className="min-h-12 text-xl" onClick={() => setMaxPlayers((n) => Math.max(selected?.minPlayers ?? 2, n - 1))}>−</button>
-            <span className="text-center text-2xl font-extrabold text-[#E5C158]">{maxPlayers}</span>
+            <span className="text-center text-2xl font-extrabold text-[#06b6d4]">{maxPlayers}</span>
             <button type="button" className="min-h-12 text-xl" onClick={() => setMaxPlayers((n) => Math.min(14, n + 1))}>+</button>
           </div>
           <p className="mt-2 text-sm text-[#A89F91]">{selected?.minPlayers ?? 2}–14 لاعباً</p>
         </div>
-        {error ? <p className="text-sm text-[#E5C158]">{error}</p> : null}
-        <button type="submit" disabled={busy || !gameId} className="min-h-12 w-full rounded-full bg-[#D4AF37] font-extrabold text-black disabled:opacity-40">ابدأ</button>
+        {error ? <p className="text-sm text-[#06b6d4]">{error}</p> : null}
+        <button type="submit" disabled={busy || !gameId} className="min-h-12 w-full rounded-full bg-[#06b6d4] font-extrabold text-black disabled:opacity-40">ابدأ</button>
       </form>
     </Shell>
   );
