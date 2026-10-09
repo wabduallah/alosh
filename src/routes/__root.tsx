@@ -20,7 +20,7 @@ export const Route = createRootRoute({
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Fraunces:opsz,wght@9..144,560;9..144,680&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Tajawal:wght@500;700;800&family=Cairo:wght@600;800&display=swap",
       },
       { rel: "manifest", href: "/__grok/manifest.webmanifest" },
       { rel: "apple-touch-icon", href: "/__grok/icon-180.png" },

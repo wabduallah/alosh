@@ -96,6 +96,8 @@ function Countdown({ endsAt, total }: { endsAt: string | null; total: number }) 
   );
 }
 
+const NESTS = ["عش النسور", "عش الصقور", "عش الشواهين", "عش الفرسان"];
+
 function promptOf(snap: Snapshot, lang: "ar" | "en") {
   const q = snap.room.question;
   if (!q) return "";
@@ -227,7 +229,7 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
                 {snap.players.map((player) => (
                   <div key={player.id} className={`rounded-2xl border px-3 py-3 ${player.id === snap.yourId ? "border-[#D4AF37] bg-[#2A2415]" : "border-[#3D352B] bg-[#1B1917]"}`}>
                     <p className="font-extrabold">{player.name}</p>
-                    <p className="text-xs text-[#E5C158]">{player.id === snap.yourId ? "أنت" : "جاهز"}</p>
+                    <p className="text-xs text-[#E5C158]">{snap.room.playMode === "teams" ? NESTS[snap.players.findIndex((p) => p.id === player.id) % 4] : player.id === snap.yourId ? "أنت" : "جاهز"}</p>
                   </div>
                 ))}
               </div>
@@ -277,7 +279,11 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
 
         {snap.room.status === "FINISHED" ? (
           <div className="space-y-6">
-            <Podium players={snap.players} again={snap.youAreHost ? () => void act("start") : undefined} />
+            <Podium players={snap.players} />
+            <div className="grid gap-2">
+              {snap.youAreHost ? <button type="button" className="min-h-12 rounded-full bg-[#D4AF37] font-extrabold text-black" onClick={() => void act("start")}>اللعب من جديد</button> : null}
+              {snap.youAreHost ? <button type="button" className="min-h-12 rounded-full border border-[#D4AF37] text-[#E5C158]" onClick={() => void act("restart")}>تغيير اللعبة</button> : <p className="text-sm text-[#A89F91]">اللاعبون باقون في الغرفة. المضيف يختار اللعبة التالية.</p>}
+            </div>
             {snap.youAreHost ? (
               <section className="space-y-3">
                 <h3 className="text-xl">{t("host.switch")}</h3>

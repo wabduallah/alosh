@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Cairo", "IBM Plex Sans Arabic", "Segoe UI", tahoma, sans-serif;
+  --font-sans: "Tajawal", "Cairo", "IBM Plex Sans Arabic", sans-serif;
   --font-display: "Fraunces", "Cairo", serif;
   --color-ink: #121110;
   --color-sand: #221f1b;

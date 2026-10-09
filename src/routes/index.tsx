@@ -23,11 +23,10 @@ function Home() {
           <h1 className="text-5xl font-extrabold text-ivory">العش</h1>
         </div>
         <p className="mt-3 text-sm font-extrabold text-neon">ألعاب مجانية بالكامل</p>
-        <h2 className="mt-6 text-5xl font-extrabold leading-tight text-sand">اختاروا لعبتكم</h2>
-        <p className="mt-4 text-lg text-ivory/70">لعب جماعي بسيط، ممتع، وجاهز في ثواني.</p>
-        <div className="mt-8 flex items-center justify-center gap-3">
-          <Link to="/join" className="inline-flex min-h-14 items-center rounded-full border border-neon/40 px-6 font-extrabold">انضم</Link>
-          <Link to="/games/multiplayer" className="inline-flex min-h-14 items-center rounded-full bg-neon px-7 font-extrabold text-night">العب الآن</Link>
+        <h2 className="mt-6 text-4xl font-extrabold leading-tight">ابدأ التحدي</h2>
+        <div className="mt-8 grid gap-3">
+          <Link to="/play" search={{ game: "" }} className="inline-flex min-h-14 items-center justify-center rounded-full bg-[#D4AF37] px-7 font-extrabold text-black shadow-[0_0_24px_rgba(212,175,55,0.35)]">إنشاء غرفة</Link>
+          <Link to="/join" className="inline-flex min-h-14 items-center justify-center rounded-full border border-[#D4AF37] bg-[#171513] px-6 font-extrabold text-[#E5C158]">انضمام إلى غرفة</Link>
         </div>
       </section>
       <section className="mx-auto mt-10 grid max-w-5xl gap-3 sm:grid-cols-3">
