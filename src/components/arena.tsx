@@ -147,12 +147,23 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
     if (snap.room.music && snap.room.status === "WAITING") lobbyPulse(true, bundle.sounds.lobby);
   }, [bundle.sounds, snap, t]);
 
+  const advanceLock = useRef(false);
   useEffect(() => {
-    setFields({ boy: "", girl: "", animal: "", object: "", country: "" });
-    setText("");
-    setLocalErr(null);
-    setSent(false);
-  }, [snap?.room.round, snap?.room.status, snap?.room.gameId]);
+    if (!snap || !snap.youAreHost || snap.room.status !== "PLAYING") {
+      advanceLock.current = false;
+      return;
+    }
+    const humans = snap.players.filter((p) => !p.isBot);
+    const pool = humans.length ? humans : snap.players;
+    if (!pool.length || pool.some((p) => !p.answered) || advanceLock.current) return;
+    advanceLock.current = true;
+    const round = snap.room.round;
+    void act("endRound");
+    const timer = window.setTimeout(() => {
+      if (prev.current?.room.round === round) void act("next");
+    }, 2500);
+    return () => window.clearTimeout(timer);
+  }, [snap?.room.status, snap?.room.round, snap?.players]);
 
   function handleSelectGame(gameId: string) {
     setSelectedId(gameId);
