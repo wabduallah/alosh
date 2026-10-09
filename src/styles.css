@@ -9,12 +9,11 @@
   --color-forest: #1a1815;
   --color-forest-deep: #121110;
   --color-moss: #a89f91;
-  --color-bronze: #d4af37;
+  --color-bronze: #06b6d4;
   --color-muted: #a89f91;
-  --color-neon: #e5c158;
-  --color-night: #0f172a;
-  --color-neon: #f59e0b;
-  --color-gold: #f59e0b;
+  --color-neon: #06b6d4;
+  --color-night: #090d16;
+  --color-gold: #8b5cf6;
 }
 
 @layer base {
