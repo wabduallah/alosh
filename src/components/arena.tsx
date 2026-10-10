@@ -361,9 +361,7 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
   const { snap, error, tokens, refresh } = useRoom(code);
   const [note, setNote] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [selectedId, setSelectedId] = useState("");
   const [pick, setPick] = useState<Pick | null>(null);
-  const switchTimer = useRef<number | null>(null);
   const prev = useRef<Snapshot | null>(null);
   const navigate = useNavigate();
   const link = joinLink(code);
@@ -398,17 +396,6 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
   // Round advancement is owned by the server: closeRound -> autoAt (2.5s) -> advanceIfDue.
   // The host client no longer runs its own timer; that timer was cancelled on every poll.
 
-  useEffect(() => () => {
-    if (switchTimer.current) window.clearTimeout(switchTimer.current);
-  }, []);
-
-  function handleSelectGame(gameId: string) {
-    setSelectedId(gameId);
-    if (switchTimer.current) window.clearTimeout(switchTimer.current);
-    switchTimer.current = window.setTimeout(() => {
-      void act("switchGame", { gameId });
-    }, 180);
-  }
 
   function leaveHome() {
     void act("close");
@@ -496,12 +483,11 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
                   </div>
                 ))}
               </div>
-              <GamePicker games={games} currentId={selectedId} disabled={!snap.youAreHost} onPick={handleSelectGame} />
               <div className="grid gap-2">
                 <Button
                   type="button"
                   onClick={() => void act("start")}
-                  disabled={!snap.youAreHost || !selectedId || snap.players.length < needed}
+                  disabled={!snap.youAreHost || snap.players.length < needed}
                   className="w-full"
                 >
                   {t("host.start")}
