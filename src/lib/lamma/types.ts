@@ -84,6 +84,7 @@ export type Snapshot = {
     nameAr: string;
     nameEn: string;
     engine: Engine;
+    playMode: "competitive" | "coop" | "teams" | "social";
     round: number;
     rounds: number;
     seconds: number;

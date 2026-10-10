@@ -618,6 +618,7 @@ async function buildSnap(sql: Sql, code: string, hostToken?: string, playerToken
       nameAr: fresh.game.name_ar,
       nameEn: fresh.game.name_en,
       engine: fresh.game.engine as Engine,
+      playMode: fresh.game.play_mode === "coop" || fresh.game.play_mode === "teams" || fresh.game.play_mode === "social" ? fresh.game.play_mode : "competitive",
       round: fresh.room.current_round,
       rounds: settings.rounds,
       seconds: settings.seconds,
