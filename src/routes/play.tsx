@@ -4,6 +4,16 @@ import { Shell } from "@/components/shell";
 import { cx, inputClass } from "@/components/ui";
 import { useI18n } from "@/lib/i18n";
 import { createRoom, listGames } from "@/lib/lamma/rpc";
+import {
+  BRAVO_CATEGORIES,
+  BRAVO_CATEGORY_INFO,
+  BRAVO_MODE_INFO,
+  BRAVO_MODES,
+  BRAVO_ROUND_CHOICES,
+  BRAVO_TIMER_CHOICES,
+  type BravoCategory,
+  type BravoMode,
+} from "@/lib/lamma/bravo-engine";
 import type { GameCard } from "@/lib/lamma/types";
 
 /** Room size rules (mirrored on the server in engine.server.ts / rpc.ts). */
@@ -28,8 +38,8 @@ function CreatePage() {
   const picked = games.find((game) => game.id === search.game) ?? games[0];
   const [hostName, setHostName] = useState("");
   const [gameId, setGameId] = useState(picked?.id ?? "");
-  const [rounds, setRounds] = useState(picked?.rounds ?? 6);
-  const [seconds, setSeconds] = useState(picked?.seconds ?? 30);
+  const [rounds, setRounds] = useState<number>(5);
+  const [seconds, setSeconds] = useState<number>(20);
   const [maxPlayers, setMaxPlayers] = useState(DEFAULT_PLAYERS);
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard" | "mixed">("mixed");
   const [sound, setSound] = useState(true);
@@ -41,7 +51,15 @@ function CreatePage() {
   const [eliminationMode, setEliminationMode] = useState(false);
   const [reactionBonus, setReactionBonus] = useState(false);
   const [majorityMode, setMajorityMode] = useState(false);
-  const [category, setCategory] = useState("");
+  const [bravoMode, setBravoMode] = useState<BravoMode>("quick");
+  const [categories, setCategories] = useState<BravoCategory[]>([]);
+  // Rules the chosen mode owns: shown as on and locked, so the host cannot contradict the mode.
+  const streakOn = streakMultiplier || bravoMode === "rapid";
+  const reactionOn = reactionBonus || bravoMode === "rapid";
+  const majorityOn = majorityMode || bravoMode === "roles";
+  function toggleCategory(id: BravoCategory) {
+    setCategories((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
+  }
   const [hostIsPlayer, setHostIsPlayer] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -68,7 +86,8 @@ function CreatePage() {
         eliminationMode,
         reactionBonus,
         majorityMode,
-        category,
+        bravoMode,
+        categories,
         locale: lang,
         promo: promo || undefined,
         hostName: hostIsPlayer ? hostName.trim() || undefined : undefined,
@@ -86,8 +105,8 @@ function CreatePage() {
     void navigate({ to: "/room/$code", params: { code: res.code } });
   }
 
-  const roundChoices = [10, 7, 5, 3];
-  const timeChoices = [60, 20, 30, 10];
+  const roundChoices = BRAVO_ROUND_CHOICES;
+  const timeChoices = BRAVO_TIMER_CHOICES;
   const segment = (active: boolean) =>
     cx(
       "min-h-12 rounded-xl font-bold transition-all duration-150",
@@ -113,6 +132,23 @@ function CreatePage() {
         }}
       >
         <div>
+          <p className="mb-2 font-bold">نمط اللعب</p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {BRAVO_MODES.map((id) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={bravoMode === id}
+                className={cx(card(bravoMode === id), "flex h-auto flex-col items-start gap-1 p-3 text-start")}
+                onClick={() => setBravoMode(id)}
+              >
+                <span className="text-base font-extrabold">{BRAVO_MODE_INFO[id].label}</span>
+                <span className={cx("text-xs font-normal", bravoMode === id ? "text-night/80" : "text-muted")}>{BRAVO_MODE_INFO[id].hint}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
           <p className="mb-2 font-bold">نوع الغرفة</p>
           <div className="grid grid-cols-2 gap-2">
             <button type="button" className={card(!hostIsPlayer)} onClick={() => setHostIsPlayer(false)}>
@@ -137,7 +173,7 @@ function CreatePage() {
         </div>
         <div>
           <p className="mb-2 font-bold">عدد الجولات</p>
-          <div className="grid grid-cols-4 gap-2 rounded-2xl border border-white/10 bg-white/[0.02] p-1">
+          <div className="grid grid-cols-3 gap-2 rounded-2xl border border-white/10 bg-white/[0.02] p-1">
             {roundChoices.map((n) => (
               <button key={n} type="button" className={segment(rounds === n)} onClick={() => setRounds(n)}>
                 {n}
@@ -147,7 +183,7 @@ function CreatePage() {
         </div>
         <div>
           <p className="mb-2 font-bold">الوقت لكل جولة</p>
-          <div className="grid grid-cols-4 gap-2 rounded-2xl border border-white/10 bg-white/[0.02] p-1">
+          <div className="grid grid-cols-3 gap-2 rounded-2xl border border-white/10 bg-white/[0.02] p-1">
             {timeChoices.map((n) => (
               <button key={n} type="button" className={segment(seconds === n)} onClick={() => setSeconds(n)}>
                 {n}
@@ -173,22 +209,18 @@ function CreatePage() {
           <p className="mb-2 font-bold">مضاعف الإجابات المتتالية</p>
           <p className="mb-2 text-sm text-muted">إجابتان صحيحتان متتاليتان تضاعفان الإجابة التالية، وأربع تُثلّثانها (بحد أقصى ×3).</p>
           <div className="grid grid-cols-2 gap-2">
-            <button type="button" className={card(!streakMultiplier)} onClick={() => setStreakMultiplier(false)}>بدون</button>
-            <button type="button" className={card(streakMultiplier)} onClick={() => setStreakMultiplier(true)}>تفعيل</button>
+            <button type="button" className={card(!streakOn)} disabled={bravoMode === "rapid"} onClick={() => setStreakMultiplier(false)}>بدون</button>
+            <button type="button" className={card(streakOn)} disabled={bravoMode === "rapid"} onClick={() => setStreakMultiplier(true)}>{bravoMode === "rapid" ? "مفعّل تلقائياً" : "تفعيل"}</button>
           </div>
         </div>
         <div>
-          <p className="mb-2 font-bold">فئة الأسئلة</p>
-          <p className="mb-2 text-sm text-muted">إن لم توجد أسئلة في الفئة المختارة تُستعمل كل الأسئلة.</p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-            {([
-              ["", "الكل"],
-              ["movies", "🎬 سينما وأنيمي"],
-              ["puzzles", "🧠 ألغاز وذكاء"],
-              ["sports", "⚽ رياضة"],
-              ["culture", "🇸🇦 ثقافة وعام"],
-            ] as const).map(([id, label]) => (
-              <button key={id || "all"} type="button" className={card(category === id)} onClick={() => setCategory(id)}>{label}</button>
+          <p className="mb-2 font-bold">فئات الأسئلة</p>
+          <p className="mb-2 text-sm text-muted">اختر فئة أو أكثر. بدون اختيار تُستعمل كل الفئات.</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {BRAVO_CATEGORIES.map((id) => (
+              <button key={id} type="button" aria-pressed={categories.includes(id)} className={card(categories.includes(id))} onClick={() => toggleCategory(id)}>
+                {BRAVO_CATEGORY_INFO[id]}
+              </button>
             ))}
           </div>
         </div>
@@ -196,16 +228,16 @@ function CreatePage() {
           <p className="mb-2 font-bold">مكافأة سرعة الإجابة</p>
           <p className="mb-2 text-sm text-muted">الإجابة الفورية تضاعف النقاط (×2)، وتنخفض المكافأة كلما تأخرت.</p>
           <div className="grid grid-cols-2 gap-2">
-            <button type="button" className={card(!reactionBonus)} onClick={() => setReactionBonus(false)}>بدون</button>
-            <button type="button" className={card(reactionBonus)} onClick={() => setReactionBonus(true)}>تفعيل</button>
+            <button type="button" className={card(!reactionOn)} disabled={bravoMode === "rapid"} onClick={() => setReactionBonus(false)}>بدون</button>
+            <button type="button" className={card(reactionOn)} disabled={bravoMode === "rapid"} onClick={() => setReactionBonus(true)}>{bravoMode === "rapid" ? "مفعّل تلقائياً" : "تفعيل"}</button>
           </div>
         </div>
         <div>
           <p className="mb-2 font-bold">التخمين الجماعي</p>
           <p className="mb-2 text-sm text-muted">الإجابة التي اختارها أكثر اللاعبين هي الصحيحة، ويكسب من وافقها. التعادل لا يكسب أحد.</p>
           <div className="grid grid-cols-2 gap-2">
-            <button type="button" className={card(!majorityMode)} onClick={() => setMajorityMode(false)}>بدون</button>
-            <button type="button" className={card(majorityMode)} onClick={() => setMajorityMode(true)}>تفعيل</button>
+            <button type="button" className={card(!majorityOn)} disabled={bravoMode === "roles"} onClick={() => setMajorityMode(false)}>بدون</button>
+            <button type="button" className={card(majorityOn)} disabled={bravoMode === "roles"} onClick={() => setMajorityMode(true)}>{bravoMode === "roles" ? "مفعّل تلقائياً" : "تفعيل"}</button>
           </div>
         </div>
         <div>
