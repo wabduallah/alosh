@@ -248,9 +248,10 @@ function LeaderRow({ player, rank, snap, compact }: { player: SnapPlayer; rank: 
   );
 }
 
+/** Short join link for phones and the QR code: /pad/CODE forwards to the arena's pad view. */
 export function padLink(code: string): string {
-  if (typeof window === "undefined") return `/games/liars/arena?code=${code}&view=pad`;
-  return `${window.location.origin}/games/liars/arena?code=${code}&view=pad`;
+  if (typeof window === "undefined") return `/pad/${code}`;
+  return `${window.location.origin}/pad/${code}`;
 }
 
 export function Lobby({ snap, controls }: { snap: LiarsSnapshot; controls?: ReactNode }) {

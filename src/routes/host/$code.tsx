@@ -1,16 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { HostScreen } from "@/components/arena";
-import { listGames } from "@/lib/lamma/rpc";
-import type { GameCard } from "@/lib/lamma/types";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-/** Host screen alias: opens the host controls directly. */
+/** Host screen with controls. Short link for a «الكذابون» room: forwards to the arena's host view. */
 export const Route = createFileRoute("/host/$code")({
-  loader: () => listGames(),
-  component: HostPage,
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/games/liars/arena",
+      search: { code: params.code.trim().toUpperCase().slice(0, 8), view: "host" },
+      replace: true,
+    });
+  },
 });
-
-function HostPage() {
-  const { code } = Route.useParams();
-  const games = Route.useLoaderData() as GameCard[];
-  return <HostScreen code={code.toUpperCase()} games={games} />;
-}
