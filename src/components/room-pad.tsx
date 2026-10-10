@@ -55,7 +55,7 @@ export function PadScreen({ code }: { code: string }) {
       {snap.room.status === "WAITING" ? (
         <section className="space-y-3">
           <p className="text-sm font-bold text-neon">{lang === "en" ? snap.room.nameEn : snap.room.nameAr}</p>
-          <h1 className="font-display text-4xl">اللاعبون</h1>
+          <h1 className="font-display text-4xl">{t("host.players")}</h1>
           <div className="grid grid-cols-2 gap-2">
             {snap.players.map((p) => (
               <div
@@ -66,7 +66,7 @@ export function PadScreen({ code }: { code: string }) {
                 )}
               >
                 <p className="font-bold">{p.name}</p>
-                <p className="text-xs text-neon">{p.id === snap.yourId ? "اختيارك" : "في الغرفة"}</p>
+                <p className="text-xs text-neon">{p.id === snap.yourId ? t("room.yourPick") : t("room.inRoom")}</p>
               </div>
             ))}
           </div>
