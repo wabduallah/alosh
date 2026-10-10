@@ -39,6 +39,22 @@ export const getGame = createServerFn({ method: "GET" })
     return gameDetail(data.id);
   });
 
+/**
+ * Client-supplied object (answer payload, host action extra). Stored as jsonb, so it is capped:
+ * an oversized or non-object value becomes {} instead of being written to the database.
+ */
+const MAX_OBJECT_CHARS = 2000;
+function boundedObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  let json: string;
+  try {
+    json = JSON.stringify(value);
+  } catch {
+    return {};
+  }
+  return json.length <= MAX_OBJECT_CHARS ? (value as Record<string, unknown>) : {};
+}
+
 export const createRoom = createServerFn({ method: "POST" })
   .middleware([optionalUser])
   .validator((input: Record<string, unknown>) => ({
@@ -99,7 +115,7 @@ export const submitAnswer = createServerFn({ method: "POST" })
     code: text(input.code, 8).toUpperCase(),
     playerToken: text(input.playerToken, 80),
     round: int(input.round, 1, 30, 1),
-    payload: input.payload && typeof input.payload === "object" ? (input.payload as Record<string, unknown>) : {},
+    payload: boundedObject(input.payload),
   }))
   .handler(async ({ data }) => {
     const { submitNow } = await import("./engine.server");
@@ -123,7 +139,7 @@ export const hostAction = createServerFn({ method: "POST" })
     code: text(input.code, 8).toUpperCase(),
     hostToken: text(input.hostToken, 80),
     action: text(input.action, 24),
-    extra: input.extra && typeof input.extra === "object" ? (input.extra as Record<string, unknown>) : undefined,
+    extra: input.extra === undefined ? undefined : boundedObject(input.extra),
   }))
   .handler(async ({ data, context }) => {
     const { hostNow } = await import("./engine.server");
