@@ -106,6 +106,8 @@ export type Snapshot = {
     reactionBonus: boolean;
     majorityMode: boolean;
     category: string;
+    bravoMode: "quick" | "roles" | "rapid";
+    categories: string[];
     hostMode: "player" | "narrator";
     hostAnswer: string | null;
   };

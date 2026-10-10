@@ -5,6 +5,7 @@ import { GameIcon, PictureIcons } from "@/components/icons";
 import { QrCode } from "@/components/qr-code";
 import { Button, cx, inputClass, joinLink } from "@/components/ui";
 import { LETTER_CATS, type LetterCat } from "@/games/score";
+import { buildScorecardText, rankScorecard, type BravoMode } from "@/lib/lamma/bravo-engine";
 import { useI18n } from "@/lib/i18n";
 import { getSnapshot, hostAction, sendCheer, submitAnswer } from "@/lib/lamma/rpc";
 import { watchRoom } from "@/lib/lamma/live";
@@ -570,7 +571,7 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
 
         {snap.room.status === "FINISHED" ? (
           <div className="space-y-6">
-            <Standings players={snap.players} yourId={snap.yourId} />
+            <Standings players={snap.players} yourId={snap.yourId} roomCode={snap.room.code} mode={snap.room.bravoMode} />
             <div className="grid gap-2">
               {snap.youAreHost ? (
                 <Button type="button" onClick={() => void act("start")} className="w-full">
@@ -987,21 +988,39 @@ function GuestsStrip({ snap }: { snap: Snapshot }) {
 }
 
 /** Final standings: winners in descending order of points, with each player's gap to the leader. */
-function Standings({ players, yourId }: { players: Snapshot["players"]; yourId: string | null }) {
-  const ranked = [...players].sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
-  const leader = ranked[0]?.score ?? 0;
-  let place = 0;
-  let last = Number.POSITIVE_INFINITY;
-  const rows = ranked.map((player, index) => {
-    if (player.score !== last) {
-      place = index + 1;
-      last = player.score;
+function Standings({
+  players,
+  yourId,
+  roomCode,
+  mode,
+}: {
+  players: Snapshot["players"];
+  yourId: string | null;
+  roomCode: string;
+  mode: BravoMode;
+}) {
+  const ranked = rankScorecard(players);
+  const rows = ranked.map((row) => ({ player: row, place: row.place, gap: row.gap }));
+  const [copied, setCopied] = useState(false);
+  async function shareScorecard() {
+    try {
+      await navigator.clipboard.writeText(buildScorecardText({ roomCode, mode, rows: ranked }));
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
     }
-    return { player, place, gap: leader - player.score };
-  });
+  }
   return (
     <section className="space-y-6 text-center">
       <h2 className="font-display text-5xl">الترتيب النهائي</h2>
+      <button
+        type="button"
+        onClick={() => void shareScorecard()}
+        className="min-h-11 rounded-full border border-neon/40 px-5 font-bold text-neon transition hover:bg-neon/10"
+      >
+        {copied ? "تم نسخ النتيجة ✓" : "انسخ النتيجة للمشاركة"}
+      </button>
       <ol className="mx-auto grid max-w-3xl gap-3 sm:grid-cols-3">
         {rows.slice(0, 3).map(({ player, place: rank, gap }) => (
           <li
@@ -1184,7 +1203,7 @@ export function PadScreen({ code }: { code: string }) {
 
       {snap.room.status === "FINISHED" ? (
         <div className="glass-card rounded-3xl p-4">
-          <Standings players={snap.players} yourId={snap.yourId} />
+          <Standings players={snap.players} yourId={snap.yourId} roomCode={snap.room.code} mode={snap.room.bravoMode} />
         </div>
       ) : null}
 
