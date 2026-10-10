@@ -66,7 +66,6 @@ export const SEED_CATEGORIES = CATALOG.map((cat) => ({
   sort: cat.sort,
 }));
 
-const letterRules = { unique: 10, duplicate: 5, wrong: 0, empty: 0 };
 
 export const SEED_GAMES: SeedGame[] = [
   {
