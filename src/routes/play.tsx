@@ -39,6 +39,9 @@ function CreatePage() {
   const [targetScore, setTargetScore] = useState(0);
   const [streakMultiplier, setStreakMultiplier] = useState(false);
   const [eliminationMode, setEliminationMode] = useState(false);
+  const [reactionBonus, setReactionBonus] = useState(false);
+  const [majorityMode, setMajorityMode] = useState(false);
+  const [category, setCategory] = useState("");
   const [hostIsPlayer, setHostIsPlayer] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -63,6 +66,9 @@ function CreatePage() {
         targetScore,
         streakMultiplier,
         eliminationMode,
+        reactionBonus,
+        majorityMode,
+        category,
         locale: lang,
         promo: promo || undefined,
         hostName: hostIsPlayer ? hostName.trim() || undefined : undefined,
@@ -169,6 +175,37 @@ function CreatePage() {
           <div className="grid grid-cols-2 gap-2">
             <button type="button" className={card(!streakMultiplier)} onClick={() => setStreakMultiplier(false)}>بدون</button>
             <button type="button" className={card(streakMultiplier)} onClick={() => setStreakMultiplier(true)}>تفعيل</button>
+          </div>
+        </div>
+        <div>
+          <p className="mb-2 font-bold">فئة الأسئلة</p>
+          <p className="mb-2 text-sm text-muted">إن لم توجد أسئلة في الفئة المختارة تُستعمل كل الأسئلة.</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            {([
+              ["", "الكل"],
+              ["movies", "🎬 سينما وأنيمي"],
+              ["puzzles", "🧠 ألغاز وذكاء"],
+              ["sports", "⚽ رياضة"],
+              ["culture", "🇸🇦 ثقافة وعام"],
+            ] as const).map(([id, label]) => (
+              <button key={id || "all"} type="button" className={card(category === id)} onClick={() => setCategory(id)}>{label}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="mb-2 font-bold">مكافأة سرعة الإجابة</p>
+          <p className="mb-2 text-sm text-muted">الإجابة الفورية تضاعف النقاط (×2)، وتنخفض المكافأة كلما تأخرت.</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" className={card(!reactionBonus)} onClick={() => setReactionBonus(false)}>بدون</button>
+            <button type="button" className={card(reactionBonus)} onClick={() => setReactionBonus(true)}>تفعيل</button>
+          </div>
+        </div>
+        <div>
+          <p className="mb-2 font-bold">التخمين الجماعي</p>
+          <p className="mb-2 text-sm text-muted">الإجابة التي اختارها أكثر اللاعبين هي الصحيحة، ويكسب من وافقها. التعادل لا يكسب أحد.</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" className={card(!majorityMode)} onClick={() => setMajorityMode(false)}>بدون</button>
+            <button type="button" className={card(majorityMode)} onClick={() => setMajorityMode(true)}>تفعيل</button>
           </div>
         </div>
         <div>

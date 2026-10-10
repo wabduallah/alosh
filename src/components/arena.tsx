@@ -956,11 +956,15 @@ function QuestionVisual({ snap }: { snap: Snapshot }) {
 /** Guest names under the question. A green check appears as soon as a guest has answered. */
 function GuestsStrip({ snap }: { snap: Snapshot }) {
   const answered = snap.players.filter((p) => p.answered).length;
+  // Live standings: the three leaders, shown while the round is in progress.
+  const leaders = [...snap.players].sort((a, b) => b.score - a.score).slice(0, 3);
   const rules = [
     snap.room.targetScore > 0 ? `الهدف ${snap.room.targetScore} نقطة` : null,
     snap.room.pointsPerCorrect > 0 ? `${snap.room.pointsPerCorrect} نقطة لكل إجابة صحيحة` : null,
     snap.room.streakMultiplier ? "مضاعف للإجابات المتتالية" : null,
     snap.room.eliminationMode ? "الإقصاء السريع: من يخطئ يخرج" : null,
+    snap.room.reactionBonus ? "مكافأة السرعة مفعّلة" : null,
+    snap.room.majorityMode ? "التخمين الجماعي: الإجابة الأكثر اختياراً" : null,
     snap.players.find((p) => p.id === snap.yourId)?.eliminated ? "أنت خارج اللعبة، تشاهد فقط" : null,
   ].filter(Boolean);
   return (
@@ -984,6 +988,11 @@ function GuestsStrip({ snap }: { snap: Snapshot }) {
           </span>
         ))}
       </div>
+      {leaders.length ? (
+        <p className="text-center text-xs text-ivory/80">
+          المتصدرون: {leaders.map((p) => `${p.name} ${p.score}`).join(" · ")}
+        </p>
+      ) : null}
       <p className="text-center text-xs text-muted">
         {answered}/{snap.players.length} أجابوا{rules.length ? ` · ${rules.join(" · ")}` : ""}
       </p>
