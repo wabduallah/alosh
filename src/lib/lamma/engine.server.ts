@@ -135,7 +135,11 @@ type RoundState = {
 type Choice = { id: string; ar: string; en: string; points?: number };
 
 const ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const hits = new Map<string, { n: number; t: number }>();
+// Fixed-window rate limits keyed by IP or player. Entries remember their own window so expired
+// ones can be dropped; without pruning the map grows with every key ever seen.
+const hits = new Map<string, { n: number; t: number; w: number }>();
+const HIT_KEYS_SOFT_LIMIT = 5000;
+let lastHitPrune = 0;
 const CHEER_TTL_MS = 6500;
 const AUTO_NEXT_MS = 2500;
 const MAJLIS_GAME = "majlis-custom";
@@ -218,11 +222,22 @@ function tokensMatch(stored: string, given?: string): boolean {
   }
 }
 
+function pruneHits(now: number) {
+  for (const [key, row] of hits) {
+    if (now - row.t > row.w) hits.delete(key);
+  }
+}
+
 function allow(key: string, max: number, windowMs: number): boolean {
   const now = Date.now();
+  // Prune only when the map is large, and at most every 10s, so a busy server never pays O(n) per request.
+  if (hits.size >= HIT_KEYS_SOFT_LIMIT && now - lastHitPrune > 10_000) {
+    lastHitPrune = now;
+    pruneHits(now);
+  }
   const row = hits.get(key);
   if (!row || now - row.t > windowMs) {
-    hits.set(key, { n: 1, t: now });
+    hits.set(key, { n: 1, t: now, w: windowMs });
     return true;
   }
   row.n += 1;
