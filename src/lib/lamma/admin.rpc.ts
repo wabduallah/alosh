@@ -31,5 +31,5 @@ export const adminMutate = createServerFn({ method: "POST" })
     const { adminMutateNow } = await import("./admin.server");
     const res = await adminMutateNow(data.op, data.payload, { userId: context.userId, email: context.email });
     if (!res.ok) return { ok: false as const, error: res.error };
-    return { ok: true as const, imported: "imported" in res ? Number(res.imported ?? 0) : 0, gameId: "gameId" in res ? String(res.gameId ?? "") : "" };
+    return { ok: true as const };
   });

@@ -28,9 +28,6 @@ function Home() {
           <Link to="/join" className="inline-flex min-h-11 items-center rounded-full bg-neon px-5 text-sm font-bold text-night">
             انضم بالرمز
           </Link>
-          <Link to="/majlis" className="inline-flex min-h-11 items-center rounded-full border border-white/15 px-5 text-sm font-bold text-ivory">
-            المجالس
-          </Link>
         </div>
       </section>
     </Shell>

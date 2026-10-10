@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { cx } from "@/components/ui";
 import { useI18n } from "@/lib/i18n";
-import { buildScorecardText, rankScorecard, type BravoMode } from "@/lib/lamma/bravo-engine";
+import { buildScorecardText, rankScorecard } from "@/lib/lamma/scoreboard";
 import type { Snapshot } from "@/lib/lamma/types";
 
 /** Final ranking after a game: podium for the top three, full table below, plus a copy-to-share scorecard. */
@@ -9,12 +9,10 @@ export function Standings({
   players,
   yourId,
   roomCode,
-  mode,
 }: {
   players: Snapshot["players"];
   yourId: string | null;
   roomCode: string;
-  mode: BravoMode;
 }) {
   const { t } = useI18n();
   const ranked = rankScorecard(players);
@@ -29,7 +27,7 @@ export function Standings({
 
   async function shareScorecard() {
     try {
-      await navigator.clipboard.writeText(buildScorecardText({ roomCode, mode, rows: ranked }));
+      await navigator.clipboard.writeText(buildScorecardText({ roomCode, rows: ranked }));
       setCopied(true);
       resetCopied.current = window.setTimeout(() => setCopied(false), 2000);
     } catch {

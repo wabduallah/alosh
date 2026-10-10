@@ -1,4 +1,3 @@
-import { parseBravoCategories, parseBravoMode } from "./bravo-engine";
 import { createServerFn } from "@tanstack/react-start";
 import { optionalUser } from "./session";
 
@@ -77,11 +76,6 @@ export const createRoom = createServerFn({ method: "POST" })
     reactionBonus: input.reactionBonus === true,
     majorityMode: input.majorityMode === true,
     category: text(input.category, 40),
-    bravoMode: parseBravoMode(input.bravoMode),
-    categories: parseBravoCategories(input.categories),
-    customQuestions: Array.isArray(input.customQuestions)
-      ? (input.customQuestions as Array<{ promptAr: string; choices: { ar: string }[]; correct: number; points: number }>).slice(0, 15)
-      : undefined,
   }))
   .handler(async ({ data, context }) => {
     const { createRoomNow } = await import("./engine.server");

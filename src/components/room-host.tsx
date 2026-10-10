@@ -235,7 +235,7 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
 
         {snap.room.status === "FINISHED" ? (
           <div className="space-y-6">
-            <Standings players={snap.players} yourId={snap.yourId} roomCode={snap.room.code} mode={snap.room.bravoMode} />
+            <Standings players={snap.players} yourId={snap.yourId} roomCode={snap.room.code} />
             <div className="grid gap-2">
               {snap.youAreHost ? (
                 <Button type="button" onClick={() => void act("start")} className="w-full">
