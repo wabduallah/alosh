@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { cx } from "@/components/ui";
+import { useI18n } from "@/lib/i18n";
 import { buildScorecardText, rankScorecard, type BravoMode } from "@/lib/lamma/bravo-engine";
 import type { Snapshot } from "@/lib/lamma/types";
 
@@ -15,6 +16,7 @@ export function Standings({
   roomCode: string;
   mode: BravoMode;
 }) {
+  const { t } = useI18n();
   const ranked = rankScorecard(players);
   const [copied, setCopied] = useState(false);
   const resetCopied = useRef<number | null>(null);
@@ -37,13 +39,13 @@ export function Standings({
 
   return (
     <section className="space-y-6 text-center">
-      <h2 className="font-display text-5xl">الترتيب النهائي</h2>
+      <h2 className="font-display text-5xl">{t("room.standingsTitle")}</h2>
       <button
         type="button"
         onClick={() => void shareScorecard()}
         className="min-h-11 rounded-full border border-neon/40 px-5 font-bold text-neon transition hover:bg-neon/10"
       >
-        {copied ? "تم نسخ النتيجة ✓" : "انسخ النتيجة للمشاركة"}
+        {copied ? t("room.copiedResult") : t("room.copyResult")}
       </button>
       <ol className="mx-auto grid max-w-3xl gap-3 sm:grid-cols-3">
         {ranked.slice(0, 3).map((row) => (
@@ -54,7 +56,7 @@ export function Standings({
             <p className="font-display text-4xl text-neon">{row.place}</p>
             <p className="text-2xl font-bold">{row.name}</p>
             <p className="tabular-nums text-ivory">{row.score}</p>
-            <p className="text-xs text-muted">{row.gap === 0 ? "المتصدر" : `−${row.gap}`}</p>
+            <p className="text-xs text-muted">{row.gap === 0 ? t("room.leader") : `−${row.gap}`}</p>
           </li>
         ))}
       </ol>

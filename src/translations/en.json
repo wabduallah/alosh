@@ -258,5 +258,37 @@
   "hostMode": {
     "player": "Host plays",
     "narrator": "Host narrates only"
+  },
+  "room": {
+    "narratorNote": "Narrator mode: players cannot see the answer.",
+    "narratorAnswer": "Answer: {answer}",
+    "narratorStart": "Start the round to see the answer.",
+    "you": "You",
+    "readyPlayer": "Ready",
+    "backHome": "Back to the main menu",
+    "playAgain": "Play again",
+    "changeGame": "Change game",
+    "stayInRoom": "Players stay in the room. The host picks the next game.",
+    "youPlay": "You're playing",
+    "yourPick": "Your pick",
+    "inRoom": "In the room",
+    "goal": "Goal: {n} points",
+    "pointsPerCorrect": "{n} points per correct answer",
+    "streak": "Streak multiplier",
+    "elimination": "Quick elimination: wrong answers are out",
+    "speedBonus": "Speed bonus on",
+    "groupGuess": "Group guess: the most-picked answer wins",
+    "eliminatedWatching": "You're out. Watching only.",
+    "answeredLabel": "Answered",
+    "leaders": "Leaders",
+    "answeredCount": "{a}/{b} answered",
+    "standingsTitle": "Final standings",
+    "copiedResult": "Result copied ✓",
+    "copyResult": "Copy result to share",
+    "leader": "Leader",
+    "nest1": "Eagles' nest",
+    "nest2": "Falcons' nest",
+    "nest3": "Hawks' nest",
+    "nest4": "Knights' nest"
   }
 }
