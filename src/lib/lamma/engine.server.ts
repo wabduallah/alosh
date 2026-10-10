@@ -1,9 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { getSql, type Sql } from "@/lib/db";
 import { speedPoints, textMatches, type Locale } from "./match";
-import { profileFor } from "./catalog";
-import { applyBravoMode, parseBravoCategories, parseBravoMode, rankScorecard, type BravoCategory, type BravoMode } from "./bravo-engine";
-import { SEED_CATEGORIES, SEED_GAMES, SEED_PLANS, SEED_PROMOS } from "./seed-data";
+import { SEED_PLANS, SEED_PROMOS } from "./seed-data";
 import type { Cheer, CheerKind, Engine, Fail, GameCard, PlanCard, PublicQuestion, Reveal, RoomStatus, SnapPlayer, Snapshot } from "./types";
 import { CHEER_KINDS } from "./types";
 
@@ -105,8 +103,6 @@ type Settings = {
   reactionBonus: boolean;
   majorityMode: boolean;
   category: string;
-  bravoMode: BravoMode;
-  categories: BravoCategory[];
   hostMode: "player" | "narrator";
 };
 
@@ -130,30 +126,6 @@ const HIT_KEYS_SOFT_LIMIT = 5000;
 let lastHitPrune = 0;
 const CHEER_TTL_MS = 6500;
 const AUTO_NEXT_MS = 2500;
-const MAJLIS_GAME = "majlis-custom";
-const MAJLIS_MAX_QUESTIONS = 15;
-
-export type MajlisQuestionInput = {
-  promptAr: string;
-  choices: { ar: string }[];
-  correct: number;
-  points: number;
-};
-
-/** Validates host-written questions. Every kept choice must be non-blank, and `correct` must point at one of them. */
-function sanitizeMajlis(list: MajlisQuestionInput[] | undefined): MajlisQuestionInput[] | null {
-  const out: MajlisQuestionInput[] = [];
-  for (const raw of (list ?? []).slice(0, MAJLIS_MAX_QUESTIONS)) {
-    const promptAr = String(raw?.promptAr ?? "").trim().slice(0, 200);
-    const choices = (Array.isArray(raw?.choices) ? raw.choices : []).slice(0, 4).map((c) => ({ ar: String(c?.ar ?? "").trim().slice(0, 80) }));
-    const correct = Number(raw?.correct);
-    const points = clamp(raw?.points, 10, 500, 100);
-    if (!promptAr || choices.length < 2 || choices.some((c) => !c.ar)) return null;
-    if (!Number.isInteger(correct) || correct < 0 || correct >= choices.length) return null;
-    out.push({ promptAr, choices, correct, points });
-  }
-  return out.length ? out : null;
-}
 let seeding: Promise<void> | null = null;
 let lastSweep = 0;
 
@@ -243,7 +215,7 @@ function asSettings(value: unknown, fallback?: Partial<Settings>): Settings {
   const raw = jparse<Partial<Settings>>(value, {});
   const difficulty = raw.difficulty;
   const hostIsPlayer = typeof raw.hostIsPlayer === "boolean" ? raw.hostIsPlayer : raw.hostMode !== "narrator";
-  return applyBravoMode({
+  return {
     rounds: clamp(raw.rounds, 1, 15, fallback?.rounds ?? 6),
     seconds: clamp(raw.seconds, 8, 180, fallback?.seconds ?? 30),
     difficulty: difficulty === "easy" || difficulty === "medium" || difficulty === "hard" || difficulty === "mixed" ? difficulty : (fallback?.difficulty ?? "mixed"),
@@ -259,10 +231,8 @@ function asSettings(value: unknown, fallback?: Partial<Settings>): Settings {
     reactionBonus: raw.reactionBonus === true,
     majorityMode: raw.majorityMode === true,
     category: typeof raw.category === "string" ? raw.category.slice(0, 40) : "",
-    bravoMode: parseBravoMode(raw.bravoMode),
-    categories: parseBravoCategories(raw.categories ?? raw.category),
     hostMode: hostIsPlayer ? "player" : "narrator",
-  });
+  };
 }
 
 function clamp(value: unknown, min: number, max: number, fallback: number): number {
@@ -300,25 +270,11 @@ async function seedAll(sql: Sql): Promise<void> {
   if (flag.purged) return;
   if (flag.loaded && num(flag.catalog) >= 4) return;
 
-  for (const cat of SEED_CATEGORIES) {
-    await sql`insert into categories (id, name_ar, name_en, sort_order) values (${cat.id}, ${cat.ar}, ${cat.en}, ${cat.sort}) on conflict (id) do update set name_ar = excluded.name_ar, name_en = excluded.name_en, sort_order = excluded.sort_order`;
-  }
   for (const plan of SEED_PLANS) {
     await sql`insert into plans (id, name_ar, name_en, price_sar, interval_unit, features_ar, features_en, sort_order) values (${plan.id}, ${plan.nameAr}, ${plan.nameEn}, ${plan.price}, ${plan.interval}, ${JSON.stringify(plan.featuresAr)}::jsonb, ${JSON.stringify(plan.featuresEn)}::jsonb, ${plan.sort}) on conflict (id) do nothing`;
   }
   for (const promo of SEED_PROMOS) {
     await sql`insert into promo_codes (code, kind, amount, source) values (${promo.code}, ${promo.kind}, ${promo.amount}, 'seed') on conflict (code) do nothing`;
-  }
-  for (const game of SEED_GAMES) {
-    await sql`insert into games (id, name_ar, name_en, description_ar, description_en, category, tier, engine, min_players, max_players, default_seconds, default_rounds, scoring, visible, status, sort_order, icon, source) values (${game.id}, ${game.nameAr}, ${game.nameEn}, ${game.descAr}, ${game.descEn}, ${game.category}, ${game.tier}, ${game.engine}, ${game.minPlayers}, ${game.maxPlayers}, ${game.seconds}, ${game.rounds}, ${JSON.stringify(game.scoring)}::jsonb, true, 'published', ${game.sort}, ${game.icon}, 'seed') on conflict (id) do nothing`;
-    await sql`update games set icon = ${game.icon} where id = ${game.id} and source = 'seed'`;
-    const meta = profileFor(game.id);
-    await sql`update games set category = ${meta.category}, play_mode = ${meta.mode}, duration_min = ${meta.dmin}, duration_max = ${meta.dmax}, rules_ar = ${meta.rulesAr}, rules_en = ${meta.rulesEn}, how_ar = ${meta.howAr}, how_en = ${meta.howEn} where id = ${game.id} and source = 'seed'`;
-    const count = await sql<{ n: number }>`select count(*) as n from questions where game_id = ${game.id} and source = 'seed'`;
-    if (num(count[0]?.n) > 0 || game.questions.length === 0) continue;
-    for (const q of game.questions) {
-      await sql`insert into questions (game_id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, status, source) values (${game.id}, ${q.promptAr}, ${q.promptEn}, ${q.kind}, ${JSON.stringify(q.choices ?? [])}::jsonb, ${q.correct ?? null}, ${JSON.stringify(q.accepted ?? [])}::jsonb, ${q.difficulty ?? "easy"}, ${JSON.stringify(q.icons ?? [])}::jsonb, ${q.points ?? 10}, 'published', 'seed')`;
-    }
   }
   const defaults: [string, unknown][] = [
     ["brand", { ar: "العش", en: "The Nest" }],
@@ -456,25 +412,20 @@ export async function createRoomNow(
     reactionBonus?: boolean;
     majorityMode?: boolean;
     category?: string;
-    bravoMode?: string;
-    categories?: string[];
-    customQuestions?: MajlisQuestionInput[];
   },
   ctx: Ctx,
 ): Promise<Fail | { ok: true; code: string; hostToken: string; playerId?: string; playerToken?: string }> {
   const sql = await db();
   const ip = await ipKey();
   if (!allow(`create:${ip}`, 200, 60 * 60 * 1000)) return fail("RATE");
-  const games = await sql<GameRow>`select * from games where id = ${input.gameId} and (visible = true or id = ${MAJLIS_GAME}) and status = 'published'`;
+  const games = await sql<GameRow>`select * from games where id = ${input.gameId} and visible = true and status = 'published'`;
   const game = games[0];
   if (!game) return fail("GAME");
-  const majlisQuestions = game.id === MAJLIS_GAME ? sanitizeMajlis(input.customQuestions) : null;
-  if (game.id === MAJLIS_GAME && !majlisQuestions) return fail("NO_QUESTIONS");
   const hostName = input.hostName ? cleanName(input.hostName) : null;
   if (input.hostName && !hostName) return fail("NAME_INVALID");
   const settings = asSettings(
     {
-      rounds: majlisQuestions ? majlisQuestions.length : input.rounds || game.default_rounds,
+      rounds: input.rounds || game.default_rounds,
       seconds: input.seconds || game.default_seconds,
       difficulty: input.difficulty,
       sound: input.sound,
@@ -482,15 +433,13 @@ export async function createRoomNow(
       maxPlayers: Math.min(14, Math.max(2, game.min_players, Math.round(input.maxPlayers) || 2)),
       locale: input.locale,
       hostIsPlayer: input.hostIsPlayer ?? input.hostMode !== "narrator",
-      pointsPerCorrect: majlisQuestions ? 0 : input.pointsPerCorrect,
+      pointsPerCorrect: input.pointsPerCorrect,
       targetScore: input.targetScore,
       streakMultiplier: input.streakMultiplier === true,
       eliminationMode: input.eliminationMode === true,
       reactionBonus: input.reactionBonus === true,
       majorityMode: input.majorityMode === true,
       category: input.category ?? "",
-      bravoMode: input.bravoMode,
-      categories: input.categories,
     },
     { rounds: game.default_rounds, seconds: game.default_seconds },
   );
@@ -504,11 +453,6 @@ export async function createRoomNow(
   }
   const hostToken = hex(16);
   await sql`insert into rooms (id, host_token, host_user_id, host_ip, game_id, status, settings, round_state, unlocked, expires_at) values (${code}, ${hostToken}, ${ctx.userId}, ${ip}, ${game.id}, 'WAITING', ${JSON.stringify(settings)}::jsonb, '{}'::jsonb, true, now() + (${hours} * interval '1 hour'))`;
-  // Majlis questions are inserted in host order; ids are serial, so `order by id` keeps that order.
-  for (const q of majlisQuestions ?? []) {
-    const choices = q.choices.map((c, i) => ({ id: `c${i}`, ar: c.ar, en: c.ar }));
-    await sql`insert into questions (game_id, room_id, prompt_ar, prompt_en, kind, choices, correct, points, status, source) values (${MAJLIS_GAME}, ${code}, ${q.promptAr}, ${q.promptAr}, 'mcq', ${JSON.stringify(choices)}::jsonb, ${`c${q.correct}`}, ${q.points}, 'published', 'host')`;
-  }
   // Host-as-player: the host always gets a real seat (and therefore a Player Pad) when hostIsPlayer is set.
   if (!settings.hostIsPlayer) return { ok: true, code, hostToken };
   const seatName = hostName ?? (input.locale === "en" ? "Host" : "المضيف");
@@ -651,8 +595,6 @@ async function buildSnap(sql: Sql, code: string, hostToken?: string, playerToken
       reactionBonus: settings.reactionBonus,
       majorityMode: settings.majorityMode,
       category: settings.category,
-      bravoMode: settings.bravoMode,
-      categories: settings.categories,
       hostMode: settings.hostMode,
       hostAnswer: tokensMatch(fresh.room.host_token, hostToken) && settings.hostMode === "narrator" ? (q?.correct ?? null) : null,
     },
@@ -667,27 +609,17 @@ export async function snapshotNow(input: { code: string; hostToken?: string; pla
   return buildSnap(sql, code, input.hostToken, input.playerToken);
 }
 
-/** Round N of a Majlis room is the N-th question the host wrote for that room. */
-async function majlisQuestion(sql: Sql, code: string, round: number): Promise<QRow | null> {
-  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where room_id = ${code} order by id offset ${round - 1} limit 1`;
-  return rows[0] ?? null;
-}
-
-async function pickQuestion(sql: Sql, gameId: string, state: RoundState, difficulty: Settings["difficulty"], categories: string[] = []): Promise<QRow | null> {
+async function pickQuestion(sql: Sql, gameId: string, state: RoundState, difficulty: Settings["difficulty"]): Promise<QRow | null> {
   // Pick one row in SQL instead of loading the whole pool. Preference order:
-  // category + difficulty, category, difficulty, anything. Questions already used this game
-  // are skipped; if every question has been used, the final level allows repeats.
+  // difficulty, anything. Questions already used this game are skipped; if every
+  // question has been used, the final level allows repeats.
   const used = state.usedQuestionIds ?? [];
   const diff = difficulty === "mixed" ? null : difficulty;
-  const levels: Array<{ cats: string[]; diff: string | null }> = [];
-  if (categories.length) {
-    if (diff) levels.push({ cats: categories, diff });
-    levels.push({ cats: categories, diff: null });
-  }
-  if (diff) levels.push({ cats: [], diff });
-  levels.push({ cats: [], diff: null });
+  const levels: Array<{ diff: string | null }> = [];
+  if (diff) levels.push({ diff });
+  levels.push({ diff: null });
   for (const level of levels) {
-    const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published' and room_id is null ${level.cats.length ? sql`and category = any(${level.cats})` : sql``} ${level.diff ? sql`and difficulty = ${level.diff}` : sql``} ${used.length ? sql`and not (id = any(${used}))` : sql``} order by random() limit 1`;
+    const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published' and room_id is null ${level.diff ? sql`and difficulty = ${level.diff}` : sql``} ${used.length ? sql`and not (id = any(${used}))` : sql``} order by random() limit 1`;
     if (rows[0]) return rows[0];
   }
   const repeats = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published' and room_id is null order by random() limit 1`;
@@ -706,7 +638,7 @@ async function openRound(sql: Sql, code: string, round: number): Promise<Fail | 
     usedQuestionIds: prev.usedQuestionIds ?? [],
     reveal: null,
   };
-  const q = data.game.id === MAJLIS_GAME ? await majlisQuestion(sql, code, round) : await pickQuestion(sql, data.game.id, prev, settings.difficulty, settings.categories);
+  const q = await pickQuestion(sql, data.game.id, prev, settings.difficulty);
   if (!q) return fail("NO_QUESTIONS");
   state.questionId = q.id;
   state.usedQuestionIds = [...(prev.usedQuestionIds ?? []), q.id];
@@ -892,7 +824,7 @@ function reactionMultiplier(ms: number, windowMs: number): number {
   return 1 + (1 - ratio);
 }
 
-/** Bravo group guess: the choice most players picked. A tie means no group answer, so nobody scores. */
+/** Group guess: the choice most players picked. A tie means no group answer, so nobody scores. */
 function majorityChoice(players: { id: string }[], byPlayer: Map<string, AnswerRow>): string | null {
   const counts = new Map<string, number>();
   for (const p of players) {
@@ -1088,16 +1020,6 @@ async function finishGame(sql: Sql, code: string): Promise<void> {
     }
     if (!player.user_id || player.is_bot) continue;
     await sql`insert into play_history (user_id, room_id, game_id, player_name, score, placement) values (${player.user_id}, ${code}, ${data.room.game_id}, ${player.name}, ${player.score}, ${place})`;
-  }
-  if (data.room.game_id !== MAJLIS_GAME) {
-    try {
-      const settings = asSettings(data.room.settings);
-      const seated = data.players.filter((p) => !p.is_bot).map((p) => ({ id: p.id, name: p.name, score: p.score }));
-      const card = JSON.stringify(rankScorecard(seated));
-      await sql`insert into bravo_matches (room_id, game_id, mode, categories, rounds, seconds, player_count, scorecard) values (${code}, ${data.room.game_id}, ${settings.bravoMode}, ${settings.categories}, ${settings.rounds}, ${settings.seconds}, ${seated.length}, ${card}::jsonb) on conflict (room_id) do nothing`;
-    } catch (error) {
-      console.error("bravo match history skipped", error);
-    }
   }
   await sql`update rooms set status = 'FINISHED', revision = revision + 1, updated_at = now() where id = ${code}`;
 }

@@ -114,7 +114,7 @@ export function PadScreen({ code }: { code: string }) {
 
       {snap.room.status === "FINISHED" ? (
         <div className="glass-card rounded-3xl p-4">
-          <Standings players={snap.players} yourId={snap.yourId} roomCode={snap.room.code} mode={snap.room.bravoMode} />
+          <Standings players={snap.players} yourId={snap.yourId} roomCode={snap.room.code} />
         </div>
       ) : null}
 
