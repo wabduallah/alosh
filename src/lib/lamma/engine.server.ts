@@ -542,8 +542,10 @@ async function bundle(sql: Sql, code: string) {
   const rooms = await sql<RoomRow>`select * from rooms where id = ${code}`;
   const room = rooms[0];
   if (!room) return null;
-  const games = await sql<GameRow>`select * from games where id = ${room.game_id}`;
-  const players = await sql<PlayerRow>`select * from players where room_id = ${code} order by joined_at`;
+  const [games, players] = await Promise.all([
+    sql<GameRow>`select * from games where id = ${room.game_id}`,
+    sql<PlayerRow>`select * from players where room_id = ${code} order by joined_at`,
+  ]);
   return { room, game: games[0], players };
 }
 
@@ -570,16 +572,22 @@ async function buildSnap(sql: Sql, code: string, hostToken?: string, playerToken
   const data = await bundle(sql, code);
   if (!data?.game) return fail("ROOM_NOT_FOUND");
   let { room } = data;
+  // A poll only writes in three cases: the room expired, the round timer ran out, or an auto-advance is due.
+  // Otherwise the rows loaded above are current, so the second load is skipped.
+  let changed = false;
   if (stamp(room.expires_at) < Date.now() && room.status !== "CLOSED") {
     await sql`update rooms set status = 'CLOSED', updated_at = now(), revision = revision + 1 where id = ${code}`;
     room = { ...room, status: "CLOSED" };
+    changed = true;
   }
   const state = jparse<RoundState>(room.round_state, {});
   if (room.status === "PLAYING" && state.endsAt && Date.parse(state.endsAt) <= Date.now()) {
     await closeRound(sql, code, false);
+    changed = true;
   }
-  await advanceIfDue(sql, code);
-  const fresh = await bundle(sql, code);
+  if (room.status === "ROUND_END" && state.autoAt && Date.parse(state.autoAt) <= Date.now()) changed = true;
+  await advanceIfDue(sql, code, changed ? undefined : data);
+  const fresh = changed ? await bundle(sql, code) : data;
   if (!fresh?.game) return fail("ROOM_NOT_FOUND");
   const settings = asSettings(fresh.room.settings);
   const roundState = jparse<RoundState>(fresh.room.round_state, {});
@@ -859,8 +867,8 @@ async function autoCloseIfComplete(sql: Sql, code: string): Promise<boolean> {
   return true;
 }
 
-async function advanceIfDue(sql: Sql, code: string): Promise<void> {
-  const data = await bundle(sql, code);
+async function advanceIfDue(sql: Sql, code: string, preloaded?: Awaited<ReturnType<typeof bundle>>): Promise<void> {
+  const data = preloaded ?? (await bundle(sql, code));
   if (!data || data.room.status !== "ROUND_END") return;
   const state = jparse<RoundState>(data.room.round_state, {});
   if (!state.autoAt || Date.parse(state.autoAt) > Date.now()) return;
