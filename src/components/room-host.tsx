@@ -14,7 +14,7 @@ import type { GameCard, Snapshot } from "@/lib/lamma/types";
 import { lobbyPulse, playCue, unlockAudio } from "@/lib/sfx";
 import { GuestsStrip, QuestionVisual } from "@/components/room-shared";
 
-const NESTS = ["عش النسور", "عش الصقور", "عش الشواهين", "عش الفرسان"];
+const NEST_COUNT = 4;
 
 
 /* ----------------------------------------------------------------------------
@@ -112,8 +112,8 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
         {!snap.youAreHost ? <p className="text-sm text-muted">{t("host.spectator")}</p> : null}
         {snap.youAreHost && snap.room.hostMode === "narrator" ? (
           <p className="rounded-2xl border border-neon/30 bg-neon/10 px-4 py-3 text-sm">
-            وضع الراوي: اللاعبون لا يرون الإجابة.{" "}
-            {snap.room.hostAnswer ? `الإجابة: ${snap.room.hostAnswer}` : "ابدأ الجولة لرؤية الإجابة."}
+            {t("room.narratorNote")}{" "}
+            {snap.room.hostAnswer ? t("room.narratorAnswer", { answer: snap.room.hostAnswer }) : t("room.narratorStart")}
           </p>
         ) : null}
 
@@ -140,10 +140,10 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
                     <p className="font-bold">{player.name}</p>
                     <p className="text-xs text-neon">
                       {snap.room.playMode === "teams"
-                        ? NESTS[snap.players.findIndex((p) => p.id === player.id) % 4]
+                        ? t(`room.nest${(snap.players.findIndex((p) => p.id === player.id) % NEST_COUNT) + 1}`)
                         : player.id === snap.yourId
-                          ? "أنت"
-                          : "جاهز"}
+                          ? t("room.you")
+                          : t("room.readyPlayer")}
                     </p>
                   </div>
                 ))}
@@ -173,7 +173,7 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
                   onClick={leaveHome}
                   className="w-full rounded-full border border-white/10 bg-transparent py-3 font-medium text-muted transition-all hover:border-neon/50 hover:text-ivory"
                 >
-                  العودة إلى القائمة الرئيسية
+                  {t("room.backHome")}
                 </button>
               </div>
               {snap.players.length < needed ? <p className="text-sm text-crimson">{t("host.needMin", { n: needed })}</p> : null}
@@ -239,15 +239,15 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
             <div className="grid gap-2">
               {snap.youAreHost ? (
                 <Button type="button" onClick={() => void act("start")} className="w-full">
-                  اللعب من جديد
+                  {t("room.playAgain")}
                 </Button>
               ) : null}
               {snap.youAreHost ? (
                 <Button type="button" tone="glass" onClick={() => void act("restart")} className="w-full">
-                  تغيير اللعبة
+                  {t("room.changeGame")}
                 </Button>
               ) : (
-                <p className="text-sm text-muted">اللاعبون باقون في الغرفة. المضيف يختار اللعبة التالية.</p>
+                <p className="text-sm text-muted">{t("room.stayInRoom")}</p>
               )}
             </div>
             {snap.youAreHost ? (
@@ -291,7 +291,7 @@ function HostPad({
     <section className="glass-card rounded-3xl p-4 sm:p-5">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-bold tracking-wide text-neon">أنت تلعب</p>
+          <p className="text-xs font-bold tracking-wide text-neon">{t("room.youPlay")}</p>
           <p className="text-sm text-muted">{t("host.playAs")}</p>
         </div>
         <div className="text-end">
@@ -370,6 +370,7 @@ function PlayerRail({
   host: boolean;
   onKick: (id: string) => void;
 }) {
+  const { t } = useI18n();
   return (
     <ul className="mt-auto grid grid-cols-2 gap-2 sm:grid-cols-4">
       {snap.players.map((player) => (
@@ -384,7 +385,7 @@ function PlayerRail({
           <p className="text-sm tabular-nums text-neon">{player.score}</p>
           {host && player.id !== snap.yourId ? (
             <button type="button" className="text-xs text-muted hover:text-crimson" onClick={() => onKick(player.id)}>
-              إخراج
+              {t("host.kick")}
             </button>
           ) : null}
         </li>
