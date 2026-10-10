@@ -35,7 +35,6 @@ export function Shell({ children, paper = false }: { children: ReactNode; paper?
             </div>
             <nav className="text-sm text-ivory/70">
               <Link to="/questions" className="block py-1 hover:text-neon">بنك الأسئلة</Link>
-              <Link to="/" hash="join" className="block py-1 hover:text-neon">انضمام سريع</Link>
               <Link to="/rank" className="block py-1 hover:text-neon">{t("nav.rank")}</Link>
             </nav>
             <p className="text-sm text-muted">الحالة: متصل بالخادم عند فتح غرفة.</p>
@@ -103,21 +102,7 @@ function SiteHeader({
           {lang === "ar" ? "EN" : "ع"}
         </button>
       </div>
-      {/* Primary actions sit at the start edge (right in RTL), followed by secondary links. */}
       <nav className="mx-auto flex max-w-6xl items-center gap-2 overflow-x-auto px-4 pb-3" aria-label="Main">
-        <Link
-          to="/games/liars/setup"
-          className="shrink-0 rounded-full bg-neon px-4 py-2 text-sm font-extrabold text-night shadow-[0_0_16px_rgb(6_182_212/0.35)] transition hover:brightness-110"
-        >
-          إنشاء عش
-        </Link>
-        <Link
-          to="/"
-          hash="join"
-          className="shrink-0 rounded-full border border-neon px-4 py-2 text-sm font-extrabold text-neon transition hover:bg-neon/10"
-        >
-          انضمام سريع
-        </Link>
         <Link to="/" className={navLink}>{t("nav.home")}</Link>
         <Link to="/settings" className={navLink}>{t("nav.settings")}</Link>
       </nav>
