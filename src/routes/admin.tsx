@@ -345,19 +345,23 @@ function Users({ data, onRole }: { data: unknown; onRole: (id: string, role: str
 }
 
 function Rooms({ data, onClose, onReset }: { data: unknown; onClose: (id: string) => void; onReset: (id: string) => void }) {
-  const rows = Array.isArray(data) ? data as { id: string; game_id: string; status: string }[] : [];
+  const rows = Array.isArray(data) ? data as { id: string; game_id: string; status: string; seated?: number; online?: number }[] : [];
+  const onlineNow = rows.reduce((sum, row) => sum + (row.online ?? 0), 0);
   return (
-    <ul className="space-y-2">
-      {rows.map((row) => (
-        <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[rgb(255_255_255/0.08)] bg-[rgb(255_255_255/0.03)] px-4 py-3">
-          <span>{row.id} · {row.game_id} · {row.status}</span>
-          <span className="flex gap-2">
-            <button type="button" className="rounded-full border border-[#06b6d4] px-3 py-1 text-sm text-[#67e8f9]" onClick={() => onReset(row.id)}>تصفير</button>
-            <button type="button" className="rounded-full bg-[#06b6d4] px-3 py-1 text-sm font-extrabold text-black" onClick={() => onClose(row.id)}>إنهاء</button>
-          </span>
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-3">
+      <p className="text-sm text-muted">لاعبون متصلون الآن (آخر دقيقتين) في الغرف المعروضة: <span className="font-bold text-neon tabular-nums">{onlineNow}</span></p>
+      <ul className="space-y-2">
+        {rows.map((row) => (
+          <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[rgb(255_255_255/0.08)] bg-[rgb(255_255_255/0.03)] px-4 py-3">
+            <span>{row.id} · {row.game_id} · {row.status} · متصل {row.online ?? 0} / {row.seated ?? 0}</span>
+            <span className="flex gap-2">
+              <button type="button" className="rounded-full border border-[#06b6d4] px-3 py-1 text-sm text-[#67e8f9]" onClick={() => onReset(row.id)}>تصفير</button>
+              <button type="button" className="rounded-full bg-[#06b6d4] px-3 py-1 text-sm font-extrabold text-black" onClick={() => onClose(row.id)}>إنهاء</button>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

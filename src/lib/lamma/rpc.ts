@@ -59,6 +59,7 @@ export const createRoom = createServerFn({ method: "POST" })
     eliminationMode: input.eliminationMode === true,
     reactionBonus: input.reactionBonus === true,
     majorityMode: input.majorityMode === true,
+    category: text(input.category, 40),
     customQuestions: Array.isArray(input.customQuestions)
       ? (input.customQuestions as Array<{ promptAr: string; choices: { ar: string }[]; correct: number; points: number }>).slice(0, 15)
       : undefined,

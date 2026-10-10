@@ -113,6 +113,7 @@ type Settings = {
   eliminationMode: boolean;
   reactionBonus: boolean;
   majorityMode: boolean;
+  category: string;
   hostMode: "player" | "narrator";
 };
 
@@ -251,6 +252,7 @@ function asSettings(value: unknown, fallback?: Partial<Settings>): Settings {
     eliminationMode: raw.eliminationMode === true,
     reactionBonus: raw.reactionBonus === true,
     majorityMode: raw.majorityMode === true,
+    category: typeof raw.category === "string" ? raw.category.slice(0, 40) : "",
     hostMode: hostIsPlayer ? "player" : "narrator",
   };
 }
@@ -445,6 +447,7 @@ export async function createRoomNow(
     eliminationMode?: boolean;
     reactionBonus?: boolean;
     majorityMode?: boolean;
+    category?: string;
     customQuestions?: MajlisQuestionInput[];
   },
   ctx: Ctx,
@@ -475,6 +478,7 @@ export async function createRoomNow(
       eliminationMode: input.eliminationMode === true,
       reactionBonus: input.reactionBonus === true,
       majorityMode: input.majorityMode === true,
+      category: input.category ?? "",
     },
     { rounds: game.default_rounds, seconds: game.default_seconds },
   );
@@ -626,6 +630,7 @@ async function buildSnap(sql: Sql, code: string, hostToken?: string, playerToken
       eliminationMode: settings.eliminationMode,
       reactionBonus: settings.reactionBonus,
       majorityMode: settings.majorityMode,
+      category: settings.category,
       hostMode: settings.hostMode,
       hostAnswer: tokensMatch(fresh.room.host_token, hostToken) && settings.hostMode === "narrator" ? (q?.correct ?? null) : null,
     },
@@ -646,8 +651,12 @@ async function majlisQuestion(sql: Sql, code: string, round: number): Promise<QR
   return rows[0] ?? null;
 }
 
-async function pickQuestion(sql: Sql, gameId: string, state: RoundState, difficulty: Settings["difficulty"]): Promise<QRow | null> {
-  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published' and room_id is null`;
+async function pickQuestion(sql: Sql, gameId: string, state: RoundState, difficulty: Settings["difficulty"], category = ""): Promise<QRow | null> {
+  // Bravo category vote: prefer questions tagged with the chosen category; fall back to every question if none match.
+  let rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published' and room_id is null and (${category} = '' or category = ${category})`;
+  if (!rows.length && category) {
+    rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published' and room_id is null`;
+  }
   const used = new Set(state.usedQuestionIds ?? []);
   let pool = rows.filter((row) => !used.has(row.id));
   if (!pool.length) pool = rows;
@@ -680,7 +689,7 @@ async function openRound(sql: Sql, code: string, round: number): Promise<Fail | 
     state.letter = letter;
     state.usedLetters = [...(state.usedLetters ?? []), letter];
   } else {
-    const q = data.game.id === MAJLIS_GAME ? await majlisQuestion(sql, code, round) : await pickQuestion(sql, data.game.id, prev, settings.difficulty);
+    const q = data.game.id === MAJLIS_GAME ? await majlisQuestion(sql, code, round) : await pickQuestion(sql, data.game.id, prev, settings.difficulty, settings.category);
     if (!q) return fail("NO_QUESTIONS");
     state.questionId = q.id;
     state.usedQuestionIds = [...(prev.usedQuestionIds ?? []), q.id];

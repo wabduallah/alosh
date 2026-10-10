@@ -64,7 +64,10 @@ export async function adminQueryNow(section: string, ctx: Ctx) {
     return { ok: true as const, data: rows };
   }
   if (section === "rooms") {
-    const rows = await sql`select id, game_id, status, current_round, created_at, expires_at from rooms order by created_at desc limit 50`;
+    const rows = await sql`select r.id, r.game_id, r.status, r.current_round, r.created_at, r.expires_at,
+      (select count(*) from players p where p.room_id = r.id and p.is_bot = false)::int as seated,
+      (select count(*) from players p where p.room_id = r.id and p.is_bot = false and p.last_seen > now() - interval '2 minutes')::int as online
+      from rooms r order by r.created_at desc limit 50`;
     return { ok: true as const, data: rows };
   }
   if (section === "subscriptions") {

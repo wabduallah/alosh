@@ -41,6 +41,7 @@ function CreatePage() {
   const [eliminationMode, setEliminationMode] = useState(false);
   const [reactionBonus, setReactionBonus] = useState(false);
   const [majorityMode, setMajorityMode] = useState(false);
+  const [category, setCategory] = useState("");
   const [hostIsPlayer, setHostIsPlayer] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -67,6 +68,7 @@ function CreatePage() {
         eliminationMode,
         reactionBonus,
         majorityMode,
+        category,
         locale: lang,
         promo: promo || undefined,
         hostName: hostIsPlayer ? hostName.trim() || undefined : undefined,
@@ -173,6 +175,21 @@ function CreatePage() {
           <div className="grid grid-cols-2 gap-2">
             <button type="button" className={card(!streakMultiplier)} onClick={() => setStreakMultiplier(false)}>بدون</button>
             <button type="button" className={card(streakMultiplier)} onClick={() => setStreakMultiplier(true)}>تفعيل</button>
+          </div>
+        </div>
+        <div>
+          <p className="mb-2 font-bold">فئة الأسئلة</p>
+          <p className="mb-2 text-sm text-muted">إن لم توجد أسئلة في الفئة المختارة تُستعمل كل الأسئلة.</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            {([
+              ["", "الكل"],
+              ["movies", "🎬 سينما وأنيمي"],
+              ["puzzles", "🧠 ألغاز وذكاء"],
+              ["sports", "⚽ رياضة"],
+              ["culture", "🇸🇦 ثقافة وعام"],
+            ] as const).map(([id, label]) => (
+              <button key={id || "all"} type="button" className={card(category === id)} onClick={() => setCategory(id)}>{label}</button>
+            ))}
           </div>
         </div>
         <div>
