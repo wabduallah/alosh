@@ -961,6 +961,8 @@ function GuestsStrip({ snap }: { snap: Snapshot }) {
     snap.room.pointsPerCorrect > 0 ? `${snap.room.pointsPerCorrect} نقطة لكل إجابة صحيحة` : null,
     snap.room.streakMultiplier ? "مضاعف للإجابات المتتالية" : null,
     snap.room.eliminationMode ? "الإقصاء السريع: من يخطئ يخرج" : null,
+    snap.room.reactionBonus ? "مكافأة السرعة مفعّلة" : null,
+    snap.room.majorityMode ? "التخمين الجماعي: الإجابة الأكثر اختياراً" : null,
     snap.players.find((p) => p.id === snap.yourId)?.eliminated ? "أنت خارج اللعبة، تشاهد فقط" : null,
   ].filter(Boolean);
   return (

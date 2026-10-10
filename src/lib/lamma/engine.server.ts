@@ -111,6 +111,8 @@ type Settings = {
   targetScore: number;
   streakMultiplier: boolean;
   eliminationMode: boolean;
+  reactionBonus: boolean;
+  majorityMode: boolean;
   hostMode: "player" | "narrator";
 };
 
@@ -247,6 +249,8 @@ function asSettings(value: unknown, fallback?: Partial<Settings>): Settings {
     targetScore: clamp(raw.targetScore, 0, 100000, 0),
     streakMultiplier: raw.streakMultiplier === true,
     eliminationMode: raw.eliminationMode === true,
+    reactionBonus: raw.reactionBonus === true,
+    majorityMode: raw.majorityMode === true,
     hostMode: hostIsPlayer ? "player" : "narrator",
   };
 }
@@ -439,6 +443,8 @@ export async function createRoomNow(
     targetScore?: number;
     streakMultiplier?: boolean;
     eliminationMode?: boolean;
+    reactionBonus?: boolean;
+    majorityMode?: boolean;
     customQuestions?: MajlisQuestionInput[];
   },
   ctx: Ctx,
@@ -467,6 +473,8 @@ export async function createRoomNow(
       targetScore: input.targetScore,
       streakMultiplier: input.streakMultiplier === true,
       eliminationMode: input.eliminationMode === true,
+      reactionBonus: input.reactionBonus === true,
+      majorityMode: input.majorityMode === true,
     },
     { rounds: game.default_rounds, seconds: game.default_seconds },
   );
@@ -616,6 +624,8 @@ async function buildSnap(sql: Sql, code: string, hostToken?: string, playerToken
       targetScore: settings.targetScore,
       streakMultiplier: settings.streakMultiplier,
       eliminationMode: settings.eliminationMode,
+      reactionBonus: settings.reactionBonus,
+      majorityMode: settings.majorityMode,
       hostMode: settings.hostMode,
       hostAnswer: tokensMatch(fresh.room.host_token, hostToken) && settings.hostMode === "narrator" ? (q?.correct ?? null) : null,
     },
@@ -892,6 +902,34 @@ async function streakMultiplier(sql: Sql, code: string, playerId: string, round:
   return Math.min(3, 1 + Math.floor(streak / 2));
 }
 
+/** Kalak-style reaction bonus: 2x for an instant answer, 1x at the end of the window. */
+function reactionMultiplier(ms: number, windowMs: number): number {
+  const ratio = windowMs > 0 ? Math.min(1, Math.max(0, ms / windowMs)) : 1;
+  return 1 + (1 - ratio);
+}
+
+/** Bravo group guess: the choice most players picked. A tie means no group answer, so nobody scores. */
+function majorityChoice(players: { id: string }[], byPlayer: Map<string, AnswerRow>): string | null {
+  const counts = new Map<string, number>();
+  for (const p of players) {
+    const id = String(payloadObj(byPlayer.get(p.id)?.payload).choiceId ?? "");
+    if (id) counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  let best: string | null = null;
+  let top = 0;
+  let tie = false;
+  for (const [id, n] of counts) {
+    if (n > top) {
+      best = id;
+      top = n;
+      tie = false;
+    } else if (n === top) {
+      tie = true;
+    }
+  }
+  return tie ? null : best;
+}
+
 async function scoreLocked(sql: Sql, code: string, auto = false): Promise<void> {
   const data = await bundle(sql, code);
   if (!data?.game) return;
@@ -1039,8 +1077,9 @@ async function scoreLocked(sql: Sql, code: string, auto = false): Promise<void> 
       }
     } else {
       const choices = jparse<Choice[]>(q.choices, []);
-      const correct = choices.find((c) => c.id === q.correct);
-      reveal.correctId = q.correct ?? undefined;
+      const target = settings.majorityMode ? majorityChoice(data.players, byPlayer) : q.correct;
+      const correct = choices.find((c) => c.id === target);
+      reveal.correctId = target ?? undefined;
       reveal.correctAr = correct?.ar;
       reveal.correctEn = correct?.en;
       reveal.answers = [];
@@ -1049,7 +1088,7 @@ async function scoreLocked(sql: Sql, code: string, auto = false): Promise<void> 
       for (const player of data.players) {
         const row = byPlayer.get(player.id);
         const choiceId = String(payloadObj(row?.payload).choiceId ?? "");
-        const ok = Boolean(q.correct) && choiceId === q.correct;
+        const ok = Boolean(target) && choiceId === target;
         if (ok) survivors.push(player.id);
         let points = 0;
         if (ok && engine === "fastest") {
@@ -1057,6 +1096,7 @@ async function scoreLocked(sql: Sql, code: string, auto = false): Promise<void> 
         } else if (ok) {
           points = correctPoints(settings, q, scoring);
           if (settings.streakMultiplier) points *= await streakMultiplier(sql, code, player.id, round);
+          if (settings.reactionBonus) points = Math.round(points * reactionMultiplier(num(row?.response_ms), windowMs));
         }
         const label = choices.find((c) => c.id === choiceId);
         reveal.answers.push({ playerId: player.id, name: player.name, text: label?.ar ?? "", points, correct: ok });

@@ -103,6 +103,8 @@ export type Snapshot = {
     targetScore: number;
     streakMultiplier: boolean;
     eliminationMode: boolean;
+    reactionBonus: boolean;
+    majorityMode: boolean;
     hostMode: "player" | "narrator";
     hostAnswer: string | null;
   };
