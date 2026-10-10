@@ -1,4 +1,3 @@
-import type { LetterCell, LetterCat } from "@/games/score";
 
 export type CheerKind = "spark" | "laugh" | "heart" | "flame";
 
@@ -38,18 +37,10 @@ export type PublicQuestion = {
   imageUrl: string | null;
 };
 
-export type LetterRevealRow = {
-  playerId: string;
-  name: string;
-  fields: Record<LetterCat, LetterCell>;
-  total: number;
-};
-
 export type Reveal = {
   correctId?: string;
   correctAr?: string;
   correctEn?: string;
-  letterRows?: LetterRevealRow[];
   percents?: { id: string; ar: string; en: string; n: number }[];
   votes?: { playerId: string; name: string; count: number }[];
   truth?: { playerId: string; name: string; side: string; promptAr: string; promptEn: string }[];

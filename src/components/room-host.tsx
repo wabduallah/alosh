@@ -185,7 +185,7 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
           <section className="space-y-4">
             <article className="glass-card rounded-3xl p-6 text-center">
               <h2 className="font-display text-4xl text-neon sm:text-6xl">
-                {snap.room.engine === "letter" ? snap.room.letter : promptOf(snap, lang)}
+                {promptOf(snap, lang)}
               </h2>
               <div className="mt-4">
                 <QuestionVisual snap={snap} />
