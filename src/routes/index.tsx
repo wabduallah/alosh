@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BookOpen, Swords, Target, type LucideIcon } from "lucide-react";
 import { Shell } from "@/components/shell";
+import { Logo } from "@/components/logo";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -49,10 +50,9 @@ function Home() {
   return (
     <Shell>
       <section className="mx-auto max-w-2xl pt-6 text-center sm:pt-10">
-        <h1 className="bg-linear-to-l from-neon to-violet bg-clip-text text-5xl font-extrabold text-transparent sm:text-6xl">
-          العش
-        </h1>
-        <p className="mt-3 text-sm font-bold text-violet">حيث تلتقي التحديات بالمتعة الجماعية</p>
+        <h1 className="sr-only">العش</h1>
+        <Logo size="lg" />
+        <p className="mt-4 text-sm font-bold text-violet">حيث تلتقي التحديات بالمتعة الجماعية</p>
       </section>
 
       <section className="mx-auto mt-10 grid max-w-5xl gap-4 sm:grid-cols-3">

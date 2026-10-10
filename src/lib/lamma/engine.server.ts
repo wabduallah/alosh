@@ -86,6 +86,7 @@ type QRow = {
   difficulty: string;
   icons: unknown;
   points: number;
+  image_url: string | null;
 };
 
 type AnswerRow = {
@@ -105,6 +106,8 @@ type Settings = {
   maxPlayers: number;
   locale: Locale;
   hostIsPlayer: boolean;
+  pointsPerCorrect: number;
+  targetScore: number;
   hostMode: "player" | "narrator";
 };
 
@@ -213,6 +216,8 @@ function asSettings(value: unknown, fallback?: Partial<Settings>): Settings {
     maxPlayers: clamp(raw.maxPlayers, 2, 14, fallback?.maxPlayers ?? 2),
     locale: raw.locale === "en" ? "en" : "ar",
     hostIsPlayer,
+    pointsPerCorrect: clamp(raw.pointsPerCorrect, 0, 1000, 0),
+    targetScore: clamp(raw.targetScore, 0, 100000, 0),
     hostMode: hostIsPlayer ? "player" : "narrator",
   };
 }
@@ -401,6 +406,8 @@ export async function createRoomNow(
     hostName?: string;
     hostMode?: "player" | "narrator";
     hostIsPlayer?: boolean;
+    pointsPerCorrect?: number;
+    targetScore?: number;
   },
   ctx: Ctx,
 ): Promise<Fail | { ok: true; code: string; hostToken: string; playerId?: string; playerToken?: string }> {
@@ -422,6 +429,8 @@ export async function createRoomNow(
       maxPlayers: Math.min(14, Math.max(2, game.min_players, Math.round(input.maxPlayers) || 2)),
       locale: input.locale,
       hostIsPlayer: input.hostIsPlayer ?? input.hostMode !== "narrator",
+      pointsPerCorrect: input.pointsPerCorrect,
+      targetScore: input.targetScore,
     },
     { rounds: game.default_rounds, seconds: game.default_seconds },
   );
@@ -485,12 +494,13 @@ function toPublic(q: QRow, hideChoices: boolean): PublicQuestion {
     kind: q.kind,
     choices,
     icons: jparse<string[]>(q.icons, []),
+    imageUrl: q.image_url ?? null,
   };
 }
 
 async function questionById(sql: Sql, id: number | undefined): Promise<QRow | null> {
   if (!id) return null;
-  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points from questions where id = ${id}`;
+  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where id = ${id}`;
   return rows[0] ?? null;
 }
 
@@ -560,6 +570,8 @@ async function buildSnap(sql: Sql, code: string, hostToken?: string, playerToken
       minPlayers: fresh.game.min_players,
       maxPlayers: settings.maxPlayers,
       hostIsPlayer: settings.hostIsPlayer,
+      pointsPerCorrect: settings.pointsPerCorrect,
+      targetScore: settings.targetScore,
       hostMode: settings.hostMode,
       hostAnswer: tokensMatch(fresh.room.host_token, hostToken) && settings.hostMode === "narrator" ? (q?.correct ?? null) : null,
     },
@@ -575,7 +587,7 @@ export async function snapshotNow(input: { code: string; hostToken?: string; pla
 }
 
 async function pickQuestion(sql: Sql, gameId: string, state: RoundState, difficulty: Settings["difficulty"]): Promise<QRow | null> {
-  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points from questions where game_id = ${gameId} and status = 'published'`;
+  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published'`;
   const used = new Set(state.usedQuestionIds ?? []);
   let pool = rows.filter((row) => !used.has(row.id));
   if (!pool.length) pool = rows;
@@ -771,7 +783,7 @@ async function advanceIfDue(sql: Sql, code: string): Promise<void> {
   if (!locked.length) return;
   try {
     const settings = asSettings(data.room.settings);
-    if (data.room.current_round >= settings.rounds) {
+    if (data.room.current_round >= settings.rounds || reachedTarget(data.players, settings)) {
       await finishGame(sql, code);
       return;
     }
@@ -798,6 +810,17 @@ async function closeRound(sql: Sql, code: string, force: boolean, auto = true): 
     await sql`update rooms set status = 'PLAYING' where id = ${code} and status = 'SCORING'`;
     throw error;
   }
+}
+
+// Points for a correct answer: the host's override wins, else the question's value, else the game default.
+function correctPoints(settings: Settings, q: { points: number } | null, scoring: Record<string, number>): number {
+  if (settings.pointsPerCorrect > 0) return settings.pointsPerCorrect;
+  return num(q?.points, num(scoring.correct, 10));
+}
+
+// Target-score rooms end as soon as a human reaches the target (rounds remain the hard cap).
+function reachedTarget(players: { score: number; is_bot: boolean }[], settings: Settings): boolean {
+  return settings.targetScore > 0 && players.some((p) => !p.is_bot && p.score >= settings.targetScore);
 }
 
 async function scoreLocked(sql: Sql, code: string, auto = false): Promise<void> {
@@ -938,7 +961,7 @@ async function scoreLocked(sql: Sql, code: string, auto = false): Promise<void> 
       const accepted = [q.correct ?? "", ...jparse<string[]>(q.accepted, [])].filter(Boolean);
       reveal.correctAr = q.correct ?? "";
       reveal.answers = [];
-      const pts = num(q.points, num(scoring.correct, 10));
+      const pts = correctPoints(settings, q, scoring);
       for (const player of data.players) {
         const text = String(payloadObj(byPlayer.get(player.id)?.payload).text ?? "");
         const ok = textMatches(text, accepted, settings.locale) || textMatches(text, accepted, "en");
@@ -960,7 +983,7 @@ async function scoreLocked(sql: Sql, code: string, auto = false): Promise<void> 
         let points = 0;
         if (ok && engine === "fastest") {
           points = speedPoints(num(row?.response_ms), windowMs, num(scoring.base, 400), num(scoring.speed, 600));
-        } else if (ok) points = num(q.points, num(scoring.correct, 10));
+        } else if (ok) points = correctPoints(settings, q, scoring);
         const label = choices.find((c) => c.id === choiceId);
         reveal.answers.push({ playerId: player.id, name: player.name, text: label?.ar ?? "", points, correct: ok });
         await addScore(sql, player.id, points, ok ? 1 : 0, choiceId && !ok ? 1 : 0);
@@ -1111,7 +1134,8 @@ export async function hostNow(input: { code: string; hostToken: string; action: 
   if (action === "next") {
     if (room.status !== "ROUND_END") return fail("BAD_INPUT");
     const settings = asSettings(room.settings);
-    if (room.current_round >= settings.rounds) {
+    const seated = await sql<PlayerRow>`select * from players where room_id = ${code}`;
+    if (room.current_round >= settings.rounds || reachedTarget(seated, settings)) {
       await finishGame(sql, code);
       return { ok: true };
     }
@@ -1353,7 +1377,7 @@ export async function isAdmin(sql: Sql, userId: string | null): Promise<boolean>
 
 export async function soloQuestionNow(gameId: string) {
   const sql = await db();
-  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points from questions where game_id = ${gameId} and status = 'published' order by random() limit 1`;
+  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published' order by random() limit 1`;
   const q = rows[0];
   if (!q) return fail("NO_QUESTIONS");
   const choices = jparse<{ id: string; ar: string; en: string }[]>(q.choices, []);
@@ -1362,7 +1386,7 @@ export async function soloQuestionNow(gameId: string) {
 
 export async function soloAnswerNow(input: { questionId: number; choiceId: string }) {
   const sql = await db();
-  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points from questions where id = ${input.questionId}`;
+  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where id = ${input.questionId}`;
   const q = rows[0];
   if (!q) return fail("NO_QUESTIONS");
   const correct = input.choiceId === q.correct;

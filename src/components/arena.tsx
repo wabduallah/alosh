@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Check, Flame, Heart, Laugh, Sparkles, X, type LucideIcon } from "lucide-react";
-import { GameIcon } from "@/components/icons";
+import { GameIcon, PictureIcons } from "@/components/icons";
 import { QrCode } from "@/components/qr-code";
 import { Button, cx, inputClass, joinLink } from "@/components/ui";
 import { LETTER_CATS, type LetterCat } from "@/games/score";
@@ -535,10 +535,15 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
               <h2 className="font-display text-4xl text-neon sm:text-6xl">
                 {snap.room.engine === "letter" ? snap.room.letter : promptOf(snap, lang)}
               </h2>
+              <div className="mt-4">
+                <QuestionVisual snap={snap} />
+              </div>
               <div className="mt-4 flex justify-center">
                 <Countdown endsAt={snap.room.endsAt} total={snap.room.seconds} />
               </div>
-              <p className="mt-3 text-sm text-muted">{answered}/{snap.players.length} أجابوا</p>
+              <div className="mt-4">
+                <GuestsStrip snap={snap} />
+              </div>
             </article>
             {hostPlays ? (
               <HostPad
@@ -578,7 +583,7 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
 
         {snap.room.status === "FINISHED" ? (
           <div className="space-y-6">
-            <Podium players={snap.players} />
+            <Standings players={snap.players} yourId={snap.yourId} />
             <div className="grid gap-2">
               {snap.youAreHost ? (
                 <Button type="button" onClick={() => void act("start")} className="w-full">
@@ -931,22 +936,102 @@ function GamePicker({
   );
 }
 
-function Podium({ players }: { players: Snapshot["players"] }) {
-  const { t } = useI18n();
-  const ranked = [...players].sort((a, b) => b.score - a.score);
+function QuestionVisual({ snap }: { snap: Snapshot }) {
+  const q = snap.room.question;
+  if (!q) return null;
+  if (q.imageUrl) {
+    return (
+      <img
+        src={q.imageUrl}
+        alt=""
+        className="mx-auto max-h-72 w-auto max-w-full rounded-2xl border border-white/10 bg-white/[0.03] object-contain p-2"
+      />
+    );
+  }
+  if (q.icons.length) return <PictureIcons names={q.icons} />;
+  return null;
+}
+
+/** Guest names under the question. A green check appears as soon as a guest has answered. */
+function GuestsStrip({ snap }: { snap: Snapshot }) {
+  const answered = snap.players.filter((p) => p.answered).length;
+  const rules = [
+    snap.room.targetScore > 0 ? `الهدف ${snap.room.targetScore} نقطة` : null,
+    snap.room.pointsPerCorrect > 0 ? `${snap.room.pointsPerCorrect} نقطة لكل إجابة صحيحة` : null,
+  ].filter(Boolean);
   return (
-    <section className="space-y-4 text-center">
-      <h2 className="font-display text-5xl">{t("podium.title")}</h2>
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        {snap.players.map((player) => (
+          <span
+            key={player.id}
+            className={cx(
+              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-bold transition-colors duration-200",
+              player.answered ? "border-emerald/50 bg-emerald/15 text-ivory" : "border-white/10 bg-white/[0.03] text-muted",
+            )}
+          >
+            {player.answered ? (
+              <Check className="size-3.5 text-emerald" strokeWidth={3} aria-label="أجاب" />
+            ) : (
+              <span className="size-1.5 rounded-full bg-white/30" aria-hidden="true" />
+            )}
+            {player.name}
+          </span>
+        ))}
+      </div>
+      <p className="text-center text-xs text-muted">
+        {answered}/{snap.players.length} أجابوا{rules.length ? ` · ${rules.join(" · ")}` : ""}
+      </p>
+    </div>
+  );
+}
+
+/** Final standings: winners in descending order of points, with each player's gap to the leader. */
+function Standings({ players, yourId }: { players: Snapshot["players"]; yourId: string | null }) {
+  const ranked = [...players].sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  const leader = ranked[0]?.score ?? 0;
+  let place = 0;
+  let last = Number.POSITIVE_INFINITY;
+  const rows = ranked.map((player, index) => {
+    if (player.score !== last) {
+      place = index + 1;
+      last = player.score;
+    }
+    return { player, place, gap: leader - player.score };
+  });
+  return (
+    <section className="space-y-6 text-center">
+      <h2 className="font-display text-5xl">الترتيب النهائي</h2>
       <ol className="mx-auto grid max-w-3xl gap-3 sm:grid-cols-3">
-        {ranked.slice(0, 3).map((player, index) => (
+        {rows.slice(0, 3).map(({ player, place: rank, gap }) => (
           <li
             key={player.id}
-            className={cx("glass-card rounded-2xl p-4", index === 0 && "border-neon/50 shadow-[0_0_32px_rgb(6_182_212/0.25)]")}
+            className={cx("glass-card rounded-2xl p-4", rank === 1 && "border-neon/50 shadow-[0_0_32px_rgb(6_182_212/0.25)]")}
           >
-            <p className="font-display text-4xl text-neon">{index + 1}</p>
+            <p className="font-display text-4xl text-neon">{rank}</p>
             <p className="text-2xl font-bold">{player.name}</p>
-            <p className="tabular-nums text-muted">{player.score}</p>
-            <p className="text-sm">{t(`podium.${index + 1}`)}</p>
+            <p className="tabular-nums text-ivory">{player.score}</p>
+            <p className="text-xs text-muted">{gap === 0 ? "المتصدر" : `−${gap}`}</p>
+          </li>
+        ))}
+      </ol>
+      <ol className="mx-auto max-w-3xl space-y-2 text-start">
+        {rows.map(({ player, place: rank, gap }) => (
+          <li
+            key={player.id}
+            className={cx(
+              "flex items-center justify-between gap-3 rounded-2xl border px-4 py-3",
+              player.id === yourId ? "border-neon/50 bg-neon/10" : "border-white/10 bg-white/[0.03]",
+            )}
+          >
+            <span className="flex items-center gap-3">
+              <span className="w-8 font-display text-xl tabular-nums text-neon">{rank}</span>
+              <span className="font-bold">{player.name}</span>
+            </span>
+            <span className="flex items-center gap-4 tabular-nums">
+              <span className="text-sm text-muted">{gap === 0 ? "—" : `−${gap}`}</span>
+              <span className="text-lg font-bold">{player.score}</span>
+            </span>
           </li>
         ))}
       </ol>
@@ -1058,6 +1143,12 @@ export function PadScreen({ code }: { code: string }) {
         </section>
       ) : null}
 
+      {snap.room.status === "PLAYING" ? (
+        <div className="mb-4 space-y-4">
+          <QuestionVisual snap={snap} />
+          <GuestsStrip snap={snap} />
+        </div>
+      ) : null}
       {snap.room.status === "PLAYING" && snap.yourId ? (
         <AnswerSurface
           key={snap.room.round}
@@ -1093,7 +1184,7 @@ export function PadScreen({ code }: { code: string }) {
 
       {snap.room.status === "FINISHED" ? (
         <div className="glass-card rounded-3xl p-4">
-          <Podium players={snap.players} />
+          <Standings players={snap.players} yourId={snap.yourId} />
         </div>
       ) : null}
 
