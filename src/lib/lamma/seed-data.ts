@@ -70,24 +70,6 @@ const letterRules = { unique: 10, duplicate: 5, wrong: 0, empty: 0 };
 
 export const SEED_GAMES: SeedGame[] = [
   {
-    id: "letter-names",
-    nameAr: "اسم ولد بنت جماد حيوان بلد",
-    nameEn: "Name, animal, place",
-    descAr: "حرف واحد، خمس خانات، والإجابة الفريدة تغلب المكررة.",
-    descEn: "One letter, five boxes. A unique answer scores more than a shared one.",
-    category: "party",
-    tier: "free",
-    engine: "letter",
-    minPlayers: 2,
-    maxPlayers: 14,
-    seconds: 60,
-    rounds: 5,
-    scoring: letterRules,
-    sort: 1,
-    icon: "Languages",
-    questions: [],
-  },
-  {
     id: "general",
     nameAr: "معلومات عامة",
     nameEn: "General trivia",

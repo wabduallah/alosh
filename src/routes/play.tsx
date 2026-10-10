@@ -35,7 +35,8 @@ function CreatePage() {
   const search = Route.useSearch();
   const { t, lang } = useI18n();
   const navigate = useNavigate();
-  const picked = games.find((game) => game.id === search.game) ?? games[0];
+  // Only an explicit ?game= preset or the Bravo default; never an arbitrary first game.
+  const picked = games.find((game) => game.id === search.game) ?? games.find((game) => game.id === "bravo-party") ?? games[0];
   const [hostName, setHostName] = useState("");
   const [gameId, setGameId] = useState(picked?.id ?? "");
   const [rounds, setRounds] = useState<number>(5);
