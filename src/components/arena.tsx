@@ -1086,7 +1086,7 @@ async function copy(link: string, setCopied: (v: boolean) => void) {
 }
 
 /* ----------------------------------------------------------------------------
- * Player pad (phone). Routes: /pad/:code and /play_/:code.
+ * Player pad (phone). Routes: /room/:code (non-host devices) and /play_/:code.
  * ------------------------------------------------------------------------- */
 
 export function PadScreen({ code }: { code: string }) {

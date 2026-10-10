@@ -77,7 +77,7 @@ function CreatePage() {
     }
     sessionStorage.setItem(`lamma:host:${res.code}`, res.hostToken);
     if (res.playerToken) sessionStorage.setItem(`lamma:player:${res.code}`, res.playerToken);
-    void navigate({ to: "/host/$code", params: { code: res.code } });
+    void navigate({ to: "/room/$code", params: { code: res.code } });
   }
 
   const roundChoices = [10, 7, 5, 3];

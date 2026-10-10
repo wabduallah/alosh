@@ -31,7 +31,7 @@ function QuestionsPage() {
             <ul className="mt-3 space-y-2">
               {rows.map((game) => (
                 <li key={game.id}>
-                  <Link to="/games/$slug" params={{ slug: game.id }} className="block rounded-2xl border border-[rgb(255_255_255/0.08)] px-3 py-3">{game.nameAr}</Link>
+                  <Link to="/play" search={{ game: game.id }} className="block rounded-2xl border border-[rgb(255_255_255/0.08)] px-3 py-3">{game.nameAr}</Link>
                 </li>
               ))}
             </ul>
