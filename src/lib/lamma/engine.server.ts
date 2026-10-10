@@ -1,16 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { getSql, type Sql } from "@/lib/db";
-import { letterBank, playableLetters } from "@/games/lexicon";
-import {
-  LETTER_CATS,
-  DEFAULT_LETTER_RULES,
-  scoreLetterRound,
-  speedPoints,
-  textMatches,
-  type LetterCat,
-  type LetterRules,
-  type Locale,
-} from "@/games/score";
+import { speedPoints, textMatches, type Locale } from "@/games/score";
 import { profileFor } from "./catalog";
 import { applyBravoMode, parseBravoCategories, parseBravoMode, rankScorecard, type BravoCategory, type BravoMode } from "./bravo-engine";
 import { SEED_CATEGORIES, SEED_GAMES, SEED_PLANS, SEED_PROMOS } from "./seed-data";
@@ -716,46 +706,21 @@ async function openRound(sql: Sql, code: string, round: number): Promise<Fail | 
   const state: RoundState = {
     startedAt: new Date().toISOString(),
     endsAt: new Date(Date.now() + settings.seconds * 1000).toISOString(),
-    usedLetters: prev.usedLetters ?? [],
     usedQuestionIds: prev.usedQuestionIds ?? [],
     reveal: null,
   };
-  if (engine === "letter") {
-    const poolAll = playableLetters(settings.locale);
-    const fresh = poolAll.filter((letter) => !(state.usedLetters ?? []).includes(letter));
-    const pool = fresh.length ? fresh : poolAll;
-    const letter = pool[Math.floor(Math.random() * pool.length)] ?? "س";
-    state.letter = letter;
-    state.usedLetters = [...(state.usedLetters ?? []), letter];
-  } else {
-    const q = data.game.id === MAJLIS_GAME ? await majlisQuestion(sql, code, round) : await pickQuestion(sql, data.game.id, prev, settings.difficulty, settings.categories);
-    if (!q) return fail("NO_QUESTIONS");
-    state.questionId = q.id;
-    state.usedQuestionIds = [...(prev.usedQuestionIds ?? []), q.id];
-    if (engine === "whoknows") {
-      const humans = data.players.filter((p) => !p.is_bot);
-      const pool = humans.length ? humans : data.players;
-      state.subjectId = pool[(round - 1) % Math.max(pool.length, 1)]?.id ?? null;
-    }
+  const q = data.game.id === MAJLIS_GAME ? await majlisQuestion(sql, code, round) : await pickQuestion(sql, data.game.id, prev, settings.difficulty, settings.categories);
+  if (!q) return fail("NO_QUESTIONS");
+  state.questionId = q.id;
+  state.usedQuestionIds = [...(prev.usedQuestionIds ?? []), q.id];
+  if (engine === "whoknows") {
+    const humans = data.players.filter((p) => !p.is_bot);
+    const pool = humans.length ? humans : data.players;
+    state.subjectId = pool[(round - 1) % Math.max(pool.length, 1)]?.id ?? null;
   }
   await sql`update players set round_score = 0 where room_id = ${code}`;
   await sql`update rooms set status = 'PLAYING', current_round = ${round}, round_state = ${JSON.stringify(state)}::jsonb, revision = revision + 1, updated_at = now() where id = ${code}`;
   return { ok: true };
-}
-
-async function mergedBank(sql: Sql, locale: Locale) {
-  const bank = structuredClone(letterBank(locale));
-  const extra = await sql<{ letter: string; category: string; word: string }>`select letter, category, word from lexicon where locale = ${locale}`;
-  for (const row of extra) {
-    const cat = row.category as LetterCat;
-    if (!LETTER_CATS.includes(cat)) continue;
-    if (!bank[row.letter]) {
-      bank[row.letter] = { boy: [], girl: [], animal: [], object: [], country: [] };
-    }
-    const list = bank[row.letter]![cat];
-    if (!list.includes(row.word)) list.push(row.word);
-  }
-  return bank;
 }
 
 function payloadObj(value: unknown): Record<string, unknown> {
@@ -801,36 +766,10 @@ async function fillBots(sql: Sql, code: string, round: number, engine: Engine, s
   const have = new Set(existing.map((row) => row.player_id));
   const windowMs = settings.seconds * 1000;
   const botCheers: StoredCheer[] = [];
-  let shared: Partial<Record<LetterCat, string>> | null = null;
-  if (engine === "letter" && state.letter) {
-    const bank = letterBank(settings.locale)[state.letter];
-    shared = {};
-    if (bank) {
-      for (const cat of LETTER_CATS) {
-        const list = bank[cat];
-        if (list?.length) shared[cat] = list[0];
-      }
-    }
-  }
   for (const bot of players) {
     if (have.has(bot.id)) continue;
     let payload: Record<string, unknown> = {};
-    if (engine === "letter" && state.letter) {
-      const bank = letterBank(settings.locale)[state.letter];
-      const fields: Record<string, string> = {};
-      for (const cat of LETTER_CATS) {
-        const list = bank?.[cat] ?? [];
-        if (!list.length) {
-          fields[cat] = "";
-          continue;
-        }
-        const roll = Math.random();
-        if (roll < 0.15) fields[cat] = "—";
-        else if (roll < 0.4 && shared?.[cat]) fields[cat] = shared[cat]!;
-        else fields[cat] = list[Math.floor(Math.random() * list.length)]!;
-      }
-      payload = { fields };
-    } else if (engine === "vote") {
+    if (engine === "vote") {
       const all = await sql<{ id: string }>`select id from players where room_id = ${code} and id <> ${bot.id}`;
       const pick = all[Math.floor(Math.random() * all.length)];
       if (!pick) continue;
@@ -903,7 +842,7 @@ async function advanceIfDue(sql: Sql, code: string, preloaded?: Awaited<ReturnTy
   }
 }
 
-// Every round end auto-advances (2.5s reveal) unless the engine needs host review (letter/truth).
+// Every round end auto-advances (2.5s reveal) unless the engine needs host review (truth).
 async function closeRound(sql: Sql, code: string, force: boolean, auto = true): Promise<void> {
   const data = await bundle(sql, code);
   if (!data?.game || data.room.status !== "PLAYING") return;
@@ -991,43 +930,7 @@ async function scoreLocked(sql: Sql, code: string, auto = false): Promise<void> 
   const answers = await sql<AnswerRow>`select player_id, round, payload, response_ms, score_awarded from answers where room_id = ${code} and round = ${round}`;
   const byPlayer = new Map(answers.map((row) => [row.player_id, row]));
   const reveal: Reveal = {};
-  const rules: LetterRules = {
-    unique: num(scoring.unique, DEFAULT_LETTER_RULES.unique),
-    duplicate: num(scoring.duplicate, DEFAULT_LETTER_RULES.duplicate),
-    wrong: num(scoring.wrong, 0),
-    empty: num(scoring.empty, 0),
-  };
-
-  if (engine === "letter" && state.letter) {
-    const bank = await mergedBank(sql, settings.locale);
-    const submissions = data.players.map((player) => {
-      const raw = payloadObj(byPlayer.get(player.id)?.payload).fields;
-      const fields = jparse<Record<string, string>>(raw, {});
-      return {
-        playerId: player.id,
-        fields: {
-          boy: String(fields.boy ?? ""),
-          girl: String(fields.girl ?? ""),
-          animal: String(fields.animal ?? ""),
-          object: String(fields.object ?? ""),
-          country: String(fields.country ?? ""),
-        },
-      };
-    });
-    const scored = scoreLetterRound({ submissions, letter: state.letter, locale: settings.locale, bank, rules });
-    reveal.letterRows = scored.map((row) => ({
-      playerId: row.playerId,
-      name: data.players.find((p) => p.id === row.playerId)?.name ?? "",
-      fields: row.fields,
-      total: row.total,
-    }));
-    for (const row of scored) {
-      if (byPlayer.has(row.playerId)) {
-        await sql`update answers set payload = ${JSON.stringify({ fields: row.fields })}::jsonb, score_awarded = ${row.total}, correct = ${row.correct > 0} where room_id = ${code} and player_id = ${row.playerId} and round = ${round}`;
-      }
-      await addScore(sql, row.playerId, row.total, row.correct, row.wrong);
-    }
-  } else if (engine === "vote") {
+  if (engine === "vote") {
     const counts = new Map<string, number>();
     for (const player of data.players) {
       const target = String(payloadObj(byPlayer.get(player.id)?.payload).playerId ?? "");
@@ -1169,7 +1072,7 @@ async function scoreLocked(sql: Sql, code: string, auto = false): Promise<void> 
     ...state,
     reveal,
     endsAt: state.endsAt ?? null,
-    autoAt: auto && engine !== "letter" && engine !== "truth" ? new Date(Date.now() + AUTO_NEXT_MS).toISOString() : null,
+    autoAt: auto && engine !== "truth" ? new Date(Date.now() + AUTO_NEXT_MS).toISOString() : null,
   };
   await sql`update rooms set status = 'ROUND_END', round_state = ${JSON.stringify(nextState)}::jsonb, revision = revision + 1, updated_at = now() where id = ${code}`;
 }
@@ -1259,12 +1162,6 @@ export async function cheerNow(input: { code: string; playerToken: string; kind:
 }
 
 function sanitizePayload(engine: string | undefined, raw: Record<string, unknown>, playerIds: string[]): Record<string, unknown> | null {
-  if (engine === "letter") {
-    const src = jparse<Record<string, unknown>>(raw.fields ?? raw, {});
-    const fields: Record<string, string> = {};
-    for (const cat of LETTER_CATS) fields[cat] = String(src[cat] ?? "").trim().slice(0, 40);
-    return { fields };
-  }
   if (engine === "text" || engine === "feud") {
     const text = String(raw.text ?? "").trim().slice(0, 80);
     if (!text) return null;
@@ -1375,62 +1272,6 @@ export async function hostNow(input: { code: string; hostToken: string; action: 
       if (players.length < next.min_players) return fail("NEED_PLAYERS");
       return openRound(sql, code, 1);
     }
-    return { ok: true };
-  }
-  if (action === "accept") {
-    if (room.status !== "ROUND_END") return fail("BAD_INPUT");
-    const playerId = String(input.extra?.playerId ?? "");
-    const category = String(input.extra?.category ?? "") as LetterCat;
-    if (!LETTER_CATS.includes(category)) return fail("BAD_INPUT");
-    const state = jparse<RoundState>(room.round_state, {});
-    const settings = asSettings(room.settings);
-    const rows = await sql<AnswerRow>`select player_id, round, payload, response_ms, score_awarded from answers where room_id = ${code} and round = ${room.current_round}`;
-    const target = rows.find((row) => row.player_id === playerId);
-    const fields = jparse<Record<string, { text?: string }>>(payloadObj(target?.payload).fields, {});
-    const word = String(fields[category]?.text ?? "").trim();
-    if (!word || !state.letter) return fail("BAD_INPUT");
-    await sql`insert into lexicon (locale, letter, category, word, source) values (${settings.locale}, ${state.letter}, ${category}, ${word}, 'host') on conflict (locale, letter, category, word) do nothing`;
-    const players = await sql<PlayerRow>`select * from players where room_id = ${code}`;
-    const bank = await mergedBank(sql, settings.locale);
-    const game = await sql<{ scoring: unknown }>`select scoring from games where id = ${room.game_id}`;
-    const scoring = jparse<Record<string, number>>(game[0]?.scoring, {});
-    const rules: LetterRules = {
-      unique: num(scoring.unique, 10),
-      duplicate: num(scoring.duplicate, 5),
-      wrong: num(scoring.wrong, 0),
-      empty: num(scoring.empty, 0),
-    };
-    const submissions = players.map((player) => {
-      const row = rows.find((item) => item.player_id === player.id);
-      const current = jparse<Record<string, { text?: string }>>(payloadObj(row?.payload).fields, {});
-      return {
-        playerId: player.id,
-        fields: {
-          boy: String(current.boy?.text ?? ""),
-          girl: String(current.girl?.text ?? ""),
-          animal: String(current.animal?.text ?? ""),
-          object: String(current.object?.text ?? ""),
-          country: String(current.country?.text ?? ""),
-        },
-      };
-    });
-    const scored = scoreLetterRound({ submissions, letter: state.letter, locale: settings.locale, bank, rules });
-    for (const row of scored) {
-      const prev = rows.find((item) => item.player_id === row.playerId);
-      const before = num(prev?.score_awarded);
-      const delta = row.total - before;
-      await sql`update answers set payload = ${JSON.stringify({ fields: row.fields })}::jsonb, score_awarded = ${row.total}, correct = ${row.correct > 0} where room_id = ${code} and player_id = ${row.playerId} and round = ${room.current_round}`;
-      await sql`update players set score = score + ${delta}, round_score = ${row.total} where id = ${row.playerId}`;
-    }
-    const reveal: Reveal = {
-      letterRows: scored.map((row) => ({
-        playerId: row.playerId,
-        name: players.find((p) => p.id === row.playerId)?.name ?? "",
-        fields: row.fields,
-        total: row.total,
-      })),
-    };
-    await sql`update rooms set round_state = ${JSON.stringify({ ...state, reveal })}::jsonb, revision = revision + 1, updated_at = now() where id = ${code}`;
     return { ok: true };
   }
   if (action === "bonus") {
