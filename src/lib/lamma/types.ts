@@ -66,6 +66,7 @@ export type SnapPlayer = {
   isBot: boolean;
   correct: number;
   wrong: number;
+  eliminated: boolean;
 };
 
 export type Snapshot = {
@@ -100,6 +101,8 @@ export type Snapshot = {
     hostIsPlayer: boolean;
     pointsPerCorrect: number;
     targetScore: number;
+    streakMultiplier: boolean;
+    eliminationMode: boolean;
     hostMode: "player" | "narrator";
     hostAnswer: string | null;
   };

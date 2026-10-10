@@ -73,6 +73,7 @@ type PlayerRow = {
   round_score: number;
   correct_count: number;
   wrong_count: number;
+  eliminated: boolean;
 };
 
 type QRow = {
@@ -108,6 +109,8 @@ type Settings = {
   hostIsPlayer: boolean;
   pointsPerCorrect: number;
   targetScore: number;
+  streakMultiplier: boolean;
+  eliminationMode: boolean;
   hostMode: "player" | "narrator";
 };
 
@@ -129,6 +132,30 @@ const ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const hits = new Map<string, { n: number; t: number }>();
 const CHEER_TTL_MS = 6500;
 const AUTO_NEXT_MS = 2500;
+const MAJLIS_GAME = "majlis-custom";
+const MAJLIS_MAX_QUESTIONS = 15;
+
+export type MajlisQuestionInput = {
+  promptAr: string;
+  choices: { ar: string }[];
+  correct: number;
+  points: number;
+};
+
+/** Validates host-written questions. Every kept choice must be non-blank, and `correct` must point at one of them. */
+function sanitizeMajlis(list: MajlisQuestionInput[] | undefined): MajlisQuestionInput[] | null {
+  const out: MajlisQuestionInput[] = [];
+  for (const raw of (list ?? []).slice(0, MAJLIS_MAX_QUESTIONS)) {
+    const promptAr = String(raw?.promptAr ?? "").trim().slice(0, 200);
+    const choices = (Array.isArray(raw?.choices) ? raw.choices : []).slice(0, 4).map((c) => ({ ar: String(c?.ar ?? "").trim().slice(0, 80) }));
+    const correct = Number(raw?.correct);
+    const points = clamp(raw?.points, 10, 500, 100);
+    if (!promptAr || choices.length < 2 || choices.some((c) => !c.ar)) return null;
+    if (!Number.isInteger(correct) || correct < 0 || correct >= choices.length) return null;
+    out.push({ promptAr, choices, correct, points });
+  }
+  return out.length ? out : null;
+}
 let seeding: Promise<void> | null = null;
 let lastSweep = 0;
 
@@ -218,6 +245,8 @@ function asSettings(value: unknown, fallback?: Partial<Settings>): Settings {
     hostIsPlayer,
     pointsPerCorrect: clamp(raw.pointsPerCorrect, 0, 1000, 0),
     targetScore: clamp(raw.targetScore, 0, 100000, 0),
+    streakMultiplier: raw.streakMultiplier === true,
+    eliminationMode: raw.eliminationMode === true,
     hostMode: hostIsPlayer ? "player" : "narrator",
   };
 }
@@ -408,20 +437,25 @@ export async function createRoomNow(
     hostIsPlayer?: boolean;
     pointsPerCorrect?: number;
     targetScore?: number;
+    streakMultiplier?: boolean;
+    eliminationMode?: boolean;
+    customQuestions?: MajlisQuestionInput[];
   },
   ctx: Ctx,
 ): Promise<Fail | { ok: true; code: string; hostToken: string; playerId?: string; playerToken?: string }> {
   const sql = await db();
   const ip = await ipKey();
   if (!allow(`create:${ip}`, 200, 60 * 60 * 1000)) return fail("RATE");
-  const games = await sql<GameRow>`select * from games where id = ${input.gameId} and visible = true and status = 'published'`;
+  const games = await sql<GameRow>`select * from games where id = ${input.gameId} and (visible = true or id = ${MAJLIS_GAME}) and status = 'published'`;
   const game = games[0];
   if (!game) return fail("GAME");
+  const majlisQuestions = game.id === MAJLIS_GAME ? sanitizeMajlis(input.customQuestions) : null;
+  if (game.id === MAJLIS_GAME && !majlisQuestions) return fail("NO_QUESTIONS");
   const hostName = input.hostName ? cleanName(input.hostName) : null;
   if (input.hostName && !hostName) return fail("NAME_INVALID");
   const settings = asSettings(
     {
-      rounds: input.rounds || game.default_rounds,
+      rounds: majlisQuestions ? majlisQuestions.length : input.rounds || game.default_rounds,
       seconds: input.seconds || game.default_seconds,
       difficulty: input.difficulty,
       sound: input.sound,
@@ -429,8 +463,10 @@ export async function createRoomNow(
       maxPlayers: Math.min(14, Math.max(2, game.min_players, Math.round(input.maxPlayers) || 2)),
       locale: input.locale,
       hostIsPlayer: input.hostIsPlayer ?? input.hostMode !== "narrator",
-      pointsPerCorrect: input.pointsPerCorrect,
+      pointsPerCorrect: majlisQuestions ? 0 : input.pointsPerCorrect,
       targetScore: input.targetScore,
+      streakMultiplier: input.streakMultiplier === true,
+      eliminationMode: input.eliminationMode === true,
     },
     { rounds: game.default_rounds, seconds: game.default_seconds },
   );
@@ -444,6 +480,11 @@ export async function createRoomNow(
   }
   const hostToken = hex(16);
   await sql`insert into rooms (id, host_token, host_user_id, host_ip, game_id, status, settings, round_state, unlocked, expires_at) values (${code}, ${hostToken}, ${ctx.userId}, ${ip}, ${game.id}, 'WAITING', ${JSON.stringify(settings)}::jsonb, '{}'::jsonb, true, now() + (${hours} * interval '1 hour'))`;
+  // Majlis questions are inserted in host order; ids are serial, so `order by id` keeps that order.
+  for (const q of majlisQuestions ?? []) {
+    const choices = q.choices.map((c, i) => ({ id: `c${i}`, ar: c.ar, en: c.ar }));
+    await sql`insert into questions (game_id, room_id, prompt_ar, prompt_en, kind, choices, correct, points, status, source) values (${MAJLIS_GAME}, ${code}, ${q.promptAr}, ${q.promptAr}, 'mcq', ${JSON.stringify(choices)}::jsonb, ${`c${q.correct}`}, ${q.points}, 'published', 'host')`;
+  }
   // Host-as-player: the host always gets a real seat (and therefore a Player Pad) when hostIsPlayer is set.
   if (!settings.hostIsPlayer) return { ok: true, code, hostToken };
   const seatName = hostName ?? (input.locale === "en" ? "Host" : "المضيف");
@@ -539,6 +580,7 @@ async function buildSnap(sql: Sql, code: string, hostToken?: string, playerToken
     isBot: p.is_bot,
     correct: p.correct_count,
     wrong: p.wrong_count,
+    eliminated: p.eliminated,
   }));
   return {
     ok: true,
@@ -572,6 +614,8 @@ async function buildSnap(sql: Sql, code: string, hostToken?: string, playerToken
       hostIsPlayer: settings.hostIsPlayer,
       pointsPerCorrect: settings.pointsPerCorrect,
       targetScore: settings.targetScore,
+      streakMultiplier: settings.streakMultiplier,
+      eliminationMode: settings.eliminationMode,
       hostMode: settings.hostMode,
       hostAnswer: tokensMatch(fresh.room.host_token, hostToken) && settings.hostMode === "narrator" ? (q?.correct ?? null) : null,
     },
@@ -586,8 +630,14 @@ export async function snapshotNow(input: { code: string; hostToken?: string; pla
   return buildSnap(sql, code, input.hostToken, input.playerToken);
 }
 
+/** Round N of a Majlis room is the N-th question the host wrote for that room. */
+async function majlisQuestion(sql: Sql, code: string, round: number): Promise<QRow | null> {
+  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where room_id = ${code} order by id offset ${round - 1} limit 1`;
+  return rows[0] ?? null;
+}
+
 async function pickQuestion(sql: Sql, gameId: string, state: RoundState, difficulty: Settings["difficulty"]): Promise<QRow | null> {
-  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published'`;
+  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published' and room_id is null`;
   const used = new Set(state.usedQuestionIds ?? []);
   let pool = rows.filter((row) => !used.has(row.id));
   if (!pool.length) pool = rows;
@@ -620,7 +670,7 @@ async function openRound(sql: Sql, code: string, round: number): Promise<Fail | 
     state.letter = letter;
     state.usedLetters = [...(state.usedLetters ?? []), letter];
   } else {
-    const q = await pickQuestion(sql, data.game.id, prev, settings.difficulty);
+    const q = data.game.id === MAJLIS_GAME ? await majlisQuestion(sql, code, round) : await pickQuestion(sql, data.game.id, prev, settings.difficulty);
     if (!q) return fail("NO_QUESTIONS");
     state.questionId = q.id;
     state.usedQuestionIds = [...(prev.usedQuestionIds ?? []), q.id];
@@ -783,7 +833,7 @@ async function advanceIfDue(sql: Sql, code: string): Promise<void> {
   if (!locked.length) return;
   try {
     const settings = asSettings(data.room.settings);
-    if (data.room.current_round >= settings.rounds || reachedTarget(data.players, settings)) {
+    if (data.room.current_round >= settings.rounds || reachedTarget(data.players, settings) || eliminationOver(data.players, settings)) {
       await finishGame(sql, code);
       return;
     }
@@ -819,8 +869,27 @@ function correctPoints(settings: Settings, q: { points: number } | null, scoring
 }
 
 // Target-score rooms end as soon as a human reaches the target (rounds remain the hard cap).
+/** Elimination mode ends the game once one active player remains (only after at least two joined). */
+function eliminationOver(players: { eliminated: boolean }[], settings: Settings): boolean {
+  if (!settings.eliminationMode || players.length < 2) return false;
+  return players.filter((p) => !p.eliminated).length <= 1;
+}
+
 function reachedTarget(players: { score: number; is_bot: boolean }[], settings: Settings): boolean {
   return settings.targetScore > 0 && players.some((p) => !p.is_bot && p.score >= settings.targetScore);
+}
+
+/** Kalak-style streak bonus: 2 correct in a row doubles the next answer, 4 in a row triples it (capped at x3). Only contiguous rounds count. */
+async function streakMultiplier(sql: Sql, code: string, playerId: string, round: number): Promise<number> {
+  const rows = await sql<{ round: number; correct: boolean | null }>`select round, correct from answers where room_id = ${code} and player_id = ${playerId} and round < ${round} order by round desc limit 10`;
+  let expected = round - 1;
+  let streak = 0;
+  for (const row of rows) {
+    if (row.round !== expected || row.correct !== true) break;
+    streak += 1;
+    expected -= 1;
+  }
+  return Math.min(3, 1 + Math.floor(streak / 2));
 }
 
 async function scoreLocked(sql: Sql, code: string, auto = false): Promise<void> {
@@ -976,19 +1045,31 @@ async function scoreLocked(sql: Sql, code: string, auto = false): Promise<void> 
       reveal.correctEn = correct?.en;
       reveal.answers = [];
       const windowMs = settings.seconds * 1000;
+      const survivors: string[] = [];
       for (const player of data.players) {
         const row = byPlayer.get(player.id);
         const choiceId = String(payloadObj(row?.payload).choiceId ?? "");
         const ok = Boolean(q.correct) && choiceId === q.correct;
+        if (ok) survivors.push(player.id);
         let points = 0;
         if (ok && engine === "fastest") {
           points = speedPoints(num(row?.response_ms), windowMs, num(scoring.base, 400), num(scoring.speed, 600));
-        } else if (ok) points = correctPoints(settings, q, scoring);
+        } else if (ok) {
+          points = correctPoints(settings, q, scoring);
+          if (settings.streakMultiplier) points *= await streakMultiplier(sql, code, player.id, round);
+        }
         const label = choices.find((c) => c.id === choiceId);
         reveal.answers.push({ playerId: player.id, name: player.name, text: label?.ar ?? "", points, correct: ok });
         await addScore(sql, player.id, points, ok ? 1 : 0, choiceId && !ok ? 1 : 0);
         if (row) {
           await sql`update answers set score_awarded = ${points}, correct = ${ok} where room_id = ${code} and player_id = ${player.id} and round = ${round}`;
+        }
+      }
+      // Fast elimination: everyone active who missed this round is out. Nobody is removed if no one answered correctly.
+      if (settings.eliminationMode && survivors.length > 0) {
+        const out = data.players.filter((p) => !p.eliminated && !survivors.includes(p.id));
+        for (const player of out) {
+          await sql`update players set eliminated = true where id = ${player.id}`;
         }
       }
     }
@@ -1046,7 +1127,7 @@ export async function submitNow(input: { code: string; playerToken: string; roun
     return fail("NOT_PLAYING");
   }
   const player = data.players.find((p) => tokensMatch(p.token, input.playerToken));
-  if (!player || player.is_bot) return fail("FORBIDDEN");
+  if (!player || player.is_bot || player.eliminated) return fail("FORBIDDEN");
   const engine = data.game?.engine;
   const payload = sanitizePayload(engine, input.payload, data.players.map((p) => p.id));
   if (!payload) return fail("BAD_INPUT");
@@ -1135,7 +1216,7 @@ export async function hostNow(input: { code: string; hostToken: string; action: 
     if (room.status !== "ROUND_END") return fail("BAD_INPUT");
     const settings = asSettings(room.settings);
     const seated = await sql<PlayerRow>`select * from players where room_id = ${code}`;
-    if (room.current_round >= settings.rounds || reachedTarget(seated, settings)) {
+    if (room.current_round >= settings.rounds || reachedTarget(seated, settings) || eliminationOver(seated, settings)) {
       await finishGame(sql, code);
       return { ok: true };
     }
@@ -1377,7 +1458,7 @@ export async function isAdmin(sql: Sql, userId: string | null): Promise<boolean>
 
 export async function soloQuestionNow(gameId: string) {
   const sql = await db();
-  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published' order by random() limit 1`;
+  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published' and room_id is null order by random() limit 1`;
   const q = rows[0];
   if (!q) return fail("NO_QUESTIONS");
   const choices = jparse<{ id: string; ar: string; en: string }[]>(q.choices, []);

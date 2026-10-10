@@ -37,6 +37,8 @@ function CreatePage() {
   const [promo, setPromo] = useState("");
   const [pointsPerCorrect, setPointsPerCorrect] = useState(0);
   const [targetScore, setTargetScore] = useState(0);
+  const [streakMultiplier, setStreakMultiplier] = useState(false);
+  const [eliminationMode, setEliminationMode] = useState(false);
   const [hostIsPlayer, setHostIsPlayer] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -59,6 +61,8 @@ function CreatePage() {
         maxPlayers: shownCount,
         pointsPerCorrect,
         targetScore,
+        streakMultiplier,
+        eliminationMode,
         locale: lang,
         promo: promo || undefined,
         hostName: hostIsPlayer ? hostName.trim() || undefined : undefined,
@@ -157,6 +161,22 @@ function CreatePage() {
                 {label}
               </button>
             ))}
+          </div>
+        </div>
+        <div>
+          <p className="mb-2 font-bold">مضاعف الإجابات المتتالية</p>
+          <p className="mb-2 text-sm text-muted">إجابتان صحيحتان متتاليتان تضاعفان الإجابة التالية، وأربع تُثلّثانها (بحد أقصى ×3).</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" className={card(!streakMultiplier)} onClick={() => setStreakMultiplier(false)}>بدون</button>
+            <button type="button" className={card(streakMultiplier)} onClick={() => setStreakMultiplier(true)}>تفعيل</button>
+          </div>
+        </div>
+        <div>
+          <p className="mb-2 font-bold">الإقصاء السريع</p>
+          <p className="mb-2 text-sm text-muted">في كل جولة يخرج من أخطأ أو لم يجب، إذا أجاب أحدهم صحيحاً. يفوز آخر لاعب باقٍ. يُناسب ألعاب الاختيار من متعدد.</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" className={card(!eliminationMode)} onClick={() => setEliminationMode(false)}>بدون</button>
+            <button type="button" className={card(eliminationMode)} onClick={() => setEliminationMode(true)}>تفعيل</button>
           </div>
         </div>
         <div>

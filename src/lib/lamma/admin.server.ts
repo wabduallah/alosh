@@ -1,7 +1,5 @@
-import { getRequest } from "@tanstack/react-start/server";
 import { getSql, type Sql } from "@/lib/db";
 import { isAdmin, ready } from "./engine.server";
-import { adminCookieValid } from "./admin-cookie";
 import { markPaymentPaid } from "./payments.server";
 
 type Ctx = { userId: string | null; email: string | null };
@@ -15,18 +13,10 @@ function text(value: unknown, max = 500): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
-function hasAdminCookie(): boolean {
-  try {
-    return adminCookieValid(getRequest().headers.get("cookie"));
-  } catch {
-    return false;
-  }
-}
-
 async function gate(ctx: Ctx): Promise<Sql | null> {
   const sql = await getSql();
   await ready(sql);
-  if (hasAdminCookie() || (await isAdmin(sql, ctx.userId))) return sql;
+  if (await isAdmin(sql, ctx.userId)) return sql;
   return null;
 }
 

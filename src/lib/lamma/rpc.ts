@@ -55,6 +55,11 @@ export const createRoom = createServerFn({ method: "POST" })
     hostIsPlayer: typeof input.hostIsPlayer === "boolean" ? input.hostIsPlayer : input.hostMode !== "narrator",
     pointsPerCorrect: int(input.pointsPerCorrect, 0, 1000, 0),
     targetScore: int(input.targetScore, 0, 100000, 0),
+    streakMultiplier: input.streakMultiplier === true,
+    eliminationMode: input.eliminationMode === true,
+    customQuestions: Array.isArray(input.customQuestions)
+      ? (input.customQuestions as Array<{ promptAr: string; choices: { ar: string }[]; correct: number; points: number }>).slice(0, 15)
+      : undefined,
   }))
   .handler(async ({ data, context }) => {
     const { createRoomNow } = await import("./engine.server");
