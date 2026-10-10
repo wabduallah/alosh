@@ -73,6 +73,7 @@ type PlayerRow = {
   round_score: number;
   correct_count: number;
   wrong_count: number;
+  eliminated: boolean;
 };
 
 type QRow = {
@@ -109,6 +110,7 @@ type Settings = {
   pointsPerCorrect: number;
   targetScore: number;
   streakMultiplier: boolean;
+  eliminationMode: boolean;
   hostMode: "player" | "narrator";
 };
 
@@ -220,6 +222,7 @@ function asSettings(value: unknown, fallback?: Partial<Settings>): Settings {
     pointsPerCorrect: clamp(raw.pointsPerCorrect, 0, 1000, 0),
     targetScore: clamp(raw.targetScore, 0, 100000, 0),
     streakMultiplier: raw.streakMultiplier === true,
+    eliminationMode: raw.eliminationMode === true,
     hostMode: hostIsPlayer ? "player" : "narrator",
   };
 }
@@ -411,6 +414,7 @@ export async function createRoomNow(
     pointsPerCorrect?: number;
     targetScore?: number;
     streakMultiplier?: boolean;
+    eliminationMode?: boolean;
   },
   ctx: Ctx,
 ): Promise<Fail | { ok: true; code: string; hostToken: string; playerId?: string; playerToken?: string }> {
@@ -435,6 +439,7 @@ export async function createRoomNow(
       pointsPerCorrect: input.pointsPerCorrect,
       targetScore: input.targetScore,
       streakMultiplier: input.streakMultiplier === true,
+      eliminationMode: input.eliminationMode === true,
     },
     { rounds: game.default_rounds, seconds: game.default_seconds },
   );
@@ -543,6 +548,7 @@ async function buildSnap(sql: Sql, code: string, hostToken?: string, playerToken
     isBot: p.is_bot,
     correct: p.correct_count,
     wrong: p.wrong_count,
+    eliminated: p.eliminated,
   }));
   return {
     ok: true,
@@ -577,6 +583,7 @@ async function buildSnap(sql: Sql, code: string, hostToken?: string, playerToken
       pointsPerCorrect: settings.pointsPerCorrect,
       targetScore: settings.targetScore,
       streakMultiplier: settings.streakMultiplier,
+      eliminationMode: settings.eliminationMode,
       hostMode: settings.hostMode,
       hostAnswer: tokensMatch(fresh.room.host_token, hostToken) && settings.hostMode === "narrator" ? (q?.correct ?? null) : null,
     },
@@ -788,7 +795,7 @@ async function advanceIfDue(sql: Sql, code: string): Promise<void> {
   if (!locked.length) return;
   try {
     const settings = asSettings(data.room.settings);
-    if (data.room.current_round >= settings.rounds || reachedTarget(data.players, settings)) {
+    if (data.room.current_round >= settings.rounds || reachedTarget(data.players, settings) || eliminationOver(data.players, settings)) {
       await finishGame(sql, code);
       return;
     }
@@ -824,6 +831,12 @@ function correctPoints(settings: Settings, q: { points: number } | null, scoring
 }
 
 // Target-score rooms end as soon as a human reaches the target (rounds remain the hard cap).
+/** Elimination mode ends the game once one active player remains (only after at least two joined). */
+function eliminationOver(players: { eliminated: boolean }[], settings: Settings): boolean {
+  if (!settings.eliminationMode || players.length < 2) return false;
+  return players.filter((p) => !p.eliminated).length <= 1;
+}
+
 function reachedTarget(players: { score: number; is_bot: boolean }[], settings: Settings): boolean {
   return settings.targetScore > 0 && players.some((p) => !p.is_bot && p.score >= settings.targetScore);
 }
@@ -994,10 +1007,12 @@ async function scoreLocked(sql: Sql, code: string, auto = false): Promise<void> 
       reveal.correctEn = correct?.en;
       reveal.answers = [];
       const windowMs = settings.seconds * 1000;
+      const survivors: string[] = [];
       for (const player of data.players) {
         const row = byPlayer.get(player.id);
         const choiceId = String(payloadObj(row?.payload).choiceId ?? "");
         const ok = Boolean(q.correct) && choiceId === q.correct;
+        if (ok) survivors.push(player.id);
         let points = 0;
         if (ok && engine === "fastest") {
           points = speedPoints(num(row?.response_ms), windowMs, num(scoring.base, 400), num(scoring.speed, 600));
@@ -1010,6 +1025,13 @@ async function scoreLocked(sql: Sql, code: string, auto = false): Promise<void> 
         await addScore(sql, player.id, points, ok ? 1 : 0, choiceId && !ok ? 1 : 0);
         if (row) {
           await sql`update answers set score_awarded = ${points}, correct = ${ok} where room_id = ${code} and player_id = ${player.id} and round = ${round}`;
+        }
+      }
+      // Fast elimination: everyone active who missed this round is out. Nobody is removed if no one answered correctly.
+      if (settings.eliminationMode && survivors.length > 0) {
+        const out = data.players.filter((p) => !p.eliminated && !survivors.includes(p.id));
+        for (const player of out) {
+          await sql`update players set eliminated = true where id = ${player.id}`;
         }
       }
     }
@@ -1067,7 +1089,7 @@ export async function submitNow(input: { code: string; playerToken: string; roun
     return fail("NOT_PLAYING");
   }
   const player = data.players.find((p) => tokensMatch(p.token, input.playerToken));
-  if (!player || player.is_bot) return fail("FORBIDDEN");
+  if (!player || player.is_bot || player.eliminated) return fail("FORBIDDEN");
   const engine = data.game?.engine;
   const payload = sanitizePayload(engine, input.payload, data.players.map((p) => p.id));
   if (!payload) return fail("BAD_INPUT");
@@ -1156,7 +1178,7 @@ export async function hostNow(input: { code: string; hostToken: string; action: 
     if (room.status !== "ROUND_END") return fail("BAD_INPUT");
     const settings = asSettings(room.settings);
     const seated = await sql<PlayerRow>`select * from players where room_id = ${code}`;
-    if (room.current_round >= settings.rounds || reachedTarget(seated, settings)) {
+    if (room.current_round >= settings.rounds || reachedTarget(seated, settings) || eliminationOver(seated, settings)) {
       await finishGame(sql, code);
       return { ok: true };
     }

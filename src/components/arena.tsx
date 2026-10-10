@@ -224,7 +224,8 @@ function AnswerSurface({
   const lockRef = useRef(false);
 
   const playing = snap.room.status === "PLAYING";
-  const locked = Boolean(picked) || snap.yourAnswered || !playing;
+  const youOut = Boolean(snap.players.find((p) => p.id === snap.yourId)?.eliminated);
+  const locked = Boolean(picked) || snap.yourAnswered || !playing || youOut;
   const reveal: Reveal | null = snap.room.reveal;
   const correctId = snap.room.status === "ROUND_END" ? reveal?.correctId : undefined;
   const engine = snap.room.engine;
@@ -959,6 +960,8 @@ function GuestsStrip({ snap }: { snap: Snapshot }) {
     snap.room.targetScore > 0 ? `الهدف ${snap.room.targetScore} نقطة` : null,
     snap.room.pointsPerCorrect > 0 ? `${snap.room.pointsPerCorrect} نقطة لكل إجابة صحيحة` : null,
     snap.room.streakMultiplier ? "مضاعف للإجابات المتتالية" : null,
+    snap.room.eliminationMode ? "الإقصاء السريع: من يخطئ يخرج" : null,
+    snap.players.find((p) => p.id === snap.yourId)?.eliminated ? "أنت خارج اللعبة، تشاهد فقط" : null,
   ].filter(Boolean);
   return (
     <div className="space-y-2">
@@ -968,6 +971,7 @@ function GuestsStrip({ snap }: { snap: Snapshot }) {
             key={player.id}
             className={cx(
               "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-bold transition-colors duration-200",
+              player.eliminated && "opacity-40 line-through",
               player.answered ? "border-emerald/50 bg-emerald/15 text-ivory" : "border-white/10 bg-white/[0.03] text-muted",
             )}
           >
