@@ -13,7 +13,6 @@ export type Cheer = {
 export type RoomStatus = "WAITING" | "STARTING" | "PLAYING" | "SCORING" | "ROUND_END" | "FINISHED" | "CLOSED";
 
 export type Engine =
-  | "letter"
   | "quiz"
   | "truefalse"
   | "fastest"
@@ -82,7 +81,6 @@ export type Snapshot = {
     locale: "ar" | "en";
     sound: boolean;
     music: boolean;
-    letter: string | null;
     endsAt: string | null;
     auto: boolean;
     question: PublicQuestion | null;

@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { getSql, type Sql } from "@/lib/db";
-import { speedPoints, textMatches, type Locale } from "@/games/score";
+import { speedPoints, textMatches, type Locale } from "./match";
 import { profileFor } from "./catalog";
 import { applyBravoMode, parseBravoCategories, parseBravoMode, rankScorecard, type BravoCategory, type BravoMode } from "./bravo-engine";
 import { SEED_CATEGORIES, SEED_GAMES, SEED_PLANS, SEED_PROMOS } from "./seed-data";
@@ -113,8 +113,6 @@ type Settings = {
 type RoundState = {
   startedAt?: string;
   endsAt?: string | null;
-  letter?: string;
-  usedLetters?: string[];
   questionId?: number;
   usedQuestionIds?: number[];
   subjectId?: string | null;
@@ -638,7 +636,6 @@ async function buildSnap(sql: Sql, code: string, hostToken?: string, playerToken
       locale: settings.locale,
       sound: settings.sound,
       music: settings.music,
-      letter: roundState.letter ?? null,
       endsAt: roundState.endsAt ?? null,
       auto: Boolean(roundState.autoAt),
       question: q && fresh.room.status !== "WAITING" ? toPublic(q, hide && !showReveal) : null,
