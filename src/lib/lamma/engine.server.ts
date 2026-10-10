@@ -1,6 +1,9 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash } from "node:crypto";
 import { getSql, type Sql } from "@/lib/db";
 import { speedPoints, textMatches, type Locale } from "./match";
+import { createRateLimiter } from "./rate-limit";
+import { asSettings, type Settings } from "./settings";
+import { cleanName, clamp, hex, iso, jparse, num, rid, stamp, tokensMatch } from "./util";
 import { SEED_PLANS, SEED_PROMOS } from "./seed-data";
 import type { Cheer, CheerKind, Engine, Fail, GameCard, PlanCard, PublicQuestion, Reveal, RoomStatus, SnapPlayer, Snapshot } from "./types";
 import { CHEER_KINDS } from "./types";
@@ -87,25 +90,6 @@ type AnswerRow = {
   score_awarded: number;
 };
 
-type Settings = {
-  rounds: number;
-  seconds: number;
-  difficulty: "easy" | "medium" | "hard" | "mixed";
-  sound: boolean;
-  music: boolean;
-  maxPlayers: number;
-  locale: Locale;
-  hostIsPlayer: boolean;
-  pointsPerCorrect: number;
-  targetScore: number;
-  streakMultiplier: boolean;
-  eliminationMode: boolean;
-  reactionBonus: boolean;
-  majorityMode: boolean;
-  category: string;
-  hostMode: "player" | "narrator";
-};
-
 type RoundState = {
   startedAt?: string;
   endsAt?: string | null;
@@ -118,12 +102,9 @@ type RoundState = {
 
 type Choice = { id: string; ar: string; en: string; points?: number };
 
-const ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-// Fixed-window rate limits keyed by IP or player. Entries remember their own window so expired
-// ones can be dropped; without pruning the map grows with every key ever seen.
-const hits = new Map<string, { n: number; t: number; w: number }>();
-const HIT_KEYS_SOFT_LIMIT = 5000;
-let lastHitPrune = 0;
+// Fixed-window rate limits keyed by IP or player, with pruning of expired keys.
+const limiter = createRateLimiter();
+const allow = limiter.allow;
 const CHEER_TTL_MS = 6500;
 const AUTO_NEXT_MS = 2500;
 let seeding: Promise<void> | null = null;
@@ -131,114 +112,6 @@ let lastSweep = 0;
 
 function fail(error: string): Fail {
   return { ok: false, error };
-}
-
-function jparse<T>(value: unknown, fallback: T): T {
-  if (value == null) return fallback;
-  if (typeof value === "string") {
-    try {
-      return JSON.parse(value) as T;
-    } catch {
-      return fallback;
-    }
-  }
-  return value as T;
-}
-
-function num(value: unknown, fallback = 0): number {
-  const n = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function iso(value: unknown): string | null {
-  if (!value) return null;
-  if (value instanceof Date) return value.toISOString();
-  const t = Date.parse(String(value));
-  return Number.isNaN(t) ? null : new Date(t).toISOString();
-}
-
-function stamp(value: unknown): number {
-  const s = iso(value);
-  return s ? Date.parse(s) : 0;
-}
-
-function rid(len: number): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(len));
-  let out = "";
-  for (const b of bytes) out += ALPHA[b % ALPHA.length];
-  return out;
-}
-
-function hex(size: number): string {
-  return Buffer.from(crypto.getRandomValues(new Uint8Array(size))).toString("hex");
-}
-
-function tokensMatch(stored: string, given?: string): boolean {
-  if (!given || given.length !== stored.length) return false;
-  try {
-    return timingSafeEqual(Buffer.from(stored), Buffer.from(given));
-  } catch {
-    return false;
-  }
-}
-
-function pruneHits(now: number) {
-  for (const [key, row] of hits) {
-    if (now - row.t > row.w) hits.delete(key);
-  }
-}
-
-function allow(key: string, max: number, windowMs: number): boolean {
-  const now = Date.now();
-  // Prune only when the map is large, and at most every 10s, so a busy server never pays O(n) per request.
-  if (hits.size >= HIT_KEYS_SOFT_LIMIT && now - lastHitPrune > 10_000) {
-    lastHitPrune = now;
-    pruneHits(now);
-  }
-  const row = hits.get(key);
-  if (!row || now - row.t > windowMs) {
-    hits.set(key, { n: 1, t: now, w: windowMs });
-    return true;
-  }
-  row.n += 1;
-  return row.n <= max;
-}
-
-function cleanName(input: string): string | null {
-  const name = input.replace(/[<>]/g, "").trim().replace(/\s+/g, " ");
-  if (name.length < 2 || name.length > 16) return null;
-  if (/https?:|www\./i.test(name)) return null;
-  return name;
-}
-
-function asSettings(value: unknown, fallback?: Partial<Settings>): Settings {
-  const raw = jparse<Partial<Settings>>(value, {});
-  const difficulty = raw.difficulty;
-  const hostIsPlayer = typeof raw.hostIsPlayer === "boolean" ? raw.hostIsPlayer : raw.hostMode !== "narrator";
-  return {
-    rounds: clamp(raw.rounds, 1, 15, fallback?.rounds ?? 6),
-    seconds: clamp(raw.seconds, 8, 180, fallback?.seconds ?? 30),
-    difficulty: difficulty === "easy" || difficulty === "medium" || difficulty === "hard" || difficulty === "mixed" ? difficulty : (fallback?.difficulty ?? "mixed"),
-    sound: raw.sound !== false,
-    music: raw.music === true,
-    maxPlayers: clamp(raw.maxPlayers, 2, 14, fallback?.maxPlayers ?? 2),
-    locale: raw.locale === "en" ? "en" : "ar",
-    hostIsPlayer,
-    pointsPerCorrect: clamp(raw.pointsPerCorrect, 0, 1000, 0),
-    targetScore: clamp(raw.targetScore, 0, 100000, 0),
-    streakMultiplier: raw.streakMultiplier === true,
-    eliminationMode: raw.eliminationMode === true,
-    reactionBonus: raw.reactionBonus === true,
-    majorityMode: raw.majorityMode === true,
-    category: typeof raw.category === "string" ? raw.category.slice(0, 40) : "",
-    hostMode: hostIsPlayer ? "player" : "narrator",
-  };
-}
-
-function clamp(value: unknown, min: number, max: number, fallback: number): number {
-  const n = Math.round(num(value, fallback));
-  if (!Number.isFinite(n)) return fallback;
-  return Math.min(max, Math.max(min, n));
 }
 
 async function ipKey(): Promise<string> {
