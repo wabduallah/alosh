@@ -35,6 +35,8 @@ function CreatePage() {
   const [sound, setSound] = useState(true);
   const [music, setMusic] = useState(false);
   const [promo, setPromo] = useState("");
+  const [pointsPerCorrect, setPointsPerCorrect] = useState(0);
+  const [targetScore, setTargetScore] = useState(0);
   const [hostIsPlayer, setHostIsPlayer] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -55,6 +57,8 @@ function CreatePage() {
         sound,
         music,
         maxPlayers: shownCount,
+        pointsPerCorrect,
+        targetScore,
         locale: lang,
         promo: promo || undefined,
         hostName: hostIsPlayer ? hostName.trim() || undefined : undefined,
@@ -151,6 +155,27 @@ function CreatePage() {
             ] as const).map(([id, label]) => (
               <button key={id} type="button" className={card(difficulty === id)} onClick={() => setDifficulty(id)}>
                 {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="mb-2 font-bold">نقاط الإجابة الصحيحة</p>
+          <div className="grid grid-cols-4 gap-2 rounded-2xl border border-white/10 bg-white/[0.02] p-1">
+            {[0, 50, 100, 200].map((n) => (
+              <button key={n} type="button" className={segment(pointsPerCorrect === n)} onClick={() => setPointsPerCorrect(n)}>
+                {n === 0 ? "حسب اللعبة" : n}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="mb-2 font-bold">حد النقاط للفوز</p>
+          <p className="mb-2 text-sm text-muted">تنتهي اللعبة فور وصول أحد اللاعبين إلى الحد، أو عند آخر جولة أيهما أسبق.</p>
+          <div className="grid grid-cols-4 gap-2 rounded-2xl border border-white/10 bg-white/[0.02] p-1">
+            {[0, 300, 500, 1000].map((n) => (
+              <button key={n} type="button" className={segment(targetScore === n)} onClick={() => setTargetScore(n)}>
+                {n === 0 ? "بلا حد" : n}
               </button>
             ))}
           </div>

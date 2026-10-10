@@ -35,6 +35,7 @@ export type PublicQuestion = {
   kind: string;
   choices: PublicChoice[];
   icons: string[];
+  imageUrl: string | null;
 };
 
 export type LetterRevealRow = {
@@ -97,6 +98,8 @@ export type Snapshot = {
     minPlayers: number;
     maxPlayers: number;
     hostIsPlayer: boolean;
+    pointsPerCorrect: number;
+    targetScore: number;
     hostMode: "player" | "narrator";
     hostAnswer: string | null;
   };
