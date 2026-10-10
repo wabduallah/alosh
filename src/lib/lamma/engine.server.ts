@@ -663,22 +663,24 @@ async function majlisQuestion(sql: Sql, code: string, round: number): Promise<QR
 }
 
 async function pickQuestion(sql: Sql, gameId: string, state: RoundState, difficulty: Settings["difficulty"], categories: string[] = []): Promise<QRow | null> {
-  // Bravo categories: keep questions tagged with any picked category (none picked = all). Falls back to every question if the filter empties the pool.
-  let rows = categories.length
-    ? await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published' and room_id is null and category = any(${categories})`
-    : await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published' and room_id is null`;
-  if (!rows.length && categories.length) {
-    rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published' and room_id is null`;
+  // Pick one row in SQL instead of loading the whole pool. Preference order:
+  // category + difficulty, category, difficulty, anything. Questions already used this game
+  // are skipped; if every question has been used, the final level allows repeats.
+  const used = state.usedQuestionIds ?? [];
+  const diff = difficulty === "mixed" ? null : difficulty;
+  const levels: Array<{ cats: string[]; diff: string | null }> = [];
+  if (categories.length) {
+    if (diff) levels.push({ cats: categories, diff });
+    levels.push({ cats: categories, diff: null });
   }
-  const used = new Set(state.usedQuestionIds ?? []);
-  let pool = rows.filter((row) => !used.has(row.id));
-  if (!pool.length) pool = rows;
-  if (difficulty !== "mixed") {
-    const filtered = pool.filter((row) => row.difficulty === difficulty);
-    if (filtered.length) pool = filtered;
+  if (diff) levels.push({ cats: [], diff });
+  levels.push({ cats: [], diff: null });
+  for (const level of levels) {
+    const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published' and room_id is null ${level.cats.length ? sql`and category = any(${level.cats})` : sql``} ${level.diff ? sql`and difficulty = ${level.diff}` : sql``} ${used.length ? sql`and not (id = any(${used}))` : sql``} order by random() limit 1`;
+    if (rows[0]) return rows[0];
   }
-  if (!pool.length) return null;
-  return pool[Math.floor(Math.random() * pool.length)] ?? null;
+  const repeats = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published' and room_id is null order by random() limit 1`;
+  return repeats[0] ?? null;
 }
 
 async function openRound(sql: Sql, code: string, round: number): Promise<Fail | { ok: true }> {
