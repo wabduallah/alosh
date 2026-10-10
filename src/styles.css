@@ -1,32 +1,39 @@
 @import "tailwindcss";
 
 /*
- * Moonhem "Cosmic Glass" design system for العش (Al3sh).
- * Gold/yellow/brown tokens have been removed. Tailwind v4 reads these via @theme,
- * so `bg-neon`, `text-violet`, `border-emerald/40`, etc. are generated from them.
+ * Al3sh (العش) theme: "Dark Cosmic Cyber".
+ *
+ * Single source of truth for colour. Tailwind v4 is configured here (no
+ * tailwind.config file): every token in @theme becomes a utility, so
+ * `bg-neon`, `text-violet`, `border-emerald/40`, `bg-night` are generated from it.
+ *
+ * Rules:
+ *  - Backgrounds are dark. Text on dark is ivory or muted.
+ *  - Accents: cyan (neon) for active state and glow, violet for secondary.
+ *  - Answer states only: emerald = correct, crimson = wrong.
+ *  - Warm metallic and yellow hues are not part of this theme.
  */
 @theme {
   --font-sans: "Tajawal", "Cairo", "IBM Plex Sans Arabic", system-ui, sans-serif;
   --font-display: "Fraunces", "Cairo", serif;
 
-  /* Surfaces */
-  --color-night: #090d16; /* Deep Cosmic Midnight: page background */
-  --color-deep: #131b2e; /* Mesh-gradient highlight */
-  --color-sand: #0f172a; /* Solid dark surface */
-  --color-forest-deep: #090d16;
+  /* Surfaces, darkest to lightest. */
+  --color-night: #090d16; /* Page background */
+  --color-abyss: #0b1120; /* Lower gradient stop */
+  --color-deep: #131b2e; /* Upper mesh-gradient highlight */
 
   /* Text */
-  --color-ivory: #e8eefb; /* Primary text (cool white) */
+  --color-ivory: #e8eefb; /* Primary text */
+  --color-muted: #94a3b8; /* Secondary text, captions */
   --color-ink: #090d16; /* Text on light surfaces only */
-  --color-forest: #e8eefb;
-  --color-moss: #94a3b8;
-  --color-muted: #94a3b8;
 
   /* Accents */
-  --color-neon: #06b6d4; /* Electric Cyan: active accents and glows */
+  --color-neon: #06b6d4; /* Electric Cyan: active state, focus, glow */
   --color-violet: #8b5cf6; /* Neon Violet: secondary accent */
-  --color-emerald: #10b981; /* Correct answer */
-  --color-crimson: #ef4444; /* Wrong answer */
+
+  /* Answer states */
+  --color-emerald: #10b981; /* Correct */
+  --color-crimson: #ef4444; /* Wrong */
 }
 
 @layer base {
@@ -35,7 +42,7 @@
     color-scheme: dark;
   }
   body {
-    background: var(--color-night);
+    background-color: var(--color-night);
     color: var(--color-ivory);
   }
   button,
@@ -48,12 +55,12 @@
   }
 }
 
-/* Light surfaces (kept only where a component explicitly asks for one). */
+/* Light surface: a component asks for it explicitly (e.g. a light button). */
 .bg-ivory {
   color: var(--color-ink);
 }
 
-/* Page-level mesh gradients. */
+/* Page-level mesh gradient, shared by full pages and game stages. */
 .nest,
 .game-shell,
 .stage {
@@ -61,16 +68,16 @@
   background-image:
     radial-gradient(900px 420px at 110% -10%, color-mix(in srgb, var(--color-neon) 18%, transparent), transparent 60%),
     radial-gradient(700px 360px at -10% 0%, color-mix(in srgb, var(--color-violet) 16%, transparent), transparent 62%),
-    linear-gradient(180deg, #090d16 0%, #131b2e 42%, #0b1120 100%);
+    linear-gradient(180deg, var(--color-night) 0%, var(--color-deep) 42%, var(--color-abyss) 100%);
   color: var(--color-ivory);
 }
 
-/* Cards: glassmorphism with a soft neon edge. */
+/* Cards: glassmorphism with a soft cyan edge. */
 .glass-card,
 .neon-card {
   background: rgb(255 255 255 / 0.03);
   border: 1px solid rgb(255 255 255 / 0.08);
-  box-shadow: 0 0 24px rgb(6 182 212 / 0.10);
+  box-shadow: 0 0 24px rgb(6 182 212 / 0.1);
   backdrop-filter: blur(14px);
   transition:
     border-color 180ms ease,
@@ -86,11 +93,11 @@
 
 .glass {
   background: rgb(255 255 255 / 0.04);
-  border: 1px solid rgb(255 255 255 / 0.10);
+  border: 1px solid rgb(255 255 255 / 0.1);
   backdrop-filter: blur(14px);
 }
 
-/* Result states. */
+/* Answer result states. */
 .ok {
   border-color: var(--color-emerald);
   background: rgb(16 185 129 / 0.15);
@@ -98,13 +105,6 @@
 .bad {
   border-color: var(--color-crimson);
   background: rgb(239 68 68 / 0.15);
-}
-
-.stage {
-  background-image:
-    radial-gradient(640px 280px at 100% -10%, color-mix(in srgb, var(--color-neon) 16%, transparent), transparent 70%),
-    radial-gradient(520px 260px at 0% 100%, color-mix(in srgb, var(--color-violet) 12%, transparent), transparent 70%),
-    var(--color-night);
 }
 
 /* Motion. */
@@ -156,6 +156,7 @@
   animation: cheer-rise 3.4s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
 }
 
+/* Respect the OS "reduce motion" setting: keep final states, drop movement. */
 @media (prefers-reduced-motion: reduce) {
   .rise,
   .cheer-rise,
