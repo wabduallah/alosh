@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Check, Flame, Heart, Laugh, Sparkles, X, type LucideIcon } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { GameIcon, PictureIcons } from "@/components/icons";
+import { CheerBar, CheerRain } from "@/components/room-cheers";
+import { Standings } from "@/components/room-standings";
 import { QrCode } from "@/components/qr-code";
 import { Button, cx, inputClass, joinLink } from "@/components/ui";
 import { LETTER_CATS, type LetterCat } from "@/games/score";
-import { buildScorecardText, rankScorecard, type BravoMode } from "@/lib/lamma/bravo-engine";
 import { useI18n } from "@/lib/i18n";
 import { hostAction, sendCheer, submitAnswer } from "@/lib/lamma/rpc";
 import { useRoom } from "@/lib/lamma/use-room";
-import type { Cheer, CheerKind, GameCard, Reveal, Snapshot } from "@/lib/lamma/types";
-import { CHEER_KINDS } from "@/lib/lamma/types";
+import type { CheerKind, GameCard, Reveal, Snapshot } from "@/lib/lamma/types";
 import { lobbyPulse, playCue, unlockAudio } from "@/lib/sfx";
 
 const EMPTY_FIELDS: Record<LetterCat, string> = { boy: "", girl: "", animal: "", object: "", country: "" };
@@ -686,105 +686,6 @@ function RevealBoard({
   );
 }
 
-const CHEER_ICON: Record<CheerKind, LucideIcon> = {
-  spark: Sparkles,
-  laugh: Laugh,
-  heart: Heart,
-  flame: Flame,
-};
-
-function cheerLane(id: string) {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash * 33 + id.charCodeAt(i)) >>> 0;
-  return { left: 8 + (hash % 76), drift: `${(hash % 48) - 24}px` };
-}
-
-function CheerRain({ cheers }: { cheers: Cheer[] }) {
-  const [live, setLive] = useState<Array<Cheer & { left: number; drift: string }>>([]);
-  const seen = useRef(new Set<string>());
-  const timers = useRef<number[]>([]);
-
-  // Timers are only cleared on unmount. Clearing them when `cheers` changes would drop cheers
-  // that were already marked as seen, so they would never show.
-  useEffect(() => {
-    const pending = timers.current;
-    return () => pending.forEach((id) => window.clearTimeout(id));
-  }, []);
-
-  useEffect(() => {
-    const fresh = cheers.filter((cheer) => !seen.current.has(cheer.id));
-    fresh.forEach((cheer, index) => {
-      seen.current.add(cheer.id);
-      const lane = cheerLane(cheer.id);
-      timers.current.push(
-        window.setTimeout(() => {
-          setLive((prev) => [...prev, { ...cheer, ...lane }].slice(-16));
-          timers.current.push(
-            window.setTimeout(() => {
-              setLive((prev) => prev.filter((item) => item.id !== cheer.id));
-            }, 3400),
-          );
-        }, index * 160),
-      );
-    });
-  }, [cheers]);
-
-  if (!live.length) return null;
-  return (
-    <div className="pointer-events-none fixed inset-0 z-20 overflow-hidden" data-cheer-rain={live.length} aria-hidden="true">
-      {live.map((item) => {
-        const Icon = CHEER_ICON[item.kind];
-        return (
-          <div
-            key={item.id}
-            className="cheer-rise absolute bottom-28 flex flex-col items-center gap-1"
-            style={{ left: `${item.left}%`, ["--cheer-drift" as string]: item.drift }}
-          >
-            <Icon className="size-14 text-neon drop-shadow-[0_0_12px_rgb(6_182_212/0.7)]" strokeWidth={1.5} />
-            <span className="rounded-full border border-white/10 bg-night/85 px-3 py-1 text-sm text-ivory">{item.name}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function CheerBar({ onSend }: { onSend: (kind: CheerKind) => void }) {
-  const { t } = useI18n();
-  const [cooling, setCooling] = useState(false);
-
-  function tap(kind: CheerKind) {
-    if (cooling) return;
-    setCooling(true);
-    window.setTimeout(() => setCooling(false), 900);
-    onSend(kind);
-  }
-
-  return (
-    <div className="fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-night/85 px-4 pt-3 pb-4 backdrop-blur-xl">
-      <p className="mb-2 text-center text-xs text-muted">{t("cheer.hint")}</p>
-      <div className="mx-auto grid max-w-md grid-cols-4 gap-2">
-        {CHEER_KINDS.map((kind) => {
-          const Icon = CHEER_ICON[kind];
-          return (
-            <button
-              key={kind}
-              type="button"
-              data-cheer={kind}
-              disabled={cooling}
-              onClick={() => tap(kind)}
-              className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/[0.04] text-ivory transition hover:border-neon/50 active:scale-95 disabled:opacity-50"
-            >
-              <Icon className="size-5 text-neon" strokeWidth={1.75} aria-hidden="true" />
-              <span className="text-xs">{t(`cheer.${kind}`)}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function GamePicker({
   games,
   currentId,
@@ -891,76 +792,6 @@ function GuestsStrip({ snap }: { snap: Snapshot }) {
 }
 
 /** Final standings: winners in descending order of points, with each player's gap to the leader. */
-function Standings({
-  players,
-  yourId,
-  roomCode,
-  mode,
-}: {
-  players: Snapshot["players"];
-  yourId: string | null;
-  roomCode: string;
-  mode: BravoMode;
-}) {
-  const ranked = rankScorecard(players);
-  const rows = ranked.map((row) => ({ player: row, place: row.place, gap: row.gap }));
-  const [copied, setCopied] = useState(false);
-  async function shareScorecard() {
-    try {
-      await navigator.clipboard.writeText(buildScorecardText({ roomCode, mode, rows: ranked }));
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
-    }
-  }
-  return (
-    <section className="space-y-6 text-center">
-      <h2 className="font-display text-5xl">الترتيب النهائي</h2>
-      <button
-        type="button"
-        onClick={() => void shareScorecard()}
-        className="min-h-11 rounded-full border border-neon/40 px-5 font-bold text-neon transition hover:bg-neon/10"
-      >
-        {copied ? "تم نسخ النتيجة ✓" : "انسخ النتيجة للمشاركة"}
-      </button>
-      <ol className="mx-auto grid max-w-3xl gap-3 sm:grid-cols-3">
-        {rows.slice(0, 3).map(({ player, place: rank, gap }) => (
-          <li
-            key={player.id}
-            className={cx("glass-card rounded-2xl p-4", rank === 1 && "border-neon/50 shadow-[0_0_32px_rgb(6_182_212/0.25)]")}
-          >
-            <p className="font-display text-4xl text-neon">{rank}</p>
-            <p className="text-2xl font-bold">{player.name}</p>
-            <p className="tabular-nums text-ivory">{player.score}</p>
-            <p className="text-xs text-muted">{gap === 0 ? "المتصدر" : `−${gap}`}</p>
-          </li>
-        ))}
-      </ol>
-      <ol className="mx-auto max-w-3xl space-y-2 text-start">
-        {rows.map(({ player, place: rank, gap }) => (
-          <li
-            key={player.id}
-            className={cx(
-              "flex items-center justify-between gap-3 rounded-2xl border px-4 py-3",
-              player.id === yourId ? "border-neon/50 bg-neon/10" : "border-white/10 bg-white/[0.03]",
-            )}
-          >
-            <span className="flex items-center gap-3">
-              <span className="w-8 font-display text-xl tabular-nums text-neon">{rank}</span>
-              <span className="font-bold">{player.name}</span>
-            </span>
-            <span className="flex items-center gap-4 tabular-nums">
-              <span className="text-sm text-muted">{gap === 0 ? "—" : `−${gap}`}</span>
-              <span className="text-lg font-bold">{player.score}</span>
-            </span>
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
-}
-
 function PlayerRail({
   snap,
   host,
