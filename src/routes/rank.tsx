@@ -1,34 +1,22 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Shell } from "@/components/shell";
-import { listGames } from "@/lib/lamma/rpc";
-import type { GameCard } from "@/lib/lamma/types";
 
 export const Route = createFileRoute("/rank")({
-  loader: () => listGames(),
   head: () => ({ meta: [{ title: "التصنيف — العش" }] }),
   component: RankPage,
 });
 
+/** The leaderboard ranked games by rooms opened. It returns with the new games list. */
 function RankPage() {
-  const games = [...(Route.useLoaderData() as GameCard[])].sort((a, b) => b.plays - a.plays);
   return (
     <Shell>
-      <p className="text-xs font-extrabold tracking-[0.22em] text-neon">LEADERBOARD</p>
-      <h1 className="mt-2 text-4xl font-extrabold">التصنيف</h1>
-      <p className="mt-3 max-w-2xl text-ivory/70">ترتيب الألعاب حسب عدد الغرف التي فُتحت. نقاط اللاعبين تُحسب داخل كل غرفة ولا تُجمع علنًا إلا بعد انتهاء الجولة.</p>
-      {!games.length ? <p className="mt-8 rounded-3xl border border-dashed border-white/15 p-6">لا توجد مباريات بعد.</p> : null}
-      <ol className="mt-6 space-y-2">
-        {games.map((game, index) => (
-          <li key={game.id} className="neon-card flex items-center gap-3 rounded-3xl px-4 py-3">
-            <span className="grid size-10 place-items-center rounded-2xl bg-neon font-extrabold text-night">{index + 1}</span>
-            <div className="min-w-0 flex-1">
-              <span className="font-extrabold">{game.nameAr}</span>
-              <p className="text-sm text-ivory/55">{game.playMode} · {game.minPlayers}–{game.maxPlayers}</p>
-            </div>
-            <span className="tabular-nums text-neon">{game.plays}</span>
-          </li>
-        ))}
-      </ol>
+      <section className="glass-card mx-auto mt-8 max-w-xl rounded-3xl p-6 text-center">
+        <h1 className="text-2xl font-extrabold text-ivory">التصنيف</h1>
+        <p className="mt-2 text-sm text-muted">يعود التصنيف مع قائمة الألعاب الجديدة.</p>
+        <Link to="/" className="mt-5 inline-flex min-h-11 items-center rounded-full border border-white/15 px-5 text-sm font-bold text-ivory">
+          العودة للرئيسية
+        </Link>
+      </section>
     </Shell>
   );
 }

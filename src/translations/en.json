@@ -21,27 +21,6 @@
     "start": "Create a room",
     "join": "Join a room"
   },
-  "browse": {
-    "title": "Party games",
-    "search": "Search for a game…",
-    "all": "All games",
-    "freeShelf": "Free",
-    "premiumShelf": "Premium",
-    "hot": "Most played",
-    "newest": "Newest",
-    "big": "Big groups",
-    "empty": "No games in this view.",
-    "soon": "Games for this shelf are on the way.",
-    "play": "Play now",
-    "players": "{min}–{max} players",
-    "minutes": "{min}–{max} min",
-    "locked": "This game is for Nest Premium members.",
-    "subscribe": "Subscribe",
-    "back": "Back to games",
-    "how": "How to play",
-    "rules": "Rules",
-    "setup": "Setup"
-  },
   "stats": {
     "games": "{n} games",
     "players": "Up to 14 players",
@@ -56,25 +35,9 @@
     "3t": "The round stays on the big screen",
     "3d": "Answers come from the phone. Scores are counted on the server."
   },
-  "popular": "Pick a game",
   "premiumTitle": "Play without the cap",
   "premiumSub": "Free is enough to try. Premium opens every game and lifts the daily room limit.",
   "footer": "The Nest — living-room games, in the browser.",
-  "create": {
-    "title": "Create a game",
-    "game": "Game",
-    "players": "Player cap",
-    "diff": "Difficulty",
-    "time": "Answer time in seconds",
-    "rounds": "Rounds",
-    "sfx": "Sound effects",
-    "music": "Lobby music",
-    "submit": "Create room",
-    "promo": "Optional promo code",
-    "locked": "This game is Premium",
-    "hostName": "Your name as a player",
-    "lead": "One code for the whole night. Players join and wait, and you can switch games after the podium without sending them out."
-  },
   "join": {
     "title": "Join a game",
     "code": "Room code",
@@ -137,29 +100,6 @@
     "heart": "Love",
     "flame": "Hype"
   },
-  "letter": {
-    "boy": "Boy",
-    "girl": "Girl",
-    "animal": "Animal",
-    "object": "Object",
-    "country": "Place"
-  },
-  "diff": {
-    "easy": "Easy",
-    "medium": "Medium",
-    "hard": "Hard",
-    "mixed": "Mixed"
-  },
-  "podium": {
-    "title": "The gathering is over",
-    "1": "First",
-    "2": "Second",
-    "3": "Third"
-  },
-  "tier": {
-    "free": "Free",
-    "premium": "Premium"
-  },
   "err": {
     "ROOM_NOT_FOUND": "That room is missing or expired.",
     "NAME_INVALID": "Use 2 to 16 characters.",
@@ -220,31 +160,6 @@
     "seconds": "{n}s",
     "rounds": "{n} rounds"
   },
-  "cat": {
-    "all": "All",
-    "mobile": "Phones",
-    "competitive": "Competitive",
-    "coop": "Co-op",
-    "teams": "Teams",
-    "trivia": "Trivia",
-    "words": "Words",
-    "act": "Guess",
-    "social": "Social",
-    "quick": "Quick",
-    "family": "Family",
-    "free": "Free",
-    "premium": "Premium"
-  },
-  "mode": {
-    "competitive": "Competitive",
-    "coop": "Co-op",
-    "teams": "Teams",
-    "social": "Social"
-  },
-  "library": {
-    "lead": "One library, one room. Pick the game after everyone is in.",
-    "count": "{n} games"
-  },
   "toast": {
     "joined": "{name} joined",
     "started": "The game started",
@@ -278,10 +193,6 @@
       "lexicon": "Lexicon",
       "reports": "Reports"
     }
-  },
-  "hostMode": {
-    "player": "Host plays",
-    "narrator": "Host narrates only"
   },
   "room": {
     "narratorNote": "Narrator mode: players cannot see the answer.",
