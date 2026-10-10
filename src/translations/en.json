@@ -257,7 +257,27 @@
     "become": "Make me admin",
     "denied": "This account is not an admin.",
     "purge": "Remove practice data",
-    "guide": "Change the site name in Settings under brand. Prices live on Plans. Card payment starts after the host has STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, MOYASAR_SECRET_KEY, or TAP_SECRET_KEY. A custom domain is attached from publish settings."
+    "guide": "Change the site name in Settings under brand. Prices live on Plans. Card payment starts after the host has STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, MOYASAR_SECRET_KEY, or TAP_SECRET_KEY. A custom domain is attached from publish settings.",
+    "tabs": {
+      "dashboard": "Dashboard",
+      "games": "Games",
+      "questions": "Questions",
+      "import": "Import",
+      "ai": "AI",
+      "categories": "Categories",
+      "sections": "Sections",
+      "addons": "Add-ons",
+      "users": "Players",
+      "rooms": "Rooms",
+      "plans": "Plans",
+      "subscriptions": "Subscriptions",
+      "payments": "Payments",
+      "promos": "Promo codes",
+      "translations": "Texts",
+      "settings": "Settings",
+      "lexicon": "Lexicon",
+      "reports": "Reports"
+    }
   },
   "hostMode": {
     "player": "Host plays",
