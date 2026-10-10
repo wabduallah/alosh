@@ -49,8 +49,9 @@ function lookup(obj: Dict, path: string): string | null {
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>("ar");
-  const [overrides, setOverrides] = useState<{ ar: Record<string, string>; en: Record<string, string> }>({ ar: {}, en: {} });
-  const [bundle, setBundle] = useState<Bundle>(emptyBundle);
+  // Site config used to come from the old engine's settings table, which no longer exists.
+  // The built-in defaults and translation files are the source of truth now.
+  const bundle = emptyBundle;
 
   useEffect(() => {
     const saved = localStorage.getItem("lamma-lang");
@@ -63,23 +64,9 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("lamma-lang", lang);
   }, [lang]);
 
-  useEffect(() => {
-    let on = true;
-    void import("./lamma/rpc").then(async ({ getPublicConfig }) => {
-      const config = await getPublicConfig();
-      if (!on) return;
-      setBundle({ brand: config.brand, ads: config.ads, sounds: config.sounds, plans: config.plans });
-      setOverrides(config.strings);
-    }).catch(() => undefined);
-    return () => {
-      on = false;
-    };
-  }, []);
-
   const value = useMemo<Ctx>(() => {
     const t = (key: string, vars?: Record<string, string | number>) => {
-      const override = overrides[lang][key] || overrides.ar[key];
-      let s = override || lookup(tables[lang], key) || lookup(tables.ar, key) || key;
+      let s = lookup(tables[lang], key) || lookup(tables.ar, key) || key;
       if (vars) {
         for (const [name, repl] of Object.entries(vars)) s = s.replaceAll(`{${name}}`, String(repl));
       }
@@ -92,7 +79,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       t,
       bundle,
     };
-  }, [bundle, lang, overrides]);
+  }, [bundle, lang]);
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
