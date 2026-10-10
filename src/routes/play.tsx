@@ -1,12 +1,15 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { GameIcon } from "@/components/icons";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import { Shell } from "@/components/shell";
-import { Button, Field, inputClass } from "@/components/ui";
-import { CATALOG } from "@/lib/lamma/catalog";
+import { cx, inputClass } from "@/components/ui";
 import { useI18n } from "@/lib/i18n";
 import { createRoom, listGames } from "@/lib/lamma/rpc";
 import type { GameCard } from "@/lib/lamma/types";
+
+/** Room size rules (mirrored on the server in engine.server.ts / rpc.ts). */
+const MIN_PLAYERS = 2;
+const MAX_PLAYERS = 14;
+const DEFAULT_PLAYERS = 2;
 
 export const Route = createFileRoute("/play")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -25,38 +28,39 @@ function CreatePage() {
   const picked = games.find((game) => game.id === search.game) ?? games[0];
   const [hostName, setHostName] = useState("");
   const [gameId, setGameId] = useState(picked?.id ?? "");
-  const [shelf, setShelf] = useState(picked?.category || "words");
   const [rounds, setRounds] = useState(picked?.rounds ?? 6);
   const [seconds, setSeconds] = useState(picked?.seconds ?? 30);
-  const [maxPlayers, setMaxPlayers] = useState(2);
+  const [maxPlayers, setMaxPlayers] = useState(DEFAULT_PLAYERS);
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard" | "mixed">("mixed");
   const [sound, setSound] = useState(true);
   const [music, setMusic] = useState(false);
   const [promo, setPromo] = useState("");
-  const [hostMode, setHostMode] = useState<"player" | "narrator">("player");
+  const [hostIsPlayer, setHostIsPlayer] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const selected = games.find((game) => game.id === gameId);
-  const shelves = useMemo(
-    () => CATALOG.filter((cat) => games.some((game) => game.category === cat.id)),
-    [games],
-  );
-  const shown = games
-    .filter((game) => game.category === shelf)
-    .sort((a, b) => Number(a.tier === "premium") - Number(b.tier === "premium"));
-
-  function choose(game: GameCard) {
-    setGameId(game.id);
-    setSeconds(game.seconds);
-    setRounds(game.rounds);
-    setMaxPlayers(Math.min(14, Math.max(2, game.minPlayers || 2)));
-  }
+  // A game can require more seats than the global floor; never let the stepper go below it.
+  const floor = Math.max(MIN_PLAYERS, selected?.minPlayers ?? MIN_PLAYERS);
+  const shownCount = Math.min(MAX_PLAYERS, Math.max(floor, maxPlayers));
 
   async function submit() {
     setBusy(true);
     setError(null);
     const res = await createRoom({
-      data: { gameId, rounds, seconds, difficulty, sound, music, maxPlayers, locale: lang, promo: promo || undefined, hostName, hostMode },
+      data: {
+        gameId,
+        rounds,
+        seconds,
+        difficulty,
+        sound,
+        music,
+        maxPlayers: shownCount,
+        locale: lang,
+        promo: promo || undefined,
+        hostName: hostIsPlayer ? hostName.trim() || undefined : undefined,
+        hostIsPlayer,
+        hostMode: hostIsPlayer ? "player" : "narrator",
+      },
     });
     setBusy(false);
     if (!res.ok) {
@@ -70,66 +74,122 @@ function CreatePage() {
 
   const roundChoices = [10, 7, 5, 3];
   const timeChoices = [60, 20, 30, 10];
+  const segment = (active: boolean) =>
+    cx(
+      "min-h-12 rounded-xl font-bold transition-all duration-150",
+      active ? "bg-neon text-night shadow-[0_0_16px_rgb(6_182_212/0.35)]" : "text-muted hover:text-ivory",
+    );
+  const card = (active: boolean) =>
+    cx(
+      "min-h-14 rounded-2xl border font-bold transition-all duration-150",
+      active ? "border-neon bg-neon text-night shadow-[0_0_16px_rgb(6_182_212/0.35)]" : "border-white/10 bg-white/[0.03] text-muted hover:border-neon/40 hover:text-ivory",
+    );
+
   return (
     <Shell>
       <header className="mb-5">
-        <h1 className="text-3xl font-extrabold text-[#06b6d4]">إنشاء غرفة</h1>
-        <p className="mt-1 text-sm text-[#A89F91]">مجانية بالكامل · حتى 14 لاعباً</p>
+        <h1 className="text-3xl font-extrabold text-neon">إنشاء غرفة</h1>
+        <p className="mt-1 text-sm text-muted">مجانية بالكامل · من {MIN_PLAYERS} إلى {MAX_PLAYERS} لاعباً</p>
       </header>
       <form
-        className="space-y-5 rounded-3xl border border-[#3D352B] bg-[#171513] p-4"
+        className="glass-card space-y-5 rounded-3xl p-4 sm:p-6"
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
         }}
       >
-        <input className="sr-only" value={hostName} onChange={(e) => setHostName(e.target.value)} placeholder="اسم المضيف" />
         <div>
-          <p className="mb-2 font-extrabold">نوع الغرفة</p>
+          <p className="mb-2 font-bold">نوع الغرفة</p>
           <div className="grid grid-cols-2 gap-2">
-            <button type="button" className={`min-h-14 rounded-2xl border font-extrabold ${hostMode === "narrator" ? "border-[#06b6d4] bg-[#06b6d4] text-black" : "border-[#3D352B] text-[#A89F91]"}`} onClick={() => setHostMode("narrator")}>المضيف يدير فقط</button>
-            <button type="button" className={`min-h-14 rounded-2xl border font-extrabold ${hostMode === "player" ? "border-[#06b6d4] bg-[#06b6d4] text-black" : "border-[#3D352B] text-[#A89F91]"}`} onClick={() => setHostMode("player")}>المضيف يشارك</button>
+            <button type="button" className={card(!hostIsPlayer)} onClick={() => setHostIsPlayer(false)}>
+              المضيف يدير فقط
+            </button>
+            <button type="button" className={card(hostIsPlayer)} onClick={() => setHostIsPlayer(true)}>
+              المضيف يشارك
+            </button>
           </div>
+          {hostIsPlayer ? (
+            <label className="mt-3 block space-y-1">
+              <span className="text-sm text-muted">اسمك في اللعبة (اختياري)</span>
+              <input
+                className={inputClass}
+                value={hostName}
+                maxLength={16}
+                onChange={(e) => setHostName(e.target.value)}
+                placeholder="المضيف"
+              />
+            </label>
+          ) : null}
         </div>
         <div>
-          <p className="mb-2 font-extrabold">عدد الجولات</p>
-          <div className="grid grid-cols-4 gap-2 rounded-2xl border border-[#3D352B] p-1">
+          <p className="mb-2 font-bold">عدد الجولات</p>
+          <div className="grid grid-cols-4 gap-2 rounded-2xl border border-white/10 bg-white/[0.02] p-1">
             {roundChoices.map((n) => (
-              <button key={n} type="button" className={`min-h-12 rounded-xl font-extrabold ${rounds === n ? "bg-[#06b6d4] text-black" : "text-[#A89F91]"}`} onClick={() => setRounds(n)}>{n}</button>
+              <button key={n} type="button" className={segment(rounds === n)} onClick={() => setRounds(n)}>
+                {n}
+              </button>
             ))}
           </div>
         </div>
         <div>
-          <p className="mb-2 font-extrabold">الوقت لكل جولة</p>
-          <div className="grid grid-cols-4 gap-2 rounded-2xl border border-[#3D352B] p-1">
+          <p className="mb-2 font-bold">الوقت لكل جولة</p>
+          <div className="grid grid-cols-4 gap-2 rounded-2xl border border-white/10 bg-white/[0.02] p-1">
             {timeChoices.map((n) => (
-              <button key={n} type="button" className={`min-h-12 rounded-xl font-extrabold ${seconds === n ? "bg-[#06b6d4] text-black" : "text-[#A89F91]"}`} onClick={() => setSeconds(n)}>{n}</button>
+              <button key={n} type="button" className={segment(seconds === n)} onClick={() => setSeconds(n)}>
+                {n}
+              </button>
             ))}
           </div>
         </div>
         <div>
-          <p className="mb-2 font-extrabold">مستوى الصعوبة</p>
+          <p className="mb-2 font-bold">مستوى الصعوبة</p>
           <div className="grid grid-cols-3 gap-2">
             {([
               ["medium", "متوسط"],
               ["hard", "صعب"],
               ["mixed", "مزيج"],
             ] as const).map(([id, label]) => (
-              <button key={id} type="button" className={`min-h-12 rounded-2xl border font-extrabold ${difficulty === id ? "border-[#06b6d4] bg-[#06b6d4] text-black" : "border-[#3D352B] text-[#A89F91]"}`} onClick={() => setDifficulty(id)}>{label}</button>
+              <button key={id} type="button" className={card(difficulty === id)} onClick={() => setDifficulty(id)}>
+                {label}
+              </button>
             ))}
           </div>
         </div>
         <div>
-          <p className="mb-2 font-extrabold">عدد اللاعبين</p>
-          <div className="grid grid-cols-3 items-center rounded-2xl border border-[#3D352B]">
-            <button type="button" className="min-h-12 text-xl" onClick={() => setMaxPlayers((n) => Math.max(selected?.minPlayers ?? 2, n - 1))}>−</button>
-            <span className="text-center text-2xl font-extrabold text-[#06b6d4]">{maxPlayers}</span>
-            <button type="button" className="min-h-12 text-xl" onClick={() => setMaxPlayers((n) => Math.min(14, n + 1))}>+</button>
+          <p className="mb-2 font-bold">عدد اللاعبين</p>
+          <div className="grid grid-cols-3 items-center rounded-2xl border border-white/10 bg-white/[0.02]">
+            <button
+              type="button"
+              aria-label="تقليل عدد اللاعبين"
+              disabled={shownCount <= floor}
+              className="min-h-12 text-xl text-muted transition hover:text-ivory disabled:opacity-30"
+              onClick={() => setMaxPlayers(Math.max(floor, shownCount - 1))}
+            >
+              −
+            </button>
+            <span className="text-center font-display text-3xl font-bold text-neon tabular-nums">{shownCount}</span>
+            <button
+              type="button"
+              aria-label="زيادة عدد اللاعبين"
+              disabled={shownCount >= MAX_PLAYERS}
+              className="min-h-12 text-xl text-muted transition hover:text-ivory disabled:opacity-30"
+              onClick={() => setMaxPlayers(Math.min(MAX_PLAYERS, shownCount + 1))}
+            >
+              +
+            </button>
           </div>
-          <p className="mt-2 text-sm text-[#A89F91]">{selected?.minPlayers ?? 2}–14 لاعباً</p>
+          <p className="mt-2 text-sm text-muted">
+            {floor}–{MAX_PLAYERS} لاعباً{hostIsPlayer ? " · أنت أحد اللاعبين" : ""}
+          </p>
         </div>
-        {error ? <p className="text-sm text-[#06b6d4]">{error}</p> : null}
-        <button type="submit" disabled={busy || !gameId} className="min-h-12 w-full rounded-full bg-[#06b6d4] font-extrabold text-black disabled:opacity-40">ابدأ</button>
+        {error ? <p role="alert" className="text-sm text-red-300">{error}</p> : null}
+        <button
+          type="submit"
+          disabled={busy || !gameId}
+          className="min-h-12 w-full rounded-full bg-neon font-extrabold text-night shadow-[0_0_22px_rgb(6_182_212/0.35)] transition hover:brightness-110 disabled:opacity-40"
+        >
+          ابدأ
+        </button>
       </form>
     </Shell>
   );

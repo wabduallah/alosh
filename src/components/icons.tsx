@@ -109,7 +109,7 @@ export function GameIcon({ name, className }: { name: string; className?: string
 export function PictureIcons({ names }: { names: string[] }) {
   if (!names.length) return null;
   return (
-    <div className="flex items-center justify-center gap-6 text-bronze">
+    <div className="flex items-center justify-center gap-6 text-neon">
       {names.map((name) => (
         <GameIcon key={name} name={name} className="size-16 sm:size-24" />
       ))}

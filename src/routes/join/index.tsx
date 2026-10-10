@@ -34,22 +34,22 @@ export function JoinForm({ initial = "" }: { initial?: string }) {
 
   return (
     <form
-      className="mx-auto max-w-md space-y-4 rounded-3xl border border-[#3D352B] bg-[#1B1917] p-5 text-ivory"
+      className="mx-auto max-w-md space-y-4 rounded-3xl border border-[rgb(255_255_255/0.08)] bg-[rgb(255_255_255/0.03)] p-5 text-ivory"
       onSubmit={(e) => {
         e.preventDefault();
         void submit();
       }}
     >
-      <p className="text-sm text-[#E5C158]">اختيار اللاعب</p>
+      <p className="text-sm text-[#67e8f9]">اختيار اللاعب</p>
       <h1 className="font-display text-4xl">ادخل اسمك</h1>
       <Field label={t("join.code")}>
-        <input className="min-h-12 w-full rounded-2xl border border-[#3D352B] bg-[#121110] px-4 tracking-widest text-ivory" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} />
+        <input className="min-h-12 w-full rounded-2xl border border-[rgb(255_255_255/0.08)] bg-[#090d16] px-4 tracking-widest text-ivory" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} />
       </Field>
       <Field label={t("join.name")}>
-        <input className="min-h-12 w-full rounded-2xl border border-[#3D352B] bg-[#121110] px-4 text-ivory" value={name} onChange={(e) => setName(e.target.value)} placeholder="اسمك في الغرفة" />
+        <input className="min-h-12 w-full rounded-2xl border border-[rgb(255_255_255/0.08)] bg-[#090d16] px-4 text-ivory" value={name} onChange={(e) => setName(e.target.value)} placeholder="اسمك في الغرفة" />
       </Field>
-      {error ? <p className="text-sm text-[#E5C158]">{error}</p> : null}
-      <button type="submit" disabled={busy || name.trim().length < 2} className="min-h-12 w-full rounded-full bg-[#D4AF37] font-extrabold text-black disabled:bg-[#3a342c] disabled:text-[#A89F91]">{busy ? "..." : "دخول"}</button>
+      {error ? <p className="text-sm text-[#67e8f9]">{error}</p> : null}
+      <button type="submit" disabled={busy || name.trim().length < 2} className="min-h-12 w-full rounded-full bg-[#06b6d4] font-extrabold text-black disabled:bg-[rgb(255_255_255/0.10)] disabled:text-[#94a3b8]">{busy ? "..." : "دخول"}</button>
     </form>
   );
 }

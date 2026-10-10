@@ -25,13 +25,13 @@ function QuestionsPage() {
       {!games.length ? <p className="mt-8 rounded-3xl border border-white/10 p-6 text-ivory/60">لا توجد ألعاب منشورة بعد.</p> : null}
       <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {[...groups.entries()].map(([cat, rows]) => (
-          <article key={cat} className="rounded-3xl border border-[#3D352B] bg-[#171513] p-5">
-            <h2 className="text-xl font-extrabold text-[#E5C158]">{cat}</h2>
-            <p className="mt-1 text-sm text-[#A89F91]">{rows.length} ألعاب</p>
+          <article key={cat} className="rounded-3xl border border-[rgb(255_255_255/0.08)] bg-[rgb(255_255_255/0.03)] p-5">
+            <h2 className="text-xl font-extrabold text-[#67e8f9]">{cat}</h2>
+            <p className="mt-1 text-sm text-[#94a3b8]">{rows.length} ألعاب</p>
             <ul className="mt-3 space-y-2">
               {rows.map((game) => (
                 <li key={game.id}>
-                  <Link to="/games/$slug" params={{ slug: game.id }} className="block rounded-2xl border border-[#3D352B] px-3 py-3">{game.nameAr}</Link>
+                  <Link to="/games/$slug" params={{ slug: game.id }} className="block rounded-2xl border border-[rgb(255_255_255/0.08)] px-3 py-3">{game.nameAr}</Link>
                 </li>
               ))}
             </ul>

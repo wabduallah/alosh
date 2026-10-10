@@ -11,7 +11,7 @@ export const Route = createRootRoute({
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "العش" },
       { name: "description", content: "العش: ألعاب جماعية عائلية. التلفزيون يعرض، والجوالات تتحكم." },
-      { name: "theme-color", content: "#1A120C" },
+      { name: "theme-color", content: "#090d16" },
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },

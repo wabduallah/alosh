@@ -9,7 +9,7 @@ export function GameTile({ game }: { game: GameCard }) {
   const name = lang === "en" ? game.nameEn : game.nameAr;
   const desc = lang === "en" ? game.descriptionEn : game.descriptionAr;
   return (
-    <article className="neon-card flex h-full flex-col rounded-3xl border border-[#3D352B] bg-[#1B1917] p-4">
+    <article className="neon-card flex h-full flex-col rounded-3xl border border-[rgb(255_255_255/0.08)] bg-[rgb(255_255_255/0.03)] p-4">
       <div className="flex items-start justify-between gap-3">
         <span className="grid size-14 place-items-center rounded-2xl bg-neon/15 text-neon">
           <GameIcon name={game.icon} className="size-7" />
@@ -35,7 +35,7 @@ export function CategoryCards({ active }: { active?: string }) {
           key={cat.id}
           to="/games"
           search={{ cat: cat.id }}
-          className={`rounded-3xl border bg-[#171513] p-4 ${active === cat.id ? "border-[#D4AF37]" : "border-[#3D352B]"}`}
+          className={`rounded-3xl border bg-[rgb(255_255_255/0.03)] p-4 ${active === cat.id ? "border-[#06b6d4]" : "border-[rgb(255_255_255/0.08)]"}`}
         >
           <span className="grid size-10 place-items-center rounded-xl bg-neon/15 text-neon">
             <GameIcon name={cat.icon} className="size-5" />

@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Check, Flame, Heart, Laugh, Sparkles, type LucideIcon } from "lucide-react";
-import { GameIcon, PictureIcons } from "@/components/icons";
+import { Check, Flame, Heart, Laugh, Sparkles, X, type LucideIcon } from "lucide-react";
+import { GameIcon } from "@/components/icons";
 import { QrCode } from "@/components/qr-code";
-import { Button, inputClass, joinLink } from "@/components/ui";
+import { Button, cx, inputClass, joinLink } from "@/components/ui";
 import { LETTER_CATS, type LetterCat } from "@/games/score";
 import { useI18n } from "@/lib/i18n";
 import { getSnapshot, hostAction, sendCheer, submitAnswer } from "@/lib/lamma/rpc";
@@ -12,15 +12,52 @@ import type { Cheer, CheerKind, GameCard, Reveal, Snapshot } from "@/lib/lamma/t
 import { CHEER_KINDS } from "@/lib/lamma/types";
 import { lobbyPulse, playCue, unlockAudio } from "@/lib/sfx";
 
+const EMPTY_FIELDS: Record<LetterCat, string> = { boy: "", girl: "", animal: "", object: "", country: "" };
+const NON_CHOICE_ENGINES = new Set(["letter", "text", "feud", "vote"]);
+const NESTS = ["عش النسور", "عش الصقور", "عش الشواهين", "عش الفرسان"];
+
+/** Answer-tile states. Moonhem palette: emerald = correct, crimson = wrong, cyan = your pick. */
+const TILE = {
+  idle: "border-white/10 bg-white/[0.03] text-ivory hover:border-neon/60 hover:bg-neon/5",
+  picked: "border-neon bg-neon/15 text-ivory shadow-[0_0_22px_rgb(6_182_212/0.3)]",
+  ok: "border-emerald bg-emerald/15 text-ivory shadow-[0_0_26px_rgb(16_185_129/0.4)]",
+  bad: "border-crimson bg-crimson/15 text-ivory shadow-[0_0_22px_rgb(239_68_68/0.35)]",
+  dim: "border-white/5 bg-white/[0.02] text-ivory/40",
+} as const;
+
+type TileState = keyof typeof TILE;
+
+/** What this device picked in a given round. Lives in the screen (not the surface) so it survives phase changes. */
+type Pick = { round: number; key: string };
+
 function readToken(code: string, role: "host" | "player") {
   if (typeof window === "undefined") return "";
-  return sessionStorage.getItem(`lamma:${role}:${code}`) ?? "";
+  try {
+    return sessionStorage.getItem(`lamma:${role}:${code}`) ?? "";
+  } catch {
+    return "";
+  }
 }
 
+function hasChoices(snap: Snapshot) {
+  return Boolean(snap.room.question) && !NON_CHOICE_ENGINES.has(snap.room.engine);
+}
+
+function pickedFor(pick: Pick | null, round: number) {
+  return pick && pick.round === round ? pick.key : null;
+}
+
+/**
+ * Single-flight room poller.
+ * - One chain only. Realtime pushes call `refresh()`, which cancels the pending timer and runs now;
+ *   if a request is already in flight the refresh is queued, never duplicated (no poll-chain pile-up).
+ * - Identical snapshots are not re-stored, so idle polls don't re-render the whole screen.
+ */
 export function useRoom(code: string) {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tokens, setTokens] = useState({ host: "", player: "" });
+  const refreshRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     setTokens({ host: readToken(code, "host"), player: readToken(code, "player") });
@@ -29,7 +66,24 @@ export function useRoom(code: string) {
   useEffect(() => {
     let stop = false;
     let timer = 0;
-    const tick = async () => {
+    let inFlight = false;
+    let queued = false;
+    let lastJson = "";
+
+    const schedule = (ms: number) => {
+      window.clearTimeout(timer);
+      if (!stop) timer = window.setTimeout(run, ms);
+    };
+
+    async function run() {
+      window.clearTimeout(timer);
+      if (stop) return;
+      if (inFlight) {
+        queued = true;
+        return;
+      }
+      inFlight = true;
+      let delay = 2500;
       try {
         const res = await getSnapshot({
           data: {
@@ -39,22 +93,36 @@ export function useRoom(code: string) {
           },
         });
         if (stop) return;
-        if (!res.ok) setError(res.error);
-        else {
+        if (!res.ok) {
+          setError(res.error);
+        } else {
           setError(null);
-          setSnap(res);
+          const json = JSON.stringify(res);
+          if (json !== lastJson) {
+            lastJson = json;
+            setSnap(res);
+          }
+          const live = res.room.status !== "CLOSED" && res.room.status !== "FINISHED";
+          delay = live ? 1200 : 2500;
         }
-        const playing = res.ok && res.room.status !== "CLOSED" && res.room.status !== "FINISHED";
-        timer = window.setTimeout(tick, playing ? 1200 : 2500);
       } catch {
         if (!stop) setError("SERVER");
-        timer = window.setTimeout(tick, 3000);
+        delay = 3000;
+      } finally {
+        inFlight = false;
       }
+      if (stop) return;
+      const again = queued;
+      queued = false;
+      schedule(again ? 0 : document.hidden ? Math.max(delay, 4000) : delay);
+    }
+
+    refreshRef.current = () => {
+      void run();
     };
-    void tick();
+    void run();
     const unwatch = watchRoom(code, () => {
-      window.clearTimeout(timer);
-      void tick();
+      void run();
     });
     return () => {
       stop = true;
@@ -63,7 +131,25 @@ export function useRoom(code: string) {
     };
   }, [code, tokens.host, tokens.player]);
 
-  return { snap, error, tokens, setTokens };
+  const refresh = useCallback(() => refreshRef.current(), []);
+  return { snap, error, tokens, setTokens, refresh };
+}
+
+/** Plays the result sound on a player's own pad, once per round. */
+function useRoundCue(snap: Snapshot | null) {
+  const { bundle } = useI18n();
+  const fired = useRef("");
+  useEffect(() => {
+    if (!snap || snap.room.status !== "ROUND_END") return;
+    const key = String(snap.room.round);
+    if (fired.current === key) return;
+    fired.current = key;
+    if (!snap.room.sound || !snap.yourId) return;
+    const mine = snap.room.reveal?.answers?.find((a) => a.playerId === snap.yourId);
+    if (!mine) return;
+    if (mine.correct) playCue("correct", bundle.sounds.correct);
+    else playCue("wrong");
+  }, [snap, bundle.sounds]);
 }
 
 function Countdown({ endsAt, total }: { endsAt: string | null; total: number }) {
@@ -78,13 +164,13 @@ function Countdown({ endsAt, total }: { endsAt: string | null; total: number }) 
   const pct = total > 0 ? left / total : 0;
   return (
     <div className="relative grid size-28 place-items-center">
-      <svg viewBox="0 0 96 96" className="absolute size-28 -rotate-90">
-        <circle cx="48" cy="48" r={radius} className="fill-none stroke-ivory/20" strokeWidth="6" />
+      <svg viewBox="0 0 96 96" className="absolute size-28 -rotate-90" aria-hidden="true">
+        <circle cx="48" cy="48" r={radius} className="fill-none stroke-white/10" strokeWidth="6" />
         <circle
           cx="48"
           cy="48"
           r={radius}
-          className="fill-none stroke-bronze"
+          className="fill-none stroke-neon"
           strokeWidth="6"
           strokeDasharray={circ}
           strokeDashoffset={circ * (1 - pct)}
@@ -96,28 +182,189 @@ function Countdown({ endsAt, total }: { endsAt: string | null; total: number }) 
   );
 }
 
-const NESTS = ["عش النسور", "عش الصقور", "عش الشواهين", "عش الفرسان"];
-
 function promptOf(snap: Snapshot, lang: "ar" | "en") {
   const q = snap.room.question;
   if (!q) return "";
   return lang === "en" ? q.promptEn : q.promptAr;
 }
 
+/** Auto-advance indicator: the server moves on 2.5s after the reveal; this bar shows that countdown. */
+function NextBar({ roundKey }: { roundKey: number }) {
+  return (
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10" aria-hidden="true">
+      <div key={roundKey} className="drain h-full bg-neon shadow-[0_0_12px_rgb(6_182_212/0.8)]" />
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------------------
+ * Answer surface: shared by the player pad and the host's own player pad.
+ * ------------------------------------------------------------------------- */
+
+function AnswerSurface({
+  snap,
+  code,
+  playerToken,
+  picked,
+  onPick,
+  onRoundClosed,
+}: {
+  snap: Snapshot;
+  code: string;
+  playerToken: string;
+  picked: string | null;
+  onPick: (key: string | null) => void;
+  onRoundClosed: () => void;
+}) {
+  const { t, lang, bundle } = useI18n();
+  const [fields, setFields] = useState<Record<LetterCat, string>>(EMPTY_FIELDS);
+  const [text, setText] = useState("");
+  const [localErr, setLocalErr] = useState<string | null>(null);
+  // Synchronous guard: a double tap can never send two answers, and the lock doesn't wait for a render.
+  const lockRef = useRef(false);
+
+  const playing = snap.room.status === "PLAYING";
+  const locked = Boolean(picked) || snap.yourAnswered || !playing;
+  const reveal: Reveal | null = snap.room.reveal;
+  const correctId = snap.room.status === "ROUND_END" ? reveal?.correctId : undefined;
+  const engine = snap.room.engine;
+  const q = snap.room.question;
+
+  async function submit(payload: Record<string, unknown>, key: string) {
+    if (lockRef.current || !playing || snap.yourAnswered) return;
+    lockRef.current = true;
+    onPick(key);
+    setLocalErr(null);
+    unlockAudio();
+    if (snap.room.sound) playCue("click", bundle.sounds.click);
+    const res = await submitAnswer({
+      data: { code, playerToken, round: snap.room.round, payload },
+    });
+    if (!res.ok) {
+      lockRef.current = false;
+      onPick(null);
+      setLocalErr(res.error);
+      return;
+    }
+    // The server closed the round on this answer: pull the reveal now instead of waiting for the next poll.
+    if (res.roundClosed) onRoundClosed();
+  }
+
+  function tileState(id: string): TileState {
+    if (correctId) {
+      if (id === correctId) return "ok";
+      if (id === picked) return "bad";
+      return "dim";
+    }
+    return picked === id ? "picked" : "idle";
+  }
+
+  const sentLabel = locked ? t("pad.locked") : t("pad.send");
+
+  return (
+    <div className="space-y-3">
+      {localErr ? (
+        <p role="alert" className="rounded-xl border border-crimson/40 bg-crimson/10 px-3 py-2 text-sm text-red-200">
+          {t(`err.${localErr}`)}
+        </p>
+      ) : null}
+
+      {engine === "letter" ? (
+        <>
+          <p className="font-display text-6xl text-neon">{snap.room.letter}</p>
+          {LETTER_CATS.map((cat) => (
+            <label key={cat} className="block space-y-1">
+              <span className="text-sm text-muted">{t(`letter.${cat}`)}</span>
+              <input
+                className={inputClass}
+                disabled={locked}
+                value={fields[cat]}
+                onChange={(e) => setFields({ ...fields, [cat]: e.target.value })}
+              />
+            </label>
+          ))}
+          <Button type="button" disabled={locked} onClick={() => void submit({ fields }, "fields")} className="w-full">
+            {sentLabel}
+          </Button>
+        </>
+      ) : null}
+
+      {engine === "text" || engine === "feud" ? (
+        <>
+          <h2 className="text-2xl font-bold">{promptOf(snap, lang)}</h2>
+          <input className={inputClass} disabled={locked} value={text} onChange={(e) => setText(e.target.value)} />
+          <Button type="button" disabled={locked || !text.trim()} onClick={() => void submit({ text }, "text")} className="w-full">
+            {sentLabel}
+          </Button>
+        </>
+      ) : null}
+
+      {engine === "vote" ? (
+        <div className="grid gap-2">
+          {snap.players
+            .filter((p) => p.id !== snap.yourId)
+            .map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                disabled={locked}
+                onClick={() => void submit({ playerId: p.id }, p.id)}
+                className={cx(
+                  "min-h-12 rounded-2xl border px-4 text-start font-bold transition-all duration-150 disabled:cursor-default",
+                  TILE[tileState(p.id)],
+                )}
+              >
+                {p.name}
+              </button>
+            ))}
+        </div>
+      ) : null}
+
+      {q && hasChoices(snap) ? (
+        <>
+          <h2 className="text-2xl font-bold">{promptOf(snap, lang)}</h2>
+          {snap.yourId && snap.room.subjectId === snap.yourId ? <p className="text-sm text-muted">{t("pad.subject")}</p> : null}
+          <div className="grid gap-2 sm:grid-cols-2">
+            {q.choices.map((choice) => {
+              const state = tileState(choice.id);
+              const Mark = state === "ok" ? Check : state === "bad" ? X : null;
+              return (
+                <button
+                  key={choice.id}
+                  type="button"
+                  disabled={locked}
+                  onClick={() => void submit(engine === "truth" ? { side: choice.id } : { choiceId: choice.id }, choice.id)}
+                  className={cx(
+                    "flex min-h-14 items-center justify-between gap-3 rounded-2xl border px-4 text-start font-bold transition-all duration-150 active:scale-[0.99] disabled:cursor-default",
+                    TILE[state],
+                  )}
+                >
+                  <span>{lang === "en" ? choice.en : choice.ar}</span>
+                  {Mark ? <Mark className={cx("size-5 shrink-0", state === "ok" ? "text-emerald" : "text-crimson")} aria-hidden="true" /> : null}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------------------
+ * Host screen (TV / host device). Also renders the Player Pad when hostIsPlayer is set.
+ * ------------------------------------------------------------------------- */
+
 export function HostScreen({ code, games }: { code: string; games: GameCard[] }) {
   const { t, lang, bundle } = useI18n();
-  const { snap, error, tokens } = useRoom(code);
+  const { snap, error, tokens, refresh } = useRoom(code);
   const [note, setNote] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [fields, setFields] = useState<Record<LetterCat, string>>({ boy: "", girl: "", animal: "", object: "", country: "" });
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [localErr, setLocalErr] = useState<string | null>(null);
-  const navigate = useNavigate();
   const [selectedId, setSelectedId] = useState("");
+  const [pick, setPick] = useState<Pick | null>(null);
   const switchTimer = useRef<number | null>(null);
   const prev = useRef<Snapshot | null>(null);
+  const navigate = useNavigate();
   const link = joinLink(code);
 
   useEffect(() => {
@@ -147,24 +394,12 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
     if (snap.room.music && snap.room.status === "WAITING") lobbyPulse(true, bundle.sounds.lobby);
   }, [bundle.sounds, snap, t]);
 
-  const advanceLock = useRef(false);
-  useEffect(() => {
-    if (!snap || !snap.youAreHost || snap.room.status !== "PLAYING") {
-      advanceLock.current = false;
-      return;
-    }
-    const humans = snap.players.filter((p) => !p.isBot);
-    const pool = humans.length ? humans : snap.players;
-    if (!pool.length || pool.some((p) => !p.answered) || advanceLock.current) return;
-    advanceLock.current = true;
-    const round = snap.room.round;
-    if (snap.room.sound) playCue("correct", bundle.sounds.correct);
-    void act("endRound");
-    const timer = window.setTimeout(() => {
-      if (prev.current?.room.round === round) void act("next");
-    }, 2500);
-    return () => window.clearTimeout(timer);
-  }, [snap?.room.status, snap?.room.round, snap?.players]);
+  // Round advancement is owned by the server: closeRound -> autoAt (2.5s) -> advanceIfDue.
+  // The host client no longer runs its own timer; that timer was cancelled on every poll.
+
+  useEffect(() => () => {
+    if (switchTimer.current) window.clearTimeout(switchTimer.current);
+  }, []);
 
   function handleSelectGame(gameId: string) {
     setSelectedId(gameId);
@@ -183,128 +418,186 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
     unlockAudio();
     const res = await hostAction({ data: { code, hostToken: tokens.host, action, extra } });
     if (res && "ok" in res && res.ok === false) setNote(t(`err.${res.error}`));
-  }
-
-  async function send(payload: Record<string, unknown>) {
-    if (!snap || busy || snap.yourAnswered || sent || !tokens.player) return;
-    setSent(true);
-    unlockAudio();
-    const res = await submitAnswer({
-      data: { code, playerToken: tokens.player, round: snap.room.round, payload },
-    });
-    if (!res.ok) {
-      setSent(false);
-      setLocalErr(res.error);
-    }
+    refresh();
   }
 
   if (!snap) {
-    return <main className="grid min-h-screen place-items-center bg-forest-deep text-ivory">{error ? t(`err.${error}`) : t("common.loading")}</main>;
+    return (
+      <main className="grid min-h-screen place-items-center bg-night text-ivory">
+        {error ? t(`err.${error}`) : t("common.loading")}
+      </main>
+    );
   }
 
   const name = lang === "en" ? snap.room.nameEn : snap.room.nameAr;
   const answered = snap.players.filter((p) => p.answered).length;
+  const needed = Math.max(2, snap.room.minPlayers);
+  const hostPlays = snap.youAreHost && snap.room.hostIsPlayer && Boolean(snap.yourId);
+  const pickedKey = pickedFor(pick, snap.room.round);
+  const onPick = (key: string | null) => setPick(key === null ? null : { round: snap.room.round, key });
 
   return (
     <main className="stage relative min-h-screen text-ivory" onPointerDown={unlockAudio}>
       <CheerRain cheers={snap.cheers ?? []} />
-      <div className="relative mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-6 py-6">
+      <div className="relative mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-sm text-bronze">{name}</p>
+            <p className="text-sm font-bold text-neon">{name}</p>
             <h1 className="font-display text-5xl tracking-wide sm:text-7xl">{code}</h1>
           </div>
           <div className="text-end">
-            <p className="text-sm text-ivory/70">{t("host.round", { n: Math.max(snap.room.round, 1) })} / {snap.room.rounds}</p>
-            <p className="text-lg">{t("host.answered")} {answered}/{snap.players.length}</p>
+            <p className="text-sm text-muted">
+              {t("host.round", { n: Math.max(snap.room.round, 1) })} / {snap.room.rounds}
+            </p>
+            <p className="text-lg tabular-nums">
+              {t("host.answered")} {answered}/{snap.players.length}
+            </p>
           </div>
         </header>
 
-        {note ? <p className="rise rounded-full bg-ivory/10 px-4 py-2 text-sm">{note}</p> : null}
-        {!snap.youAreHost ? <p className="text-sm text-ivory/70">{t("host.spectator")}</p> : null}
+        {note ? <p className="rise self-start rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm">{note}</p> : null}
+        {!snap.youAreHost ? <p className="text-sm text-muted">{t("host.spectator")}</p> : null}
         {snap.youAreHost && snap.room.hostMode === "narrator" ? (
-          <p className="rounded-2xl border border-neon/40 bg-neon/10 px-3 py-2 text-sm">وضع الراوي: اللاعبون لا يرون الإجابة. {snap.room.hostAnswer ? `الإجابة: ${snap.room.hostAnswer}` : "ابدأ الجولة لرؤية الإجابة."}</p>
+          <p className="rounded-2xl border border-neon/30 bg-neon/10 px-4 py-3 text-sm">
+            وضع الراوي: اللاعبون لا يرون الإجابة.{" "}
+            {snap.room.hostAnswer ? `الإجابة: ${snap.room.hostAnswer}` : "ابدأ الجولة لرؤية الإجابة."}
+          </p>
         ) : null}
 
         {snap.room.status === "WAITING" ? (
-          <section className="grid items-start gap-6 lg:grid-cols-[16rem_1fr]">
-            <div className="rounded-3xl border border-[#3D352B] bg-[#221F1B] p-4 text-ivory">
-              <p className="text-xs text-[#A89F91]">{t("host.ready")}</p>
-              <p className="mt-1 font-display text-4xl tracking-[0.35em] text-[#E5C158]">{code}</p>
-              <p className="mt-2 text-sm text-[#A89F91]">{t("host.count", { n: snap.players.length, max: snap.room.maxPlayers })}</p>
-              <div className="mt-3 w-fit rounded-2xl border border-[#3D352B] bg-[#121110] p-3">
+          <section className="grid items-start gap-6 lg:grid-cols-[18rem_1fr]">
+            <div className="glass-card space-y-4 rounded-3xl p-5 text-center">
+              <p className="text-xs font-bold tracking-wide text-muted">{t("host.ready")}</p>
+              <p className="font-display text-4xl tracking-[0.35em] text-ivory">{code}</p>
+              <p className="text-sm text-muted">{t("host.count", { n: snap.players.length, max: snap.room.maxPlayers })}</p>
+              <div className="mx-auto w-fit">
                 <QrCode text={link} />
               </div>
             </div>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {snap.players.map((player) => (
-                  <div key={player.id} className={`rounded-2xl border px-3 py-3 ${player.id === snap.yourId ? "border-[#D4AF37] bg-[#2A2415]" : "border-[#3D352B] bg-[#1B1917]"}`}>
-                    <p className="font-extrabold">{player.name}</p>
-                    <p className="text-xs text-[#E5C158]">{snap.room.playMode === "teams" ? NESTS[snap.players.findIndex((p) => p.id === player.id) % 4] : player.id === snap.yourId ? "أنت" : "جاهز"}</p>
+                  <div
+                    key={player.id}
+                    className={cx(
+                      "rounded-2xl border px-3 py-3",
+                      player.id === snap.yourId ? "border-neon/60 bg-neon/10" : "border-white/10 bg-white/[0.03]",
+                    )}
+                  >
+                    <p className="font-bold">{player.name}</p>
+                    <p className="text-xs text-neon">
+                      {snap.room.playMode === "teams"
+                        ? NESTS[snap.players.findIndex((p) => p.id === player.id) % 4]
+                        : player.id === snap.yourId
+                          ? "أنت"
+                          : "جاهز"}
+                    </p>
                   </div>
                 ))}
               </div>
-              <GamePicker
-                games={games}
-                currentId={selectedId}
-                disabled={!snap.youAreHost}
-                onPick={handleSelectGame}
-              />
+              <GamePicker games={games} currentId={selectedId} disabled={!snap.youAreHost} onPick={handleSelectGame} />
               <div className="grid gap-2">
-                <button
+                <Button
                   type="button"
                   onClick={() => void act("start")}
-                  disabled={!snap.youAreHost || !selectedId || snap.players.length < snap.room.minPlayers}
-                  className="min-h-12 w-full rounded-full bg-[#D4AF37] font-extrabold text-black disabled:cursor-not-allowed disabled:bg-[#3a342c] disabled:text-[#A89F91]"
+                  disabled={!snap.youAreHost || !selectedId || snap.players.length < needed}
+                  className="w-full"
                 >
                   {t("host.start")}
-                </button>
+                </Button>
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <Button type="button" tone="ghost" onClick={() => void copy(link, setCopied)}>{copied ? t("host.copied") : t("host.copy")}</Button>
-                  <a className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#3D352B] bg-[#221F1B] px-5 text-[#E5C158]" href={`https://wa.me/?text=${encodeURIComponent(link)}`}>{t("host.whatsapp")}</a>
+                  <Button type="button" tone="glass" onClick={() => void copy(link, setCopied)}>
+                    {copied ? t("host.copied") : t("host.copy")}
+                  </Button>
+                  <a
+                    className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] px-5 font-bold text-neon transition hover:border-neon/60"
+                    href={`https://wa.me/?text=${encodeURIComponent(link)}`}
+                  >
+                    {t("host.whatsapp")}
+                  </a>
                 </div>
-                <button type="button" onClick={leaveHome} className="w-full rounded-full border border-[#3D352B] bg-transparent py-3 font-medium text-[#A89F91] transition-all hover:border-[#D4AF37] hover:text-white">العودة إلى القائمة الرئيسية</button>
+                <button
+                  type="button"
+                  onClick={leaveHome}
+                  className="w-full rounded-full border border-white/10 bg-transparent py-3 font-medium text-muted transition-all hover:border-neon/50 hover:text-ivory"
+                >
+                  العودة إلى القائمة الرئيسية
+                </button>
               </div>
-              {snap.players.length < snap.room.minPlayers ? <p className="text-sm text-gold">{t("host.needMin", { n: snap.room.minPlayers })}</p> : null}
+              {snap.players.length < needed ? <p className="text-sm text-crimson">{t("host.needMin", { n: needed })}</p> : null}
             </div>
           </section>
         ) : null}
 
         {snap.room.status === "PLAYING" ? (
           <section className="space-y-4">
-            <article className="rounded-3xl border border-white/10 bg-white/5 p-6 text-center shadow-[0_0_20px_rgba(139,92,246,0.15)]">
-              <h2 className="font-display text-4xl text-[#00f2fe] sm:text-6xl">{snap.room.engine === "letter" ? snap.room.letter : promptOf(snap, lang)}</h2>
-              <div className="mt-4 flex justify-center"><Countdown endsAt={snap.room.endsAt} total={snap.room.seconds} /></div>
-              <p className="mt-3 text-sm text-white/60">{answered}/{snap.players.length} أجابوا</p>
+            <article className="glass-card rounded-3xl p-6 text-center">
+              <h2 className="font-display text-4xl text-neon sm:text-6xl">
+                {snap.room.engine === "letter" ? snap.room.letter : promptOf(snap, lang)}
+              </h2>
+              <div className="mt-4 flex justify-center">
+                <Countdown endsAt={snap.room.endsAt} total={snap.room.seconds} />
+              </div>
+              <p className="mt-3 text-sm text-muted">{answered}/{snap.players.length} أجابوا</p>
             </article>
-            {snap.youAreHost && snap.room.hostMode !== "narrator" && snap.yourId ? (
-              <AnswerPanel snap={snap} lang={lang} busy={busy} fields={fields} setFields={setFields} text={text} setText={setText} onSend={send} picked={sent || snap.yourAnswered} />
+            {hostPlays ? (
+              <HostPad
+                snap={snap}
+                code={code}
+                playerToken={tokens.player}
+                picked={pickedKey}
+                onPick={onPick}
+                onRoundClosed={refresh}
+              />
             ) : null}
-            {snap.youAreHost ? <button type="button" className="fixed bottom-24 start-4 z-20 rounded-full border border-[#8b5cf6] bg-[#131b2e] px-4 py-2 text-sm text-[#00f2fe]" onClick={() => void act("endRound")}>إنهاء مبكر</button> : null}
+            {snap.youAreHost ? (
+              <div className="flex justify-start">
+                <Button type="button" tone="glass" onClick={() => void act("endRound")}>
+                  {t("host.end")}
+                </Button>
+              </div>
+            ) : null}
           </section>
         ) : null}
 
         {snap.room.status === "ROUND_END" ? (
-          <RevealBoard snap={snap} lang={lang} host={snap.youAreHost} onAct={act} />
+          <section className="space-y-4">
+            {hostPlays ? (
+              <HostPad
+                snap={snap}
+                code={code}
+                playerToken={tokens.player}
+                picked={pickedKey}
+                onPick={onPick}
+                onRoundClosed={refresh}
+              />
+            ) : null}
+            <RevealBoard snap={snap} lang={lang} host={snap.youAreHost} onAct={act} />
+          </section>
         ) : null}
 
         {snap.room.status === "FINISHED" ? (
           <div className="space-y-6">
             <Podium players={snap.players} />
             <div className="grid gap-2">
-              {snap.youAreHost ? <button type="button" className="min-h-12 rounded-full bg-[#D4AF37] font-extrabold text-black" onClick={() => void act("start")}>اللعب من جديد</button> : null}
-              {snap.youAreHost ? <button type="button" className="min-h-12 rounded-full border border-[#D4AF37] text-[#E5C158]" onClick={() => void act("restart")}>تغيير اللعبة</button> : <p className="text-sm text-[#A89F91]">اللاعبون باقون في الغرفة. المضيف يختار اللعبة التالية.</p>}
+              {snap.youAreHost ? (
+                <Button type="button" onClick={() => void act("start")} className="w-full">
+                  اللعب من جديد
+                </Button>
+              ) : null}
+              {snap.youAreHost ? (
+                <Button type="button" tone="glass" onClick={() => void act("restart")} className="w-full">
+                  تغيير اللعبة
+                </Button>
+              ) : (
+                <p className="text-sm text-muted">اللاعبون باقون في الغرفة. المضيف يختار اللعبة التالية.</p>
+              )}
             </div>
             {snap.youAreHost ? (
               <section className="space-y-3">
-                <h3 className="text-xl">{t("host.switch")}</h3>
-                <p className="text-sm text-ivory/70">{t("host.switchLead")}</p>
-                <GamePicker
-                  games={games}
-                  currentId={snap.room.gameId}
-                  onPick={(gameId) => void act("switchGame", { gameId, start: true })}
-                />
+                <h3 className="text-xl font-bold">{t("host.switch")}</h3>
+                <p className="text-sm text-muted">{t("host.switchLead")}</p>
+                <GamePicker games={games} currentId={snap.room.gameId} onPick={(gameId) => void act("switchGame", { gameId, start: true })} />
               </section>
             ) : null}
           </div>
@@ -314,6 +607,54 @@ export function HostScreen({ code, games }: { code: string; games: GameCard[] })
         <PlayerRail snap={snap} host={snap.youAreHost} onKick={(playerId) => void act("kick", { playerId })} />
       </div>
     </main>
+  );
+}
+
+/** The host's own answer pad (hostIsPlayer). Same answer logic as a player's phone. */
+function HostPad({
+  snap,
+  code,
+  playerToken,
+  picked,
+  onPick,
+  onRoundClosed,
+}: {
+  snap: Snapshot;
+  code: string;
+  playerToken: string;
+  picked: string | null;
+  onPick: (key: string | null) => void;
+  onRoundClosed: () => void;
+}) {
+  const { t } = useI18n();
+  const me = snap.players.find((p) => p.id === snap.yourId);
+  const playing = snap.room.status === "PLAYING";
+  return (
+    <section className="glass-card rounded-3xl p-4 sm:p-5">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold tracking-wide text-neon">أنت تلعب</p>
+          <p className="text-sm text-muted">{t("host.playAs")}</p>
+        </div>
+        <div className="text-end">
+          <p className="text-sm text-muted">{me?.name}</p>
+          <p className="font-display text-4xl tabular-nums text-ivory">{me?.score ?? 0}</p>
+        </div>
+      </div>
+      {playing || hasChoices(snap) ? (
+        <AnswerSurface
+          key={snap.room.round}
+          snap={snap}
+          code={code}
+          playerToken={playerToken}
+          picked={picked}
+          onPick={onPick}
+          onRoundClosed={onRoundClosed}
+        />
+      ) : (
+        <p className="font-display text-3xl">{t("pad.points", { n: snap.yourRoundScore })}</p>
+      )}
+    </section>
   );
 }
 
@@ -332,37 +673,48 @@ function RevealBoard({
   const reveal: Reveal | null = snap.room.reveal;
   return (
     <section className="space-y-4">
-      <div className="flex flex-wrap gap-2">
-        {host ? <Button type="button" tone="light" onClick={() => void onAct("next")}>{snap.room.round >= snap.room.rounds ? t("host.finish") : t("host.next")}</Button> : null}
-        {snap.room.auto ? <p className="text-sm text-ivory/70">{t("host.autoNext")}</p> : null}
+      <div className="flex flex-wrap items-center gap-3">
+        {host ? (
+          <Button type="button" tone={snap.room.auto ? "glass" : "primary"} onClick={() => void onAct("next")}>
+            {snap.room.round >= snap.room.rounds ? t("host.finish") : t("host.next")}
+          </Button>
+        ) : null}
+        {snap.room.auto ? <p className="text-sm text-muted">{t("host.autoNext")}</p> : null}
       </div>
+      {snap.room.auto ? <NextBar roundKey={snap.room.round} /> : null}
       {reveal?.correctAr ? (
-        <p className="text-3xl text-emerald-400">{lang === "en" ? reveal.correctEn || reveal.correctAr : reveal.correctAr}</p>
+        <p className="text-3xl text-emerald">{lang === "en" ? reveal.correctEn || reveal.correctAr : reveal.correctAr}</p>
       ) : null}
       {reveal?.letterRows ? (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[40rem] text-start text-sm">
-            <thead className="text-bronze">
+            <thead className="text-neon">
               <tr>
                 <th className="px-2 py-2">{t("host.players")}</th>
                 {LETTER_CATS.map((cat) => (
-                  <th key={cat} className="px-2 py-2">{t(`letter.${cat}`)}</th>
+                  <th key={cat} className="px-2 py-2">
+                    {t(`letter.${cat}`)}
+                  </th>
                 ))}
                 <th className="px-2 py-2">+</th>
               </tr>
             </thead>
             <tbody>
               {reveal.letterRows.map((row) => (
-                <tr key={row.playerId} className="border-t border-ivory/15">
+                <tr key={row.playerId} className="border-t border-white/10">
                   <td className="px-2 py-3">{row.name}</td>
                   {LETTER_CATS.map((cat) => {
                     const cell = row.fields[cat];
                     return (
                       <td key={cat} className="px-2 py-3">
-                        <div>{cell.text || "—"}</div>
-                        <div className="text-bronze tabular-nums">{cell.points}</div>
+                        <div className={cell.verdict === "bad" && cell.text ? "text-red-300" : undefined}>{cell.text || "—"}</div>
+                        <div className="text-neon tabular-nums">{cell.points}</div>
                         {host && cell.verdict === "bad" && cell.text ? (
-                          <button type="button" className="text-xs underline" onClick={() => void onAct("accept", { playerId: row.playerId, category: cat })}>
+                          <button
+                            type="button"
+                            className="text-xs text-neon underline"
+                            onClick={() => void onAct("accept", { playerId: row.playerId, category: cat })}
+                          >
                             {t("host.accept")}
                           </button>
                         ) : null}
@@ -379,9 +731,9 @@ function RevealBoard({
       {reveal?.percents ? (
         <ul className="space-y-2 text-xl">
           {reveal.percents.map((item) => (
-            <li key={item.id} className="flex justify-between border-b border-ivory/15 py-2">
+            <li key={item.id} className="flex justify-between border-b border-white/10 py-2">
               <span>{lang === "en" ? item.en : item.ar}</span>
-              <span className="tabular-nums">{item.n}</span>
+              <span className="tabular-nums text-neon">{item.n}</span>
             </li>
           ))}
         </ul>
@@ -389,9 +741,9 @@ function RevealBoard({
       {reveal?.votes ? (
         <ul className="space-y-2 text-xl">
           {reveal.votes.map((item) => (
-            <li key={item.playerId} className="flex justify-between border-b border-ivory/15 py-2">
+            <li key={item.playerId} className="flex justify-between border-b border-white/10 py-2">
               <span>{item.name}</span>
-              <span className="tabular-nums">{item.count}</span>
+              <span className="tabular-nums text-neon">{item.count}</span>
             </li>
           ))}
         </ul>
@@ -399,10 +751,14 @@ function RevealBoard({
       {reveal?.truth ? (
         <ul className="space-y-3">
           {reveal.truth.map((item) => (
-            <li key={item.playerId} className="rounded-2xl bg-ivory/10 p-4">
-              <p className="text-bronze">{item.name}</p>
+            <li key={item.playerId} className="glass-card rounded-2xl p-4">
+              <p className="text-sm font-bold text-neon">{item.name}</p>
               <p className="text-xl">{lang === "en" ? item.promptEn : item.promptAr}</p>
-              {host ? <Button type="button" tone="bronze" className="mt-3" onClick={() => void onAct("bonus", { playerId: item.playerId })}>{t("host.bonus")}</Button> : null}
+              {host ? (
+                <Button type="button" tone="violet" className="mt-3" onClick={() => void onAct("bonus", { playerId: item.playerId })}>
+                  {t("host.bonus")}
+                </Button>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -410,10 +766,10 @@ function RevealBoard({
       {reveal?.answers ? (
         <ul className="space-y-2">
           {reveal.answers.map((item) => (
-            <li key={item.playerId} className="flex justify-between gap-3 border-b border-ivory/15 py-2">
+            <li key={item.playerId} className="flex justify-between gap-3 border-b border-white/10 py-2">
               <span>{item.name}</span>
-              <span className="text-ivory/80">{item.text}</span>
-              <span className="tabular-nums text-bronze">+{item.points}</span>
+              <span className={item.correct ? "text-emerald" : "text-muted"}>{item.text}</span>
+              <span className="tabular-nums text-neon">+{item.points}</span>
             </li>
           ))}
         </ul>
@@ -421,8 +777,10 @@ function RevealBoard({
       {reveal?.feudHits ? (
         <ul className="space-y-2">
           {reveal.feudHits.map((item) => (
-            <li key={item.playerId} className="flex justify-between border-b border-ivory/15 py-2">
-              <span>{item.name}: {item.text}</span>
+            <li key={item.playerId} className="flex justify-between border-b border-white/10 py-2">
+              <span>
+                {item.name}: {item.text}
+              </span>
               <span className="tabular-nums">+{item.points}</span>
             </li>
           ))}
@@ -448,19 +806,30 @@ function cheerLane(id: string) {
 function CheerRain({ cheers }: { cheers: Cheer[] }) {
   const [live, setLive] = useState<Array<Cheer & { left: number; drift: string }>>([]);
   const seen = useRef(new Set<string>());
+  const timers = useRef<number[]>([]);
+
+  // Timers are only cleared on unmount. Clearing them when `cheers` changes would drop cheers
+  // that were already marked as seen, so they would never show.
+  useEffect(() => {
+    const pending = timers.current;
+    return () => pending.forEach((id) => window.clearTimeout(id));
+  }, []);
 
   useEffect(() => {
     const fresh = cheers.filter((cheer) => !seen.current.has(cheer.id));
-    if (!fresh.length) return;
     fresh.forEach((cheer, index) => {
       seen.current.add(cheer.id);
       const lane = cheerLane(cheer.id);
-      window.setTimeout(() => {
-        setLive((prev) => [...prev, { ...cheer, ...lane }].slice(-16));
+      timers.current.push(
         window.setTimeout(() => {
-          setLive((prev) => prev.filter((item) => item.id !== cheer.id));
-        }, 3400);
-      }, index * 160);
+          setLive((prev) => [...prev, { ...cheer, ...lane }].slice(-16));
+          timers.current.push(
+            window.setTimeout(() => {
+              setLive((prev) => prev.filter((item) => item.id !== cheer.id));
+            }, 3400),
+          );
+        }, index * 160),
+      );
     });
   }, [cheers]);
 
@@ -475,8 +844,8 @@ function CheerRain({ cheers }: { cheers: Cheer[] }) {
             className="cheer-rise absolute bottom-28 flex flex-col items-center gap-1"
             style={{ left: `${item.left}%`, ["--cheer-drift" as string]: item.drift }}
           >
-            <Icon className="size-14 text-bronze" strokeWidth={1.5} />
-            <span className="rounded-full bg-forest-deep/85 px-3 py-1 text-sm text-ivory">{item.name}</span>
+            <Icon className="size-14 text-neon drop-shadow-[0_0_12px_rgb(6_182_212/0.7)]" strokeWidth={1.5} />
+            <span className="rounded-full border border-white/10 bg-night/85 px-3 py-1 text-sm text-ivory">{item.name}</span>
           </div>
         );
       })}
@@ -496,7 +865,7 @@ function CheerBar({ onSend }: { onSend: (kind: CheerKind) => void }) {
   }
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-20 border-t border-ink/10 bg-ivory px-4 pt-3 pb-4">
+    <div className="fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-night/85 px-4 pt-3 pb-4 backdrop-blur-xl">
       <p className="mb-2 text-center text-xs text-muted">{t("cheer.hint")}</p>
       <div className="mx-auto grid max-w-md grid-cols-4 gap-2">
         {CHEER_KINDS.map((kind) => {
@@ -508,9 +877,9 @@ function CheerBar({ onSend }: { onSend: (kind: CheerKind) => void }) {
               data-cheer={kind}
               disabled={cooling}
               onClick={() => tap(kind)}
-              className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-ink/10 bg-sand text-forest active:scale-95"
+              className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/[0.04] text-ivory transition hover:border-neon/50 active:scale-95 disabled:opacity-50"
             >
-              <Icon className="size-5" strokeWidth={1.75} aria-hidden="true" />
+              <Icon className="size-5 text-neon" strokeWidth={1.75} aria-hidden="true" />
               <span className="text-xs">{t(`cheer.${kind}`)}</span>
             </button>
           );
@@ -542,14 +911,19 @@ function GamePicker({
             type="button"
             disabled={disabled}
             onClick={() => onPick(game.id)}
-            className={`pointer-events-auto relative cursor-pointer rounded-2xl border-2 px-3 py-3 text-start transition-all ${active ? "border-[#D4AF37] bg-[#2A2415] shadow-[0_0_15px_rgba(212,175,55,0.3)]" : "border-[#3D352B] bg-[#221F1B]"}`}
+            className={cx(
+              "relative cursor-pointer rounded-2xl border px-3 py-3 text-start transition-all duration-150 disabled:cursor-not-allowed",
+              active
+                ? "border-neon bg-neon/10 shadow-[0_0_18px_rgb(6_182_212/0.25)]"
+                : "border-white/10 bg-white/[0.03] hover:border-neon/40",
+            )}
           >
-            {active ? <Check className="absolute end-3 top-3 size-4 text-[#D4AF37]" /> : null}
-            <span className="flex items-center gap-2 font-extrabold text-[#E5C158]">
-              <GameIcon name={game.icon} className="size-4 shrink-0" />
+            {active ? <Check className="absolute end-3 top-3 size-4 text-neon" aria-hidden="true" /> : null}
+            <span className="flex items-center gap-2 font-bold text-ivory">
+              <GameIcon name={game.icon} className="size-4 shrink-0 text-neon" />
               {lang === "en" ? game.nameEn : game.nameAr}
             </span>
-            <span className="mt-1 block text-xs text-[#A89F91]">{lang === "en" ? game.descriptionEn : game.descriptionAr}</span>
+            <span className="mt-1 block text-xs text-muted">{lang === "en" ? game.descriptionEn : game.descriptionAr}</span>
           </button>
         );
       })}
@@ -557,130 +931,7 @@ function GamePicker({
   );
 }
 
-function AnswerPanel({
-  snap,
-  lang,
-  busy,
-  fields,
-  setFields,
-  text,
-  setText,
-  onSend,
-  compact,
-  picked,
-}: {
-  snap: Snapshot;
-  lang: "ar" | "en";
-  busy: boolean;
-  fields: Record<LetterCat, string>;
-  setFields: (value: Record<LetterCat, string>) => void;
-  text: string;
-  setText: (value: string) => void;
-  onSend: (payload: Record<string, unknown>) => void;
-  compact?: boolean;
-  picked?: boolean;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="space-y-3">
-      {snap.room.engine === "letter" ? (
-        <>
-          {compact ? null : <p className="font-display text-6xl text-forest">{snap.room.letter}</p>}
-          {LETTER_CATS.map((cat) => (
-            <label key={cat} className="block space-y-1">
-              <span className="text-sm text-muted">{t(`letter.${cat}`)}</span>
-              <input className={inputClass} value={fields[cat]} onChange={(e) => setFields({ ...fields, [cat]: e.target.value })} />
-            </label>
-          ))}
-          <Button type="button" disabled={busy} onClick={() => onSend({ fields })}>{t("pad.send")}</Button>
-        </>
-      ) : null}
-      {snap.room.engine === "text" || snap.room.engine === "feud" ? (
-        <>
-          {compact ? null : <h2 className="text-2xl">{promptOf(snap, lang)}</h2>}
-          <input className={inputClass} value={text} onChange={(e) => setText(e.target.value)} />
-          <Button type="button" disabled={busy || !text.trim()} onClick={() => onSend({ text })}>{t("pad.send")}</Button>
-        </>
-      ) : null}
-      {snap.room.engine === "vote" ? (
-        <div className="grid gap-2">
-          {snap.players.filter((p) => p.id !== snap.yourId).map((p) => (
-            <Button key={p.id} type="button" tone="ghost" disabled={busy} onClick={() => onSend({ playerId: p.id })}>{p.name}</Button>
-          ))}
-        </div>
-      ) : null}
-      {snap.room.question && snap.room.engine !== "letter" && snap.room.engine !== "text" && snap.room.engine !== "feud" && snap.room.engine !== "vote" ? (
-        <>
-          {compact ? null : <h2 className="text-2xl">{promptOf(snap, lang)}</h2>}
-          {snap.yourId && snap.room.subjectId === snap.yourId ? <p className="text-sm text-muted">{t("pad.subject")}</p> : null}
-          <div className="grid gap-2 sm:grid-cols-2">
-            {snap.room.question.choices.map((choice) => (
-              <button key={choice.id} type="button" disabled={busy || picked} onClick={() => onSend(snap.room.engine === "truth" ? { side: choice.id } : { choiceId: choice.id })} className={`min-h-14 rounded-2xl border px-4 text-start font-extrabold ${picked ? "border-[#D4AF37] bg-[#2A2415] text-[#E5C158]" : "border-[#3D352B] bg-[#1B1917]"}`}>
-                {lang === "en" ? choice.en : choice.ar}
-              </button>
-            ))}
-          </div>
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-function HostDock({
-  snap,
-  lang,
-  busy,
-  sent,
-  localErr,
-  fields,
-  setFields,
-  text,
-  setText,
-  onSend,
-  onAct,
-}: {
-  snap: Snapshot;
-  lang: "ar" | "en";
-  busy: boolean;
-  sent: boolean;
-  localErr: string | null;
-  fields: Record<LetterCat, string>;
-  setFields: (value: Record<LetterCat, string>) => void;
-  text: string;
-  setText: (value: string) => void;
-  onSend: (payload: Record<string, unknown>) => void;
-  onAct: (action: string, extra?: Record<string, unknown>) => Promise<void>;
-}) {
-  const { t } = useI18n();
-  if (snap.room.status !== "PLAYING") return null;
-  const locked = snap.yourAnswered || sent;
-  return (
-    <section className="rounded-3xl bg-ivory p-4 text-ink">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm text-muted">{t("host.dock")}</p>
-          <p className="text-sm">{t("host.playAs")}</p>
-        </div>
-        {snap.room.status === "PLAYING" ? (
-          <Button type="button" tone="bronze" onClick={() => void onAct("endRound")}>{t("host.end")}</Button>
-        ) : null}
-      </div>
-      {localErr ? <p className="mb-2 text-sm">{t(`err.${localErr}`)}</p> : null}
-      {snap.room.status === "PLAYING" && locked ? <p className="font-display text-3xl">{t("pad.locked")}</p> : null}
-      {snap.room.status === "PLAYING" && !locked && snap.yourId ? (
-        <AnswerPanel snap={snap} lang={lang} busy={busy} fields={fields} setFields={setFields} text={text} setText={setText} onSend={onSend} compact />
-      ) : null}
-    </section>
-  );
-}
-
-function Podium({
-  players,
-  again,
-}: {
-  players: Snapshot["players"];
-  again?: () => void;
-}) {
+function Podium({ players }: { players: Snapshot["players"] }) {
   const { t } = useI18n();
   const ranked = [...players].sort((a, b) => b.score - a.score);
   return (
@@ -688,15 +939,17 @@ function Podium({
       <h2 className="font-display text-5xl">{t("podium.title")}</h2>
       <ol className="mx-auto grid max-w-3xl gap-3 sm:grid-cols-3">
         {ranked.slice(0, 3).map((player, index) => (
-          <li key={player.id} className="rounded-2xl bg-ivory/10 p-4">
-            <p className="font-display text-4xl text-bronze">{index + 1}</p>
-            <p className="text-2xl">{player.name}</p>
-            <p className="tabular-nums text-ivory/70">{player.score}</p>
+          <li
+            key={player.id}
+            className={cx("glass-card rounded-2xl p-4", index === 0 && "border-neon/50 shadow-[0_0_32px_rgb(6_182_212/0.25)]")}
+          >
+            <p className="font-display text-4xl text-neon">{index + 1}</p>
+            <p className="text-2xl font-bold">{player.name}</p>
+            <p className="tabular-nums text-muted">{player.score}</p>
             <p className="text-sm">{t(`podium.${index + 1}`)}</p>
           </li>
         ))}
       </ol>
-      {again ? <Button type="button" tone="light" onClick={again}>{t("host.again")}</Button> : null}
     </section>
   );
 }
@@ -710,14 +963,23 @@ function PlayerRail({
   host: boolean;
   onKick: (id: string) => void;
 }) {
-  const { t } = useI18n();
   return (
     <ul className="mt-auto grid grid-cols-2 gap-2 sm:grid-cols-4">
       {snap.players.map((player) => (
-        <li key={player.id} className={`rounded-2xl border px-3 py-3 ${player.answered || player.id === snap.yourId ? "border-[#D4AF37] bg-[#2A2415]" : "border-[#3D352B] bg-[#1B1917]"}`}>
-          <p className="font-extrabold">{player.name}</p>
-          <p className="text-sm tabular-nums text-[#E5C158]">{player.score}</p>
-          {host && player.id !== snap.yourId ? <button type="button" className="text-xs text-[#A89F91]" onClick={() => onKick(player.id)}>إخراج</button> : null}
+        <li
+          key={player.id}
+          className={cx(
+            "rounded-2xl border px-3 py-3",
+            player.answered || player.id === snap.yourId ? "border-neon/50 bg-neon/10" : "border-white/10 bg-white/[0.03]",
+          )}
+        >
+          <p className="font-bold">{player.name}</p>
+          <p className="text-sm tabular-nums text-neon">{player.score}</p>
+          {host && player.id !== snap.yourId ? (
+            <button type="button" className="text-xs text-muted hover:text-crimson" onClick={() => onKick(player.id)}>
+              إخراج
+            </button>
+          ) : null}
         </li>
       ))}
     </ul>
@@ -733,95 +995,109 @@ async function copy(link: string, setCopied: (v: boolean) => void) {
   }
 }
 
+/* ----------------------------------------------------------------------------
+ * Player pad (phone). Routes: /pad/:code and /play_/:code.
+ * ------------------------------------------------------------------------- */
+
 export function PadScreen({ code }: { code: string }) {
   const { t, lang } = useI18n();
-  const { snap, error, tokens } = useRoom(code);
-  const [fields, setFields] = useState<Record<LetterCat, string>>({ boy: "", girl: "", animal: "", object: "", country: "" });
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [localErr, setLocalErr] = useState<string | null>(null);
-  const [sent, setSent] = useState(false);
-
-  useEffect(() => {
-    setFields({ boy: "", girl: "", animal: "", object: "", country: "" });
-    setText("");
-    setLocalErr(null);
-    setSent(false);
-  }, [snap?.room.round, snap?.room.status]);
+  const { snap, error, tokens, refresh } = useRoom(code);
+  const [pick, setPick] = useState<Pick | null>(null);
+  useRoundCue(snap);
 
   if (!tokens.player && snap) {
     return <Gate code={code} />;
   }
   if (!snap) {
-    return <main className="grid min-h-screen place-items-center bg-sand px-6 text-center">{error ? t(`err.${error}`) : t("common.loading")}</main>;
+    return (
+      <main className="grid min-h-screen place-items-center bg-night px-6 text-center text-ivory">
+        {error ? t(`err.${error}`) : t("common.loading")}
+      </main>
+    );
   }
 
   const me = snap.players.find((p) => p.id === snap.yourId);
-  const showCheer =
-    snap.room.status === "WAITING" ||
-    snap.room.status === "ROUND_END" ||
-    snap.room.status === "FINISHED" ||
-    (snap.room.status === "PLAYING" && (snap.yourAnswered || sent));
+  const pickedKey = pickedFor(pick, snap.room.round);
+  const onPick = (key: string | null) => setPick(key === null ? null : { round: snap.room.round, key });
+  const answeredNow = snap.yourAnswered || pickedKey !== null;
+  const showCheer = snap.room.status !== "PLAYING" || answeredNow;
 
   function throwCheer(kind: CheerKind) {
     unlockAudio();
     void sendCheer({ data: { code, playerToken: tokens.player, kind } });
   }
 
-  async function send(payload: Record<string, unknown>) {
-    if (!snap || busy || snap.yourAnswered || sent) return;
-    setSent(true);
-    unlockAudio();
-    const res = await submitAnswer({
-      data: { code, playerToken: tokens.player, round: snap.room.round, payload },
-    });
-    if (!res.ok) {
-      setSent(false);
-      setLocalErr(res.error);
-    }
-  }
-
   return (
-    <main className="min-h-screen bg-[#121110] px-4 py-5 text-ivory" onPointerDown={unlockAudio}>
-      <header className="mb-5 flex items-center justify-between rounded-3xl border border-[#3D352B] bg-[#1B1917] px-4 py-3">
+    <main className={cx("min-h-screen bg-night px-4 py-5 text-ivory", showCheer && "pb-32")} onPointerDown={unlockAudio}>
+      <header className="glass-card mb-5 flex items-center justify-between rounded-3xl px-4 py-3">
         <div>
-          <p className="text-sm text-[#A89F91]">{me?.name}</p>
-          <p className="font-display text-3xl tabular-nums text-[#E5C158]">{me?.score ?? 0}</p>
+          <p className="text-sm text-muted">{me?.name}</p>
+          <p className="font-display text-3xl tabular-nums text-neon">{me?.score ?? 0}</p>
         </div>
-        <p className="text-sm text-[#A89F91]">{t("host.round", { n: Math.max(snap.room.round, 1) })}</p>
+        <p className="text-sm text-muted">{t("host.round", { n: Math.max(snap.room.round, 1) })}</p>
       </header>
-      {localErr ? <p className="mb-3 text-sm">{t(`err.${localErr}`)}</p> : null}
 
       {snap.room.status === "WAITING" ? (
         <section className="space-y-3">
-          <p className="text-sm text-bronze">{lang === "en" ? snap.room.nameEn : snap.room.nameAr}</p>
-          <h1 className="font-display text-4xl text-[#E5C158]">اللاعبون</h1>
+          <p className="text-sm font-bold text-neon">{lang === "en" ? snap.room.nameEn : snap.room.nameAr}</p>
+          <h1 className="font-display text-4xl">اللاعبون</h1>
           <div className="grid grid-cols-2 gap-2">
             {snap.players.map((p) => (
-              <div key={p.id} className={`rounded-2xl border px-4 py-4 ${p.id === snap.yourId ? "border-[#D4AF37] bg-[#2A2415]" : "border-[#3D352B] bg-[#1B1917]"}`}>
-                <p className="font-extrabold">{p.name}</p>
-                <p className="text-xs text-[#E5C158]">{p.id === snap.yourId ? "اختيارك" : "في الغرفة"}</p>
+              <div
+                key={p.id}
+                className={cx(
+                  "rounded-2xl border px-4 py-4",
+                  p.id === snap.yourId ? "border-neon/60 bg-neon/10" : "border-white/10 bg-white/[0.03]",
+                )}
+              >
+                <p className="font-bold">{p.name}</p>
+                <p className="text-xs text-neon">{p.id === snap.yourId ? "اختيارك" : "في الغرفة"}</p>
               </div>
             ))}
           </div>
         </section>
       ) : null}
 
-      {snap.room.status === "PLAYING" ? (
-        <AnswerPanel snap={snap} lang={lang} busy={busy} fields={fields} setFields={setFields} text={text} setText={setText} onSend={(payload) => void send(payload)} picked={sent || snap.yourAnswered} />
+      {snap.room.status === "PLAYING" && snap.yourId ? (
+        <AnswerSurface
+          key={snap.room.round}
+          snap={snap}
+          code={code}
+          playerToken={tokens.player}
+          picked={pickedKey}
+          onPick={onPick}
+          onRoundClosed={refresh}
+        />
       ) : null}
 
       {snap.room.status === "ROUND_END" ? (
-        <section className="space-y-2">
-          <h1 className="font-display text-4xl">{t("pad.roundEnd")}</h1>
-          <p className="font-display text-6xl text-forest tabular-nums">{t("pad.points", { n: snap.yourRoundScore })}</p>
+        <section className="space-y-5">
+          <div>
+            <h1 className="font-display text-4xl">{t("pad.roundEnd")}</h1>
+            <p className="font-display text-6xl tabular-nums text-ivory">{t("pad.points", { n: snap.yourRoundScore })}</p>
+          </div>
+          {snap.yourId && hasChoices(snap) ? (
+            <AnswerSurface
+              key={snap.room.round}
+              snap={snap}
+              code={code}
+              playerToken={tokens.player}
+              picked={pickedKey}
+              onPick={onPick}
+              onRoundClosed={refresh}
+            />
+          ) : null}
+          {snap.room.auto ? <NextBar roundKey={snap.room.round} /> : null}
         </section>
       ) : null}
+
       {snap.room.status === "FINISHED" ? (
-        <div className="rounded-3xl bg-forest-deep p-4 text-ivory">
+        <div className="glass-card rounded-3xl p-4">
           <Podium players={snap.players} />
         </div>
       ) : null}
+
+      {snap.room.status === "CLOSED" ? <p className="mt-6 text-center text-lg text-muted">{t("err.ROOM_NOT_FOUND")}</p> : null}
       {showCheer ? <CheerBar onSend={throwCheer} /> : null}
     </main>
   );
@@ -830,10 +1106,15 @@ export function PadScreen({ code }: { code: string }) {
 function Gate({ code }: { code: string }) {
   const { t } = useI18n();
   return (
-    <main className="grid min-h-screen place-items-center bg-sand px-6 text-center">
+    <main className="grid min-h-screen place-items-center bg-night px-6 text-center text-ivory">
       <div className="space-y-3">
         <p>{t("join.title")}</p>
-        <a className="inline-flex min-h-11 items-center rounded-full bg-forest px-5 text-ivory" href={`/join/${code}`}>{code}</a>
+        <a
+          className="inline-flex min-h-11 items-center rounded-full bg-neon px-5 font-bold text-night shadow-[0_0_22px_rgb(6_182_212/0.35)]"
+          href={`/join/${code}`}
+        >
+          {code}
+        </a>
       </div>
     </main>
   );
