@@ -81,7 +81,11 @@
     "name": "Your name",
     "submit": "Enter",
     "waiting": "You are in",
-    "hint": "The code stays. Wait here while the host picks the game and starts."
+    "hint": "The code stays. Wait here while the host picks the game and starts.",
+    "pickPlayer": "Choose your player",
+    "enterName": "Enter your name",
+    "namePlaceholder": "Your name in the room",
+    "enter": "Join"
   },
   "host": {
     "round": "Round {n}",

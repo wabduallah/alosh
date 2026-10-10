@@ -40,16 +40,16 @@ export function JoinForm({ initial = "" }: { initial?: string }) {
         void submit();
       }}
     >
-      <p className="text-sm text-[#67e8f9]">اختيار اللاعب</p>
-      <h1 className="font-display text-4xl">ادخل اسمك</h1>
+      <p className="text-sm text-[#67e8f9]">{t("join.pickPlayer")}</p>
+      <h1 className="font-display text-4xl">{t("join.enterName")}</h1>
       <Field label={t("join.code")}>
         <input className="min-h-12 w-full rounded-2xl border border-[rgb(255_255_255/0.08)] bg-[#090d16] px-4 tracking-widest text-ivory" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} />
       </Field>
       <Field label={t("join.name")}>
-        <input className="min-h-12 w-full rounded-2xl border border-[rgb(255_255_255/0.08)] bg-[#090d16] px-4 text-ivory" value={name} onChange={(e) => setName(e.target.value)} placeholder="اسمك في الغرفة" />
+        <input className="min-h-12 w-full rounded-2xl border border-[rgb(255_255_255/0.08)] bg-[#090d16] px-4 text-ivory" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("join.namePlaceholder")} />
       </Field>
       {error ? <p className="text-sm text-[#67e8f9]">{error}</p> : null}
-      <button type="submit" disabled={busy || name.trim().length < 2} className="min-h-12 w-full rounded-full bg-[#06b6d4] font-extrabold text-black disabled:bg-[rgb(255_255_255/0.10)] disabled:text-[#94a3b8]">{busy ? "..." : "دخول"}</button>
+      <button type="submit" disabled={busy || name.trim().length < 2} className="min-h-12 w-full rounded-full bg-[#06b6d4] font-extrabold text-black disabled:bg-[rgb(255_255_255/0.10)] disabled:text-[#94a3b8]">{busy ? "..." : t("join.enter")}</button>
     </form>
   );
 }
