@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, X } from "lucide-react";
 import { Button, cx, inputClass } from "@/components/ui";
-import { LETTER_CATS, type LetterCat } from "@/games/score";
 import { useI18n } from "@/lib/i18n";
 import { submitAnswer } from "@/lib/lamma/rpc";
 import type { Reveal, Snapshot } from "@/lib/lamma/types";
 import { playCue, unlockAudio } from "@/lib/sfx";
 
-const EMPTY_FIELDS: Record<LetterCat, string> = { boy: "", girl: "", animal: "", object: "", country: "" };
-const NON_CHOICE_ENGINES = new Set(["letter", "text", "feud", "vote"]);
+const NON_CHOICE_ENGINES = new Set(["text", "feud", "vote"]);
 
 /** Answer-tile states. Moonhem palette: emerald = correct, crimson = wrong, cyan = your pick. */
 const TILE = {
@@ -114,7 +112,6 @@ export function AnswerSurface({
   onRoundClosed: () => void;
 }) {
   const { t, lang, bundle } = useI18n();
-  const [fields, setFields] = useState<Record<LetterCat, string>>(EMPTY_FIELDS);
   const [text, setText] = useState("");
   const [localErr, setLocalErr] = useState<string | null>(null);
   // Synchronous guard: a double tap can never send two answers, and the lock doesn't wait for a render.
@@ -165,26 +162,6 @@ export function AnswerSurface({
         <p role="alert" className="rounded-xl border border-crimson/40 bg-crimson/10 px-3 py-2 text-sm text-ivory">
           {t(`err.${localErr}`)}
         </p>
-      ) : null}
-
-      {engine === "letter" ? (
-        <>
-          <p className="font-display text-6xl text-neon">{snap.room.letter}</p>
-          {LETTER_CATS.map((cat) => (
-            <label key={cat} className="block space-y-1">
-              <span className="text-sm text-muted">{t(`letter.${cat}`)}</span>
-              <input
-                className={inputClass}
-                disabled={locked}
-                value={fields[cat]}
-                onChange={(e) => setFields({ ...fields, [cat]: e.target.value })}
-              />
-            </label>
-          ))}
-          <Button type="button" disabled={locked} onClick={() => void submit({ fields }, "fields")} className="w-full">
-            {sentLabel}
-          </Button>
-        </>
       ) : null}
 
       {engine === "text" || engine === "feud" ? (
@@ -275,49 +252,6 @@ export function RevealBoard({
       {snap.room.auto ? <NextBar roundKey={snap.room.round} /> : null}
       {reveal?.correctAr ? (
         <p className="text-3xl text-emerald">{lang === "en" ? reveal.correctEn || reveal.correctAr : reveal.correctAr}</p>
-      ) : null}
-      {reveal?.letterRows ? (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[40rem] text-start text-sm">
-            <thead className="text-neon">
-              <tr>
-                <th className="px-2 py-2">{t("host.players")}</th>
-                {LETTER_CATS.map((cat) => (
-                  <th key={cat} className="px-2 py-2">
-                    {t(`letter.${cat}`)}
-                  </th>
-                ))}
-                <th className="px-2 py-2">+</th>
-              </tr>
-            </thead>
-            <tbody>
-              {reveal.letterRows.map((row) => (
-                <tr key={row.playerId} className="border-t border-white/10">
-                  <td className="px-2 py-3">{row.name}</td>
-                  {LETTER_CATS.map((cat) => {
-                    const cell = row.fields[cat];
-                    return (
-                      <td key={cat} className="px-2 py-3">
-                        <div className={cell.verdict === "bad" && cell.text ? "text-crimson" : undefined}>{cell.text || "—"}</div>
-                        <div className="text-neon tabular-nums">{cell.points}</div>
-                        {host && cell.verdict === "bad" && cell.text ? (
-                          <button
-                            type="button"
-                            className="text-xs text-neon underline"
-                            onClick={() => void onAct("accept", { playerId: row.playerId, category: cat })}
-                          >
-                            {t("host.accept")}
-                          </button>
-                        ) : null}
-                      </td>
-                    );
-                  })}
-                  <td className="px-2 py-3 tabular-nums">{row.total}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       ) : null}
       {reveal?.percents ? (
         <ul className="space-y-2 text-xl">
