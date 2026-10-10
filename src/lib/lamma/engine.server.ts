@@ -132,6 +132,30 @@ const ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const hits = new Map<string, { n: number; t: number }>();
 const CHEER_TTL_MS = 6500;
 const AUTO_NEXT_MS = 2500;
+const MAJLIS_GAME = "majlis-custom";
+const MAJLIS_MAX_QUESTIONS = 15;
+
+export type MajlisQuestionInput = {
+  promptAr: string;
+  choices: { ar: string }[];
+  correct: number;
+  points: number;
+};
+
+/** Validates host-written questions. Every kept choice must be non-blank, and `correct` must point at one of them. */
+function sanitizeMajlis(list: MajlisQuestionInput[] | undefined): MajlisQuestionInput[] | null {
+  const out: MajlisQuestionInput[] = [];
+  for (const raw of (list ?? []).slice(0, MAJLIS_MAX_QUESTIONS)) {
+    const promptAr = String(raw?.promptAr ?? "").trim().slice(0, 200);
+    const choices = (Array.isArray(raw?.choices) ? raw.choices : []).slice(0, 4).map((c) => ({ ar: String(c?.ar ?? "").trim().slice(0, 80) }));
+    const correct = Number(raw?.correct);
+    const points = clamp(raw?.points, 10, 500, 100);
+    if (!promptAr || choices.length < 2 || choices.some((c) => !c.ar)) return null;
+    if (!Number.isInteger(correct) || correct < 0 || correct >= choices.length) return null;
+    out.push({ promptAr, choices, correct, points });
+  }
+  return out.length ? out : null;
+}
 let seeding: Promise<void> | null = null;
 let lastSweep = 0;
 
@@ -415,20 +439,23 @@ export async function createRoomNow(
     targetScore?: number;
     streakMultiplier?: boolean;
     eliminationMode?: boolean;
+    customQuestions?: MajlisQuestionInput[];
   },
   ctx: Ctx,
 ): Promise<Fail | { ok: true; code: string; hostToken: string; playerId?: string; playerToken?: string }> {
   const sql = await db();
   const ip = await ipKey();
   if (!allow(`create:${ip}`, 200, 60 * 60 * 1000)) return fail("RATE");
-  const games = await sql<GameRow>`select * from games where id = ${input.gameId} and visible = true and status = 'published'`;
+  const games = await sql<GameRow>`select * from games where id = ${input.gameId} and (visible = true or id = ${MAJLIS_GAME}) and status = 'published'`;
   const game = games[0];
   if (!game) return fail("GAME");
+  const majlisQuestions = game.id === MAJLIS_GAME ? sanitizeMajlis(input.customQuestions) : null;
+  if (game.id === MAJLIS_GAME && !majlisQuestions) return fail("NO_QUESTIONS");
   const hostName = input.hostName ? cleanName(input.hostName) : null;
   if (input.hostName && !hostName) return fail("NAME_INVALID");
   const settings = asSettings(
     {
-      rounds: input.rounds || game.default_rounds,
+      rounds: majlisQuestions ? majlisQuestions.length : input.rounds || game.default_rounds,
       seconds: input.seconds || game.default_seconds,
       difficulty: input.difficulty,
       sound: input.sound,
@@ -436,7 +463,7 @@ export async function createRoomNow(
       maxPlayers: Math.min(14, Math.max(2, game.min_players, Math.round(input.maxPlayers) || 2)),
       locale: input.locale,
       hostIsPlayer: input.hostIsPlayer ?? input.hostMode !== "narrator",
-      pointsPerCorrect: input.pointsPerCorrect,
+      pointsPerCorrect: majlisQuestions ? 0 : input.pointsPerCorrect,
       targetScore: input.targetScore,
       streakMultiplier: input.streakMultiplier === true,
       eliminationMode: input.eliminationMode === true,
@@ -453,6 +480,11 @@ export async function createRoomNow(
   }
   const hostToken = hex(16);
   await sql`insert into rooms (id, host_token, host_user_id, host_ip, game_id, status, settings, round_state, unlocked, expires_at) values (${code}, ${hostToken}, ${ctx.userId}, ${ip}, ${game.id}, 'WAITING', ${JSON.stringify(settings)}::jsonb, '{}'::jsonb, true, now() + (${hours} * interval '1 hour'))`;
+  // Majlis questions are inserted in host order; ids are serial, so `order by id` keeps that order.
+  for (const q of majlisQuestions ?? []) {
+    const choices = q.choices.map((c, i) => ({ id: `c${i}`, ar: c.ar, en: c.ar }));
+    await sql`insert into questions (game_id, room_id, prompt_ar, prompt_en, kind, choices, correct, points, status, source) values (${MAJLIS_GAME}, ${code}, ${q.promptAr}, ${q.promptAr}, 'mcq', ${JSON.stringify(choices)}::jsonb, ${`c${q.correct}`}, ${q.points}, 'published', 'host')`;
+  }
   // Host-as-player: the host always gets a real seat (and therefore a Player Pad) when hostIsPlayer is set.
   if (!settings.hostIsPlayer) return { ok: true, code, hostToken };
   const seatName = hostName ?? (input.locale === "en" ? "Host" : "المضيف");
@@ -598,8 +630,14 @@ export async function snapshotNow(input: { code: string; hostToken?: string; pla
   return buildSnap(sql, code, input.hostToken, input.playerToken);
 }
 
+/** Round N of a Majlis room is the N-th question the host wrote for that room. */
+async function majlisQuestion(sql: Sql, code: string, round: number): Promise<QRow | null> {
+  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where room_id = ${code} order by id offset ${round - 1} limit 1`;
+  return rows[0] ?? null;
+}
+
 async function pickQuestion(sql: Sql, gameId: string, state: RoundState, difficulty: Settings["difficulty"]): Promise<QRow | null> {
-  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published'`;
+  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published' and room_id is null`;
   const used = new Set(state.usedQuestionIds ?? []);
   let pool = rows.filter((row) => !used.has(row.id));
   if (!pool.length) pool = rows;
@@ -632,7 +670,7 @@ async function openRound(sql: Sql, code: string, round: number): Promise<Fail | 
     state.letter = letter;
     state.usedLetters = [...(state.usedLetters ?? []), letter];
   } else {
-    const q = await pickQuestion(sql, data.game.id, prev, settings.difficulty);
+    const q = data.game.id === MAJLIS_GAME ? await majlisQuestion(sql, code, round) : await pickQuestion(sql, data.game.id, prev, settings.difficulty);
     if (!q) return fail("NO_QUESTIONS");
     state.questionId = q.id;
     state.usedQuestionIds = [...(prev.usedQuestionIds ?? []), q.id];
@@ -1420,7 +1458,7 @@ export async function isAdmin(sql: Sql, userId: string | null): Promise<boolean>
 
 export async function soloQuestionNow(gameId: string) {
   const sql = await db();
-  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published' order by random() limit 1`;
+  const rows = await sql<QRow>`select id, prompt_ar, prompt_en, kind, choices, correct, accepted, difficulty, icons, points, image_url from questions where game_id = ${gameId} and status = 'published' and room_id is null order by random() limit 1`;
   const q = rows[0];
   if (!q) return fail("NO_QUESTIONS");
   const choices = jparse<{ id: string; ar: string; en: string }[]>(q.choices, []);

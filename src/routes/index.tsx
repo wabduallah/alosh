@@ -14,7 +14,7 @@ export const Route = createFileRoute("/")({
 });
 
 type Hub = {
-  to: "/games/competitive" | "/play";
+  to: "/games/competitive" | "/play" | "/majlis";
   icon: LucideIcon;
   title: string;
   body: string;
@@ -40,7 +40,7 @@ const HUBS: Hub[] = [
     glow: "group-hover:shadow-[0_0_32px_rgb(139_92_246/0.28)]",
   },
   {
-    to: "/play",
+    to: "/majlis",
     icon: Users,
     title: "تحدي المجالس",
     body: "غرفة خاصة لمجموعتك: من 2 إلى 14 لاعباً، واختر أن تشارك كلاعب أو تدير اللعبة فقط.",
