@@ -29,7 +29,7 @@ export function JoinForm({ initial = "" }: { initial?: string }) {
     }
     sessionStorage.setItem(`lamma:player:${res.code}`, res.playerToken);
     sessionStorage.setItem(`lamma:playerId:${res.code}`, res.playerId);
-    void navigate({ to: "/pad/$code", params: { code: res.code } });
+    void navigate({ to: "/room/$code", params: { code: res.code } });
   }
 
   return (

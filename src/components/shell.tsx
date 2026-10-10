@@ -34,7 +34,6 @@ export function Shell({ children, paper = false }: { children: ReactNode; paper?
               <p className="mt-1 text-sm text-muted">العب، نافس، وابتكر. ألعاب مجانية بالكامل.</p>
             </div>
             <nav className="text-sm text-ivory/70">
-              <Link to="/games" search={{ cat: "" }} className="block py-1 hover:text-neon">الأقسام</Link>
               <Link to="/questions" className="block py-1 hover:text-neon">بنك الأسئلة</Link>
               <Link to="/join" className="block py-1 hover:text-neon">انضمام سريع</Link>
               <Link to="/rank" className="block py-1 hover:text-neon">{t("nav.rank")}</Link>

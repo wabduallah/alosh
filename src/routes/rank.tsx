@@ -22,7 +22,7 @@ function RankPage() {
           <li key={game.id} className="neon-card flex items-center gap-3 rounded-3xl px-4 py-3">
             <span className="grid size-10 place-items-center rounded-2xl bg-neon font-extrabold text-night">{index + 1}</span>
             <div className="min-w-0 flex-1">
-              <Link to="/games/$slug" params={{ slug: game.id }} className="font-extrabold">{game.nameAr}</Link>
+              <span className="font-extrabold">{game.nameAr}</span>
               <p className="text-sm text-ivory/55">{game.playMode} · {game.minPlayers}–{game.maxPlayers}</p>
             </div>
             <span className="tabular-nums text-neon">{game.plays}</span>

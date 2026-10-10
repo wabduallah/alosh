@@ -14,7 +14,7 @@ export const Route = createFileRoute("/")({
 });
 
 type Hub = {
-  to: "/games/competitive" | "/play" | "/majlis";
+  to: "/play" | "/majlis";
   icon: LucideIcon;
   title: string;
   body: string;
@@ -25,7 +25,7 @@ type Hub = {
 /** The three game hubs. Each hub maps to an existing route; nothing else appears on the homepage. */
 const HUBS: Hub[] = [
   {
-    to: "/games/competitive",
+    to: "/play",
     icon: Swords,
     title: "تحدي برافو",
     body: "جولات سريعة بين الأصدقاء: تخمين، أسئلة جماعية، وتصويت وحذف سريع.",
