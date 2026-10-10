@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Shell } from "@/components/shell";
 import { Button, Field, inputClass } from "@/components/ui";
 import { useI18n } from "@/lib/i18n";
-import { adminMutate, adminQuery, unlockAdmin } from "@/lib/lamma/admin.rpc";
+import { adminMutate, adminQuery } from "@/lib/lamma/admin.rpc";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({ meta: [{ title: "الإدارة — العش" }] }),
@@ -18,8 +18,6 @@ function AdminPage() {
   const [data, setData] = useState<unknown>(null);
   const [note, setNote] = useState<string | null>(null);
   const [allowed, setAllowed] = useState<boolean | null>(null);
-  const [studio, setStudio] = useState("");
-  const [codeError, setCodeError] = useState<string | null>(null);
 
   async function load(section = tab) {
     const res = await adminQuery({ data: { section } });
@@ -47,27 +45,12 @@ function AdminPage() {
       <Shell>
         <p className="text-sm text-neon">المشرف العام</p>
         <h1 className="text-4xl font-extrabold">لوحة التحكم</h1>
-        <p className="mt-2 text-ivory/70">الدخول برمز الإدارة المحدد في الخادم فقط. لا يوجد رمز افتراضي.</p>
-        <form
-          className="mt-4 max-w-md space-y-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void unlockAdmin({ data: { code: studio } }).then(async (res) => {
-              if (!res.ok) {
-                setCodeError("الرمز غير صحيح");
-                return;
-              }
-              setCodeError(null);
-              await load("dashboard");
-            });
-          }}
-        >
-          <Field label="رمز الإدارة">
-            <input className={inputClass} value={studio} onChange={(e) => setStudio(e.target.value)} autoComplete="off" />
-          </Field>
-          <Button type="submit">دخول</Button>
-          {codeError ? <p className="text-sm text-red-400">{codeError}</p> : null}
-        </form>
+        <p className="mt-2 text-ivory/70">هذه الصفحة للمشرفين فقط. سجّل الدخول بحساب مشرف للمتابعة.</p>
+        <div className="mt-4">
+          <Link to="/login" className="inline-flex min-h-11 items-center rounded-full bg-neon px-5 font-extrabold text-night">
+            تسجيل الدخول
+          </Link>
+        </div>
       </Shell>
     );
   }
