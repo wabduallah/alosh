@@ -1,16 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { HostScreen } from "@/components/arena";
-import { listGames } from "@/lib/lamma/rpc";
-import type { GameCard } from "@/lib/lamma/types";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-/** Shared display alias: the main board for a room on a TV or big screen. */
+/** TV / big screen (display only). Short link for a «الكذابون» room: forwards to the arena's tv view. */
 export const Route = createFileRoute("/tv/$code")({
-  loader: () => listGames(),
-  component: TvPage,
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/games/liars/arena",
+      search: { code: params.code.trim().toUpperCase().slice(0, 8), view: "tv" },
+      replace: true,
+    });
+  },
 });
-
-function TvPage() {
-  const { code } = Route.useParams();
-  const games = Route.useLoaderData() as GameCard[];
-  return <HostScreen code={code.toUpperCase()} games={games} />;
-}
