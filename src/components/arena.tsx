@@ -958,6 +958,7 @@ function GuestsStrip({ snap }: { snap: Snapshot }) {
   const rules = [
     snap.room.targetScore > 0 ? `الهدف ${snap.room.targetScore} نقطة` : null,
     snap.room.pointsPerCorrect > 0 ? `${snap.room.pointsPerCorrect} نقطة لكل إجابة صحيحة` : null,
+    snap.room.streakMultiplier ? "مضاعف للإجابات المتتالية" : null,
   ].filter(Boolean);
   return (
     <div className="space-y-2">

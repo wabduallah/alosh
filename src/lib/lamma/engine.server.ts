@@ -108,6 +108,7 @@ type Settings = {
   hostIsPlayer: boolean;
   pointsPerCorrect: number;
   targetScore: number;
+  streakMultiplier: boolean;
   hostMode: "player" | "narrator";
 };
 
@@ -218,6 +219,7 @@ function asSettings(value: unknown, fallback?: Partial<Settings>): Settings {
     hostIsPlayer,
     pointsPerCorrect: clamp(raw.pointsPerCorrect, 0, 1000, 0),
     targetScore: clamp(raw.targetScore, 0, 100000, 0),
+    streakMultiplier: raw.streakMultiplier === true,
     hostMode: hostIsPlayer ? "player" : "narrator",
   };
 }
@@ -408,6 +410,7 @@ export async function createRoomNow(
     hostIsPlayer?: boolean;
     pointsPerCorrect?: number;
     targetScore?: number;
+    streakMultiplier?: boolean;
   },
   ctx: Ctx,
 ): Promise<Fail | { ok: true; code: string; hostToken: string; playerId?: string; playerToken?: string }> {
@@ -431,6 +434,7 @@ export async function createRoomNow(
       hostIsPlayer: input.hostIsPlayer ?? input.hostMode !== "narrator",
       pointsPerCorrect: input.pointsPerCorrect,
       targetScore: input.targetScore,
+      streakMultiplier: input.streakMultiplier === true,
     },
     { rounds: game.default_rounds, seconds: game.default_seconds },
   );
@@ -572,6 +576,7 @@ async function buildSnap(sql: Sql, code: string, hostToken?: string, playerToken
       hostIsPlayer: settings.hostIsPlayer,
       pointsPerCorrect: settings.pointsPerCorrect,
       targetScore: settings.targetScore,
+      streakMultiplier: settings.streakMultiplier,
       hostMode: settings.hostMode,
       hostAnswer: tokensMatch(fresh.room.host_token, hostToken) && settings.hostMode === "narrator" ? (q?.correct ?? null) : null,
     },
@@ -823,6 +828,19 @@ function reachedTarget(players: { score: number; is_bot: boolean }[], settings: 
   return settings.targetScore > 0 && players.some((p) => !p.is_bot && p.score >= settings.targetScore);
 }
 
+/** Kalak-style streak bonus: 2 correct in a row doubles the next answer, 4 in a row triples it (capped at x3). Only contiguous rounds count. */
+async function streakMultiplier(sql: Sql, code: string, playerId: string, round: number): Promise<number> {
+  const rows = await sql<{ round: number; correct: boolean | null }>`select round, correct from answers where room_id = ${code} and player_id = ${playerId} and round < ${round} order by round desc limit 10`;
+  let expected = round - 1;
+  let streak = 0;
+  for (const row of rows) {
+    if (row.round !== expected || row.correct !== true) break;
+    streak += 1;
+    expected -= 1;
+  }
+  return Math.min(3, 1 + Math.floor(streak / 2));
+}
+
 async function scoreLocked(sql: Sql, code: string, auto = false): Promise<void> {
   const data = await bundle(sql, code);
   if (!data?.game) return;
@@ -983,7 +1001,10 @@ async function scoreLocked(sql: Sql, code: string, auto = false): Promise<void> 
         let points = 0;
         if (ok && engine === "fastest") {
           points = speedPoints(num(row?.response_ms), windowMs, num(scoring.base, 400), num(scoring.speed, 600));
-        } else if (ok) points = correctPoints(settings, q, scoring);
+        } else if (ok) {
+          points = correctPoints(settings, q, scoring);
+          if (settings.streakMultiplier) points *= await streakMultiplier(sql, code, player.id, round);
+        }
         const label = choices.find((c) => c.id === choiceId);
         reveal.answers.push({ playerId: player.id, name: player.name, text: label?.ar ?? "", points, correct: ok });
         await addScore(sql, player.id, points, ok ? 1 : 0, choiceId && !ok ? 1 : 0);
