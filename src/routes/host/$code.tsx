@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Shell } from "@/components/shell";
 import { Button, cx } from "@/components/ui";
+import { Glyph } from "@/components/brand";
 import { ShareRoom } from "@/components/share";
 import { ensureSession, supabase } from "@/lib/supabase";
 
@@ -355,7 +356,7 @@ function HostBoard() {
 
   if (error && !room) {
     return (
-      <Shell>
+      <Shell play>
         <section className="glass-card mx-auto mt-8 max-w-xl rounded-3xl p-6 text-center">
           <p className="text-sm text-crimson">{error}</p>
           <Link to="/" className="mt-5 inline-flex min-h-11 items-center rounded-full border border-white/15 px-5 text-sm font-bold text-ivory">
@@ -368,7 +369,7 @@ function HostBoard() {
 
   if (!room || isHost === null) {
     return (
-      <Shell>
+      <Shell play>
         <p className="mt-8 text-center text-sm text-muted">جارٍ التحميل…</p>
       </Shell>
     );
@@ -376,7 +377,7 @@ function HostBoard() {
 
   if (!isHost) {
     return (
-      <Shell>
+      <Shell play>
         <section className="glass-card mx-auto mt-8 max-w-xl rounded-3xl p-6 text-center">
           <p className="text-base font-bold text-ivory">هذه الشاشة للمضيف فقط.</p>
         </section>
@@ -386,7 +387,7 @@ function HostBoard() {
 
   if (isOutsider) {
     return (
-      <Shell>
+      <Shell play>
         <ShareRoom code={room.room_code} />
         <OutsiderHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
       </Shell>
@@ -395,7 +396,7 @@ function HostBoard() {
 
   if (isMafia) {
     return (
-      <Shell>
+      <Shell play>
         <ShareRoom code={room.room_code} />
         <MafiaHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
       </Shell>
@@ -404,7 +405,7 @@ function HostBoard() {
 
   if (isHeads) {
     return (
-      <Shell>
+      <Shell play>
         <ShareRoom code={room.room_code} />
         <HeadsHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
       </Shell>
@@ -412,11 +413,11 @@ function HostBoard() {
   }
 
   return (
-    <Shell>
+    <Shell play>
       <section className="mx-auto mt-4 max-w-5xl">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-xl font-extrabold text-ivory">
-            رمز الغرفة <span className="font-mono text-neon">{room.room_code}</span>
+            رمز الغرفة <span className="room-code text-neon">{room.room_code}</span>
           </h1>
           <span className="text-sm text-muted">
             أُجيب {answered.size} من {questions.length}
@@ -429,7 +430,7 @@ function HostBoard() {
 
         {gameOver ? (
           <div className="glass-card mb-6 rounded-3xl p-6 text-center">
-            <p className="text-sm font-bold text-violet">انتهت اللعبة</p>
+            <p className="text-sm font-bold text-violet-text">انتهت اللعبة</p>
             {winners.length > 0 ? (
               <p className="mt-2 text-3xl font-extrabold text-ivory">
                 {winners.length > 1 ? "التعادل بين: " : "الفائز: "}
@@ -447,7 +448,7 @@ function HostBoard() {
 
         {active ? (
           <div className="glass-card mb-6 rounded-3xl p-6 text-center">
-            <p className="text-sm font-bold text-violet">
+            <p className="text-sm font-bold text-violet-text">
               {active.category_ar} · {active.points} نقطة
             </p>
             <p className="mt-3 text-2xl font-extrabold leading-relaxed text-ivory">{active.question_text}</p>
@@ -541,7 +542,7 @@ function HostBoard() {
               style={{ gridTemplateColumns: `repeat(${categories.length}, minmax(0, 1fr))` }}
             >
               {categories.map((cat) => (
-                <div key={cat} className="rounded-2xl bg-violet/20 p-3 text-center text-sm font-extrabold text-ivory">
+                <div key={cat} className="grid min-h-14 place-items-center rounded-[14px] bg-violet/16 p-2 text-center text-[15px] font-semibold text-ivory">
                   {cat}
                 </div>
               ))}
@@ -556,13 +557,16 @@ function HostBoard() {
                       disabled={!q || done || busy || !!active}
                       onClick={() => q && openQuestion(q)}
                       className={cx(
-                        "min-h-16 rounded-2xl border p-3 text-lg font-extrabold transition",
+                        "grid min-h-16 place-items-center rounded-[14px] border p-3 text-[22px] font-bold tabular-nums transition",
                         q && !done && !active
-                          ? "border-neon/50 bg-white/[0.04] text-neon hover:bg-neon/10"
-                          : "border-white/5 bg-white/[0.02] text-muted/40",
+                          ? "border-line bg-deep text-neon hover:border-neon"
+                          : done && q
+                            ? "border-dashed border-line bg-transparent text-faint"
+                            : "border-line bg-deep/60 text-faint",
                       )}
+                      aria-label={q ? `${cat} ${points}${done ? " — أُجيب" : ""}` : undefined}
                     >
-                      {q && !done ? points : ""}
+                      {q && !done ? points : q ? <Glyph name="check" className="size-4" /> : ""}
                     </button>
                   );
                 }),
@@ -651,7 +655,7 @@ function BluffHostPanel({ phase, status, reveal, busy, onStart, onOpenVote, onRe
               >
                 <span>
                   {o.text}
-                  {o.owner ? <span className="mr-2 text-xs text-violet">({o.owner})</span> : null}
+                  {o.owner ? <span className="mr-2 text-xs text-violet-text">({o.owner})</span> : null}
                 </span>
                 <span className="font-extrabold">{o.is_correct ? "✓ " : ""}{o.votes} صوت</span>
               </li>
@@ -781,7 +785,7 @@ function OutsiderHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; r
     <section className="mx-auto mt-4 max-w-2xl">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-extrabold text-ivory">
-          رمز الغرفة <span className="font-mono text-neon">{roomCode}</span>
+          رمز الغرفة <span className="room-code text-neon">{roomCode}</span>
         </h1>
         <span className="text-sm text-muted">الجولة {round}</span>
       </div>
@@ -1007,7 +1011,7 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
     <section className="mx-auto mt-4 max-w-2xl">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-extrabold text-ivory">
-          رمز الغرفة <span className="font-mono text-neon">{roomCode}</span>
+          رمز الغرفة <span className="room-code text-neon">{roomCode}</span>
         </h1>
         <span className="text-sm text-muted">هل تعرف</span>
       </div>
@@ -1017,12 +1021,18 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
       <div className="glass-card rounded-3xl p-6 text-center">
         <div className="grid grid-cols-2 gap-4">
           <div className="rounded-2xl bg-white/[0.04] p-4">
-            <p className="text-sm text-muted">الفريق الأحمر</p>
-            <p className="text-4xl font-extrabold text-ivory">{scores.red}</p>
+            <p className="inline-flex items-center gap-1.5 text-[15px] font-semibold text-team-red">
+              <Glyph name="triangle" className="size-3.5" />
+              الفريق الأحمر
+            </p>
+            <p className="text-4xl font-bold tabular-nums text-ivory">{scores.red}</p>
           </div>
           <div className="rounded-2xl bg-white/[0.04] p-4">
-            <p className="text-sm text-muted">الفريق الأزرق</p>
-            <p className="text-4xl font-extrabold text-ivory">{scores.blue}</p>
+            <p className="inline-flex items-center gap-1.5 text-[15px] font-semibold text-team-blue">
+              <Glyph name="circle" className="size-3.5" />
+              الفريق الأزرق
+            </p>
+            <p className="text-4xl font-bold tabular-nums text-ivory">{scores.blue}</p>
           </div>
         </div>
 
@@ -1037,7 +1047,7 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
                 الكلمة (للوصف فقط): {word}
               </p>
             ) : null}
-            <p className={cx("mt-2 font-mono text-5xl font-extrabold", timeUp ? "text-crimson" : "text-neon")}>
+            <p dir="ltr" className={cx("mt-2 text-5xl font-bold tabular-nums", timeUp ? "text-wrong" : "text-neon")}>
               {timeUp ? "انتهى الوقت" : `${secondsLeft ?? 0}s`}
             </p>
             <div className="mt-6 flex flex-wrap justify-center gap-3">
@@ -1210,8 +1220,8 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
   return (
     <section className="mx-auto mt-4 max-w-2xl">
       <div className="glass-card rounded-3xl p-6 text-center">
-        <p className="text-xs font-bold text-violet">رمز الغرفة</p>
-        <p className="mt-1 font-mono text-3xl font-extrabold text-neon">{roomCode}</p>
+        <p className="text-xs font-bold text-violet-text">رمز الغرفة</p>
+        <p className="room-code mt-1 text-3xl text-neon">{roomCode}</p>
         <p className="mt-4 text-xl font-extrabold text-ivory">{headline}</p>
         {state.last_result ? <p className="mt-3 text-sm font-bold text-ivory">{state.last_result}</p> : null}
 

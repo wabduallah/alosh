@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Shell } from "@/components/shell";
 import { Button, cx } from "@/components/ui";
+import { Cradle, Glyph } from "@/components/brand";
 import { supabase } from "@/lib/supabase";
 
 /**
@@ -225,7 +226,7 @@ function PlayerBoard() {
 
   if (error) {
     return (
-      <Shell>
+      <Shell play>
         <section className="glass-card mx-auto mt-8 max-w-xl rounded-3xl p-6 text-center">
           <p className="text-sm text-crimson">{error}</p>
           <Link to="/" className="mt-5 inline-flex min-h-11 items-center rounded-full border border-white/15 px-5 text-sm font-bold text-ivory">
@@ -238,18 +239,18 @@ function PlayerBoard() {
 
   if (!room) {
     return (
-      <Shell>
+      <Shell play>
         <p className="mt-8 text-center text-sm text-muted">جارٍ التحميل…</p>
       </Shell>
     );
   }
 
   return (
-    <Shell>
+    <Shell play>
       <section className="mx-auto mt-4 max-w-md">
         <div className="mb-4 flex items-center justify-between">
           <h1 className="text-lg font-extrabold text-ivory">
-            الغرفة <span className="font-mono text-neon">{room.room_code}</span>
+            الغرفة <span className="room-code text-neon">{room.room_code}</span>
           </h1>
           <span className="text-sm text-muted">
             أُجيب {answered.size} من {questions.length}
@@ -258,7 +259,7 @@ function PlayerBoard() {
 
         {gameOver ? (
           <div className="glass-card mb-5 rounded-3xl p-6 text-center">
-            <p className="text-sm font-bold text-violet">انتهت اللعبة</p>
+            <p className="text-sm font-bold text-violet-text">انتهت اللعبة</p>
             {winners.length > 0 ? (
               <p className="mt-2 text-2xl font-extrabold text-ivory">
                 {winners.length > 1 ? "تعادل بين: " : "الفائز: "}
@@ -295,7 +296,7 @@ function PlayerBoard() {
 
         {active && !isHeads && !isMafia ? (
           <div className="glass-card mb-5 rounded-3xl p-5 text-center">
-            <p className="text-xs font-bold text-violet">
+            <p className="text-xs font-bold text-violet-text">
               {active.category_ar} · {active.points} نقطة
             </p>
             <p className="mt-3 text-xl font-extrabold leading-relaxed text-ivory">{active.question_text}</p>
@@ -323,15 +324,29 @@ function PlayerBoard() {
             {!isBluff ? (
             <div className="mt-5">
               {buzzer ? (
-                <p className="rounded-2xl border border-violet/40 bg-violet/10 p-3 font-bold text-ivory">
-                  الجرس عند {buzzer.player_name}
+                <p className="rounded-[20px] border border-violet/50 bg-violet/16 p-4 font-display text-xl font-bold text-ivory">
+                  {me && buzzer.player_id === me.id ? "الجرس عندك! جاوب بصوت عالي." : `الجرس عند ${buzzer.player_name}`}
                 </p>
               ) : stateData.buzzer_open && me && !me.is_host ? (
-                <Button type="button" tone="primary" className="w-full min-h-16 text-lg" onClick={buzz} disabled={!canBuzz}>
-                  {buzzing ? "…" : "اضغط الجرس"}
-                </Button>
+                <div className="grid justify-items-center gap-3 pt-2">
+                  <Cradle hold style={{ padding: "0 18px" }}>
+                    <button
+                      type="button"
+                      onClick={buzz}
+                      disabled={!canBuzz}
+                      className="buzz-ring relative grid aspect-square w-[min(64vw,280px)] place-content-center justify-items-center gap-2 rounded-full bg-neon font-display text-[26px] font-bold text-on-neon shadow-[0_0_28px_#22d3ee4d,inset_0_-10px_0_#06b6d4] transition active:scale-[0.96] disabled:opacity-60"
+                    >
+                      <Glyph name="bell" className="size-14" />
+                      {buzzing ? "…" : "اضغط الجرس"}
+                    </button>
+                  </Cradle>
+                  <p className="text-[15px] text-mist">أول من يضغط يجاوب.</p>
+                </div>
               ) : (
-                <p className="text-sm text-muted">بانتظار فتح الجرس.</p>
+                <p className="inline-flex items-center gap-2 text-[15px] text-mist">
+                  <Glyph name="hourglass" className="size-5" />
+                  الجرس مغلق. يفتحه المضيف بعد قراءة السؤال.
+                </p>
               )}
               {buzzMessage ? <p className="mt-2 text-sm text-ivory">{buzzMessage}</p> : null}
             </div>
@@ -348,7 +363,7 @@ function PlayerBoard() {
               style={{ gridTemplateColumns: `repeat(${categories.length}, minmax(0, 1fr))` }}
             >
               {categories.map((cat) => (
-                <div key={cat} className="rounded-xl bg-violet/20 p-2 text-center text-xs font-extrabold text-ivory">
+                <div key={cat} className="grid min-h-11 place-items-center rounded-[10px] bg-violet/16 p-1.5 text-center text-[13px] font-semibold leading-[18px] text-ivory">
                   {cat}
                 </div>
               ))}
@@ -361,15 +376,15 @@ function PlayerBoard() {
                     <div
                       key={`${cat}-${points}`}
                       className={cx(
-                        "flex min-h-12 items-center justify-center rounded-xl border text-base font-extrabold",
+                        "flex min-h-11 items-center justify-center rounded-[10px] border text-[17px] font-bold tabular-nums",
                         isActive
-                          ? "border-neon bg-neon/20 text-ivory"
+                          ? "border-neon bg-neon text-on-neon shadow-glow-neon"
                           : q && !done
-                            ? "border-neon/40 bg-white/[0.04] text-neon"
-                            : "border-white/5 bg-white/[0.02] text-muted/30",
+                            ? "border-line bg-deep text-neon"
+                            : "border-dashed border-line bg-transparent text-faint",
                       )}
                     >
-                      {q && !done ? points : ""}
+                      {q && !done ? points : q ? <Glyph name="check" className="size-4" /> : ""}
                     </div>
                   );
                 }),
@@ -560,7 +575,7 @@ function BluffPlayerPanel({ roomId, activeId, phase, reveal, isPlayer }: BluffPl
             >
               <span>
                 {o.text}
-                {o.owner ? <span className="mr-2 text-xs text-violet">({o.owner})</span> : null}
+                {o.owner ? <span className="mr-2 text-xs text-violet-text">({o.owner})</span> : null}
               </span>
               <span className="font-extrabold">
                 {o.is_correct ? "✓ " : ""}
@@ -683,7 +698,7 @@ function OutsiderPlayerPanel({
 
   return (
     <section className="glass-card mb-5 rounded-3xl p-5 text-center">
-      <p className="text-xs font-bold text-violet">برة السالفة · الجولة {round}</p>
+      <p className="text-xs font-bold text-violet-text">برة السالفة · الجولة {round}</p>
 
       {phase === "discuss" && isPlayer && card ? (
         <div className="mt-3">
@@ -856,15 +871,21 @@ function HeadsPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
 
   return (
     <section className="glass-card mb-5 rounded-3xl p-5 text-center">
-      <p className="text-xs font-bold text-violet">هل تعرف</p>
+      <p className="text-xs font-bold text-violet-text">هل تعرف</p>
       <div className="mt-3 grid grid-cols-2 gap-3">
         <div className="rounded-2xl bg-white/[0.04] p-3">
-          <p className="text-xs text-muted">الفريق الأحمر</p>
-          <p className="text-2xl font-extrabold text-ivory">{scoreRed}</p>
+          <p className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-team-red">
+            <Glyph name="triangle" className="size-3" />
+            الفريق الأحمر
+          </p>
+          <p className="text-2xl font-bold tabular-nums text-ivory">{scoreRed}</p>
         </div>
         <div className="rounded-2xl bg-white/[0.04] p-3">
-          <p className="text-xs text-muted">الفريق الأزرق</p>
-          <p className="text-2xl font-extrabold text-ivory">{scoreBlue}</p>
+          <p className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-team-blue">
+            <Glyph name="circle" className="size-3" />
+            الفريق الأزرق
+          </p>
+          <p className="text-2xl font-bold tabular-nums text-ivory">{scoreBlue}</p>
         </div>
       </div>
       {me?.team_color ? <p className="mt-2 text-sm text-muted">أنت في {TEAM_NAMES[me.team_color] ?? ""}</p> : null}
@@ -874,7 +895,7 @@ function HeadsPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
           <p className="text-sm text-muted">
             المخمِّن: <span className="font-bold text-ivory">{guesser?.player_name ?? "—"}</span>
           </p>
-          <p className="mt-1 font-mono text-3xl font-extrabold text-neon">{secondsLeft !== null ? `${secondsLeft}s` : ""}</p>
+          <p dir="ltr" className="mt-1 text-3xl font-bold tabular-nums text-neon">{secondsLeft !== null ? `${secondsLeft}s` : ""}</p>
           {iAmGuesser ? (
             <p className="mt-4 rounded-2xl border border-violet/40 bg-violet/10 p-4 font-bold text-ivory">
               أنت المخمِّن! خمّن الكلمة من تلميحات زملائك.
@@ -1001,7 +1022,7 @@ function MafiaPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
 
   return (
     <section className="glass-card mb-5 rounded-3xl p-5 text-center">
-      <p className="text-xs font-bold text-violet">المافيا · الجولة {round || 1}</p>
+      <p className="text-xs font-bold text-violet-text">المافيا · الجولة {round || 1}</p>
 
       {!me?.started ? (
         <p className="mt-4 text-sm text-muted">انتظروا المضيف لبدء اللعبة.</p>

@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 import { Shell } from "@/components/shell";
-import { Button, Field, inputClass, cx, joinLink } from "@/components/ui";
+import { Button, Field, buttonBase, buttonTone, inputClass, cx, joinLink } from "@/components/ui";
+import { Egg, GameIcon, Glyph, playersText } from "@/components/brand";
+import { ShareRoom } from "@/components/share";
 import { QrCode } from "@/components/qr-code";
 import { ensureSession, supabase } from "@/lib/supabase";
 
@@ -96,14 +98,18 @@ function CreatePage() {
           .order("joined_at");
         if (cancelled) return;
         if (error) {
-          // Show the real reason on screen instead of an empty list.
-          setPlayersError(`تعذّر تحديث قائمة اللاعبين: ${error.message}`);
+          // Keep the technical reason for the developer, show a plain line to the host.
+          console.warn("room_players refresh failed", error);
+          setPlayersError("ما قدرنا نحدّث قائمة اللاعبين. نحاول مرة ثانية…");
           return;
         }
         setPlayers((data ?? []) as PlayerRow[]);
         setPlayersError(null);
       } catch (err) {
-        if (!cancelled) setPlayersError(`تعذّر تحديث قائمة اللاعبين: ${err instanceof Error ? err.message : String(err)}`);
+        if (!cancelled) {
+          console.warn("room_players refresh failed", err);
+          setPlayersError("ما قدرنا نحدّث قائمة اللاعبين. نحاول مرة ثانية…");
+        }
       }
     }
 
@@ -219,133 +225,164 @@ function CreatePage() {
   }
 
   if (room) {
+    const game = games?.find((g) => g.id === room.game_id);
+    const min = game?.min_players ?? 2;
+    const max = game?.max_players ?? 12;
+    const enough = players.length >= min;
+    const missing = Math.max(0, min - players.length);
     return (
       <Shell>
-        <section className="glass-card mx-auto mt-6 max-w-xl rounded-3xl p-6 text-center">
-          <p className="text-sm text-muted">رمز الغرفة</p>
-          <p className="mt-2 font-mono text-4xl font-extrabold tracking-[0.3em] text-neon">{room.room_code}</p>
-          <p className="mt-3 text-sm text-muted">شارك الرمز مع اللاعبين ليدخلوا من جوالاتهم.</p>
+        <div className="grid gap-8 lg:grid-cols-[1fr_400px] lg:items-start">
+          <section className="grid gap-5">
+            <div>
+              {game ? <p className="text-[13px] text-mist">{game.title_ar}</p> : null}
+              <h1 className="text-[30px] leading-10 lg:text-[40px] lg:leading-[52px]">الغرفة جاهزة. ادعوا اللاعبين.</h1>
+            </div>
 
-          <div className="mt-5 flex flex-col items-center gap-3">
-            <QrCode text={joinLink(room.room_code)} className="size-44" />
-            <p className="text-xs text-muted">امسح الـ QR من الجوال، أو افتح الرابط:</p>
-            <a href={joinLink(room.room_code)} className="break-all text-sm font-bold text-neon underline-offset-4 hover:underline">
+            <div className="rounded-[28px] border border-line bg-deep p-5 sm:p-6">
+              <div className="mb-4 flex items-baseline justify-between">
+                <h2 className="text-[19px]">اللاعبون</h2>
+                <span className="text-[13px] text-mist">
+                  {players.length} من {max}
+                </span>
+              </div>
+              {playersError ? (
+                <p role="alert" className="mb-3 flex items-center gap-1.5 text-[13px] font-semibold text-wrong">
+                  <Glyph name="alert" className="size-4" />
+                  {playersError}
+                </p>
+              ) : null}
+              <ul className="grid grid-cols-[repeat(auto-fill,minmax(76px,1fr))] gap-x-2 gap-y-4">
+                {players.map((p, i) => (
+                  <li key={p.id} className="rise grid justify-items-center gap-1.5">
+                    <Egg name={p.player_name} index={i + 1} host={p.is_host} />
+                    <span className="max-w-full truncate text-sm font-semibold text-ivory">{p.player_name}</span>
+                  </li>
+                ))}
+                {Array.from({ length: missing }, (_, i) => (
+                  <li key={`empty-${i}`} className="grid justify-items-center gap-1.5">
+                    <Egg empty />
+                    <span className="text-sm text-faint">بانتظار لاعب</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {room.status === "playing" ? (
+              <div className="grid gap-3">
+                <p className="flex items-center gap-2 rounded-[14px] border border-correct/50 bg-correct-fill/15 p-4 text-[15px] font-semibold text-ivory">
+                  <Glyph name="check" className="size-5 text-correct" />
+                  بدأت اللعبة. تابعوا الشاشة الكبيرة.
+                </p>
+                <Link to="/host/$code" params={{ code: room.room_code }} className={cx(buttonBase, buttonTone("primary"), "min-h-14 w-full text-[17px]")}>
+                  افتحوا شاشة المضيف
+                </Link>
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                <p className={cx("flex items-center gap-2 text-[15px]", enough ? "text-ivory" : "text-mist")}>
+                  <Glyph name={enough ? "check" : "info"} className={cx("size-5", enough ? "text-correct" : "text-neon")} />
+                  {enough
+                    ? `جاهزون للبدء. الحد الأقصى ${max} لاعبًا.`
+                    : `تحتاجون ${min} لاعبين على الأقل. باقي ${missing === 1 ? "لاعب واحد" : `${missing} لاعبين`}.`}
+                </p>
+                {startError ? (
+                  <p role="alert" className="flex items-center gap-1.5 text-[13px] font-semibold text-wrong">
+                    <Glyph name="alert" className="size-4" />
+                    {startError}
+                  </p>
+                ) : null}
+                <Button type="button" tone="primary" className="min-h-14 w-full text-[17px] lg:w-auto lg:px-10" disabled={!enough || starting} onClick={startGame}>
+                  {starting ? "جارٍ البدء…" : "ابدأ اللعبة"}
+                </Button>
+              </div>
+            )}
+          </section>
+
+          <aside aria-label="رمز الغرفة" className="grid justify-items-center gap-3 rounded-[28px] border border-line bg-deep p-6 text-center">
+            <span className="text-[13px] text-mist">رمز الغرفة</span>
+            <span className="room-code text-[36px] leading-[44px] text-neon">{room.room_code}</span>
+            <QrCode text={joinLink(room.room_code)} className="size-40" />
+            <span className="text-[13px] text-mist">امسحوا الرمز من الجوال، أو افتحوا الرابط:</span>
+            <a href={joinLink(room.room_code)} dir="ltr" className="break-all text-sm font-semibold text-neon underline-offset-4 hover:underline">
               {joinLink(room.room_code)}
             </a>
-          </div>
-
-          {room.status === "playing" ? (
-            <div className="mt-6 space-y-3">
-              <p className="rounded-2xl border border-emerald/40 bg-emerald/10 p-4 text-sm font-bold text-ivory">
-                بدأت اللعبة. تابع الشاشة الكبيرة.
-              </p>
-              <Link
-                to="/host/$code"
-                params={{ code: room.room_code }}
-                className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-neon px-5 text-sm font-bold text-night"
-              >
-                افتح شاشة المضيف
-              </Link>
-            </div>
-          ) : (
-            <div className="mt-6">
-              {(() => {
-                const game = games?.find((g) => g.id === room.game_id);
-                const min = game?.min_players ?? 2;
-                const max = game?.max_players ?? 12;
-                const enough = players.length >= min;
-                return (
-                  <>
-                    <p className="text-sm text-muted">
-                      {enough ? "جاهزون للبدء." : `تحتاج ${min} لاعبين على الأقل للبدء.`} الحد الأقصى {max}.
-                    </p>
-                    {startError ? <p className="mt-2 text-sm text-crimson">{startError}</p> : null}
-                    <Button
-                      type="button"
-                      tone="primary"
-                      className="mt-3 w-full"
-                      disabled={!enough || starting}
-                      onClick={startGame}
-                    >
-                      {starting ? "جارٍ البدء…" : "ابدأ اللعبة"}
-                    </Button>
-                  </>
-                );
-              })()}
-            </div>
-          )}
-
-          <h2 className="mt-6 text-right text-base font-extrabold text-ivory">اللاعبون ({players.length})</h2>
-          {playersError ? (
-            <p role="alert" className="mt-2 rounded-xl border border-crimson/40 bg-crimson/10 p-3 text-right text-sm text-ivory">
-              {playersError}
-            </p>
-          ) : null}
-          <ul className="mt-2 space-y-2 text-right">
-            {players.map((p) => (
-              <li key={p.id} className="flex items-center justify-between rounded-xl bg-white/[0.04] px-4 py-2 text-sm">
-                <span className="text-ivory">{p.player_name}</span>
-                {p.is_host ? <span className="text-xs font-bold text-violet">المضيف</span> : null}
-              </li>
-            ))}
-          </ul>
-
-          <Link to="/" className="mt-6 inline-flex min-h-11 items-center rounded-full border border-white/15 px-5 text-sm font-bold text-ivory">
-            العودة للرئيسية
-          </Link>
-        </section>
+            <ShareRoom code={room.room_code} />
+          </aside>
+        </div>
       </Shell>
     );
   }
 
   return (
     <Shell>
-      <section className="mx-auto mt-6 max-w-3xl">
-        <h1 className="text-2xl font-extrabold text-ivory">إنشاء غرفة</h1>
-        <p className="mt-2 text-sm text-muted">اختر اللعبة، واكتب اسمك، ثم افتح الغرفة.</p>
+      <section className="max-w-3xl">
+        <h1 className="text-[30px] leading-10 lg:text-[40px] lg:leading-[52px]">إنشاء غرفة</h1>
+        <p className="mt-1 text-[13px] leading-[22px] text-mist">اختاروا اللعبة، واكتبوا اسمكم، ثم افتحوا الغرفة.</p>
 
         {loadError ? (
-          <p className="mt-6 rounded-2xl border border-crimson/40 bg-crimson/10 p-4 text-sm text-ivory">{loadError}</p>
+          <p role="alert" className="mt-6 flex items-center gap-2 rounded-[14px] border border-wrong/60 bg-wrong-fill/15 p-4 text-[15px] text-ivory">
+            <Glyph name="alert" className="size-5 text-wrong" />
+            {loadError}
+          </p>
         ) : games === null ? (
-          <p className="mt-6 text-sm text-muted">جارٍ تحميل الألعاب…</p>
+          <p className="mt-6 text-[15px] text-mist">جارٍ تحميل الألعاب…</p>
         ) : (
-          <form onSubmit={createRoom} className="mt-6 space-y-6">
-            <div className="grid gap-3 sm:grid-cols-2">
-              {games.map((g) => (
-                <button
-                  key={g.id}
-                  type="button"
-                  onClick={() => setSelected(g.id)}
-                  aria-pressed={selected === g.id}
-                  className={cx(
-                    "glass-card rounded-2xl p-4 text-right transition",
-                    selected === g.id ? "border-neon/70 shadow-[0_0_0_3px_rgb(6_182_212/0.15)]" : "hover:border-neon/40",
-                  )}
-                >
-                  <span className="block text-base font-extrabold text-ivory">{g.title_ar}</span>
-                  <span className="mt-1 block text-sm leading-6 text-muted">{g.description_ar}</span>
-                  <span className="mt-2 block text-xs font-bold text-muted">
-                    👥 {g.min_players}–{g.max_players} لاعب
-                  </span>
-                </button>
-              ))}
+          <form onSubmit={createRoom} className="mt-6 grid gap-6">
+            <div role="radiogroup" aria-label="اللعبة" className="grid gap-2 sm:grid-cols-2">
+              {games.map((g) => {
+                const on = selected === g.id;
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    onClick={() => setSelected(g.id)}
+                    className={cx(
+                      "flex min-h-[76px] items-center gap-3 rounded-[14px] border px-4 py-3 text-start transition",
+                      on ? "border-neon bg-neon/12" : "border-line bg-glass hover:bg-glass-strong",
+                    )}
+                  >
+                    <GameIcon id={g.slug} size="sm" />
+                    <span className="grid min-w-0 flex-1 gap-0.5">
+                      <span className="font-display text-[17px] font-semibold leading-[26px] text-ivory">{g.title_ar}</span>
+                      <span className="inline-flex items-center gap-1 text-[13px] text-mist">
+                        <Glyph name="users" className="size-[15px]" />
+                        {playersText(g.min_players, g.max_players)}
+                      </span>
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className={cx("grid size-6 shrink-0 place-items-center rounded-full border-2", on ? "border-neon bg-neon text-on-neon" : "border-line-strong")}
+                    >
+                      {on ? <Glyph name="check" className="size-4" /> : null}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
-            <Field label="اسمك (المضيف)">
+            <Field label="اسمك" hint="يظهر للاعبين تحت بيضتك. بين حرفين و24 حرفًا.">
               <input
                 className={inputClass}
                 value={hostName}
                 onChange={(e) => setHostName(e.target.value)}
                 maxLength={24}
-                placeholder="اكتب اسمك"
+                placeholder="مثل: نورة"
                 autoComplete="nickname"
               />
             </Field>
 
-            {formError ? <p className="text-sm text-crimson">{formError}</p> : null}
+            {formError ? (
+              <p role="alert" className="flex items-center gap-1.5 text-[13px] font-semibold text-wrong">
+                <Glyph name="alert" className="size-4" />
+                {formError}
+              </p>
+            ) : null}
 
-            <Button type="submit" tone="primary" disabled={busy || !selected} className="w-full">
-              {busy ? "جارٍ الإنشاء…" : "افتح الغرفة"}
+            <Button type="submit" tone="primary" disabled={busy || !selected} className="min-h-14 w-full text-[17px] sm:w-auto sm:justify-self-start sm:px-10">
+              {busy ? "جارٍ الإنشاء…" : "افتحوا الغرفة"}
             </Button>
           </form>
         )}

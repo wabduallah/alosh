@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Shell } from "@/components/shell";
-import { Logo } from "@/components/logo";
 import { ShareSite } from "@/components/share";
-import { Button, cx, inputClass } from "@/components/ui";
+import { Button, buttonBase, buttonTone, cx } from "@/components/ui";
+import { CodeCells, Egg, GameIcon, Glyph, MoonArc, playersText } from "@/components/brand";
 
 /** Room codes use this alphabet only (no I, O, 0, 1), matching the join page. */
 const CODE_PATTERN = /^[A-HJ-NP-Z2-9]{5}$/;
@@ -23,7 +23,7 @@ type Category = "words" | "talk" | "strategy" | "classic";
 type GameCard = {
   id: string;
   title: string;
-  icon: string;
+  /** "min-max" players. Shown in words: «من 2 إلى 12 لاعبًا». */
   players: string;
   category: Category;
   blurb: string;
@@ -38,7 +38,6 @@ const GAMES: GameCard[] = [
   {
     id: "tactical-grid",
     title: "تحديات العش",
-    icon: "🎲",
     players: "2-12",
     category: "classic",
     blurb: "لوحة أسئلة على الشاشة الكبيرة. اختاروا التصنيفات وتنافسوا على النقاط.",
@@ -57,7 +56,6 @@ const GAMES: GameCard[] = [
   {
     id: "bluff-master",
     title: "سيد الخداع",
-    icon: "🎭",
     players: "3-8",
     category: "strategy",
     blurb: "اكتبوا إجابات مزيفة مقنعة، وصوّتوا على الإجابة الحقيقية. من يخدع أكثر يكسب.",
@@ -76,7 +74,6 @@ const GAMES: GameCard[] = [
   {
     id: "heads-up",
     title: "هل تعرف",
-    icon: "🧠",
     players: "2-10",
     category: "words",
     blurb: "اختاروا فريقين. مخمِّن يتوسط الفريق، وزملاؤه يصفون الكلمة دون أن يقولوها.",
@@ -96,7 +93,6 @@ const GAMES: GameCard[] = [
   {
     id: "word-guess",
     title: "خمّن الكلمة",
-    icon: "🔠",
     players: "1-10",
     category: "words",
     blurb: "كلمة خماسية في ست محاولات، والجميع يتابع النتيجة على الشاشة.",
@@ -105,7 +101,6 @@ const GAMES: GameCard[] = [
   {
     id: "outsider",
     title: "برة السالفة",
-    icon: "👀",
     players: "3-8",
     category: "talk",
     blurb: "لاعب واحد لا يعرف الموضوع. هل تكشفه قبل أن يكشف نفسه؟",
@@ -124,7 +119,6 @@ const GAMES: GameCard[] = [
   {
     id: "secret-code",
     title: "الأسماء السرية",
-    icon: "🕵️",
     players: "4-10",
     category: "strategy",
     blurb: "فريقان يتنافسان بتلميحات كلمة واحدة لكشف الكلمات.",
@@ -133,7 +127,6 @@ const GAMES: GameCard[] = [
   {
     id: "one-word",
     title: "كلمة واحدة",
-    icon: "🤝",
     players: "3-8",
     category: "words",
     blurb: "تلميح واحد فقط لكل كلمة، وإذا تكررت التلميحات تُلغى.",
@@ -142,7 +135,6 @@ const GAMES: GameCard[] = [
   {
     id: "social-mafia",
     title: "المافيا",
-    icon: "🔪",
     players: "5-14",
     category: "strategy",
     blurb: "المواطنون ضد المافيا. من يكذب ومن يصدق؟",
@@ -171,17 +163,22 @@ const FILTERS: Array<{ key: "all" | Category; label: string }> = [
 const STEPS = [
   {
     title: "أنشئوا غرفة",
-    text: "اختاروا اللعبة من الأسفل، وتظهر لكم شاشة المضيف مع رمز الغرفة.",
+    text: "اختاروا اللعبة، وتظهر شاشة المضيف مع رمز الغرفة.",
   },
   {
     title: "انضموا من جوالاتكم",
-    text: "امسحوا رمز QR أو اكتبوا رمز الغرفة، ولا حاجة لتسجيل.",
+    text: "امسحوا رمز QR أو اكتبوا رمز الغرفة، بدون تسجيل.",
   },
   {
     title: "ابدأوا السهرة",
-    text: "كل لاعب يلعب من جواله، والنتيجة والوقت يظهران على الشاشة الكبيرة.",
+    text: "كل لاعب يلعب من جواله، والنتيجة على الشاشة الكبيرة.",
   },
 ];
+
+function range(game: GameCard) {
+  const [min, max] = game.players.split("-").map((n) => Number(n));
+  return { min, max };
+}
 
 function Home() {
   return (
@@ -194,7 +191,8 @@ function Home() {
   );
 }
 
-function JoinByCode() {
+/** Join by code. On the phone this is the first thing on the page. */
+function JoinByCode({ compact = false }: { compact?: boolean }) {
   const navigate = useNavigate();
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -203,101 +201,182 @@ function JoinByCode() {
     event.preventDefault();
     const normalized = code.trim().toUpperCase();
     if (!CODE_PATTERN.test(normalized)) {
-      setError("الرمز يتكون من 5 حروف أو أرقام، مثل ABC23.");
+      setError("الرمز يتكون من 5 حروف أو أرقام، مثل K7Q4M.");
       return;
     }
     setError(null);
     navigate({ to: "/join/$code", params: { code: normalized } });
   }
 
-  return (
-    <form onSubmit={submit} noValidate className="glass-card mx-auto mt-8 max-w-md rounded-3xl p-4 text-right">
-      <label htmlFor="join-code" className="block text-sm font-bold text-ivory">
-        عندكم رمز غرفة؟
-      </label>
-      <div className="mt-3 flex gap-2">
-        <input
-          id="join-code"
+  const inputId = compact ? "join-code-row" : "join-code";
+  const describedBy = error ? `${inputId}-error` : `${inputId}-hint`;
+
+  if (compact) {
+    return (
+      <form onSubmit={submit} noValidate className="inline-flex flex-wrap items-center gap-3 rounded-full border border-line bg-deep py-2.5 ps-5 pe-2.5">
+        <label htmlFor={inputId} className="text-[15px] font-semibold text-ivory">
+          عندكم رمز؟
+        </label>
+        <CodeCells
+          id={inputId}
+          compact
           value={code}
-          onChange={(e) => {
-            setCode(e.target.value.toUpperCase());
+          onChange={(next) => {
+            setCode(next);
             if (error) setError(null);
           }}
-          maxLength={5}
-          autoComplete="off"
-          autoCapitalize="characters"
-          spellCheck={false}
-          placeholder="ABC23"
-          inputMode="text"
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? "join-code-error" : "join-code-hint"}
-          className={cx(inputClass, "font-mono text-lg tracking-[0.3em] uppercase")}
+          invalid={!!error}
+          describedBy={describedBy}
         />
-        <Button type="submit" tone="violet" className="shrink-0">
+        <Button type="submit" tone="secondary">
           انضم
         </Button>
+        {error ? (
+          <p id={`${inputId}-error`} role="alert" className="basis-full text-[13px] font-semibold text-wrong">
+            {error}
+          </p>
+        ) : (
+          <span id={`${inputId}-hint`} className="sr-only">
+            الرمز يظهر على شاشة المضيف.
+          </span>
+        )}
+      </form>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} noValidate className="grid gap-3 rounded-[28px] border border-line bg-deep p-4">
+      <label htmlFor={inputId} className="text-[15px] font-semibold text-ivory">
+        عندكم رمز غرفة؟
+      </label>
+      <div className="flex justify-center">
+        <CodeCells
+          id={inputId}
+          value={code}
+          onChange={(next) => {
+            setCode(next);
+            if (error) setError(null);
+          }}
+          invalid={!!error}
+          describedBy={describedBy}
+        />
       </div>
+      <Button type="submit" tone="primary" className="min-h-16 w-full text-[19px]">
+        انضم
+      </Button>
       {error ? (
-        <p id="join-code-error" role="alert" className="mt-2 text-sm text-crimson">
+        <p id={`${inputId}-error`} role="alert" className="flex items-center justify-center gap-1.5 text-[13px] font-semibold text-wrong">
+          <Glyph name="alert" className="size-4" />
           {error}
         </p>
       ) : (
-        <p id="join-code-hint" className="mt-2 text-xs text-muted">
-          الرمز يظهر على شاشة المضيف، أو امسحوا رمز QR.
+        <p id={`${inputId}-hint`} className="text-center text-[13px] leading-[22px] text-mist">
+          الرمز على شاشة المضيف، أو امسحوا رمز QR.
         </p>
       )}
     </form>
   );
 }
 
+/** Home hero figure: one TV in the middle, phones around it on the hilal. */
+function NestScene() {
+  const tiles = "hhhhhaaxddaxxxxxxdxxxxxdx".split("");
+  const phones: Array<[string, number]> = [
+    ["سارة", 2],
+    ["فهد", 3],
+    ["نورة", 4],
+    ["خالد", 5],
+  ];
+  return (
+    <div className="scene" role="img" aria-label="تلفزيون في الوسط وأربعة جوالات حوله على هلال العش">
+      <div className="scene-tv">
+        {tiles.map((c, i) => (
+          <i key={i} className={c === "h" ? "h" : i === 7 ? "a" : c === "d" ? "d" : ""} />
+        ))}
+      </div>
+      <div className="scene-stand" />
+      <MoonArc className="scene-moon" />
+      <div className="scene-phones">
+        {phones.map(([name, index]) => (
+          <div key={name} className="scene-phone">
+            <Egg name={name} index={index} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const TAGS = ["بدون تسجيل", "بدون تحميل", "حتى 14 لاعبًا", "مجانًا"];
+
+/**
+ * The device decides the first action: on the phone a guest is usually joining,
+ * on a computer a host is usually creating a room.
+ */
 function Hero() {
   return (
-    <section className="mx-auto max-w-3xl pt-8 text-center sm:pt-14">
-      <h1 className="sr-only">العش</h1>
-      <Logo size="lg" />
-      <p className="mt-6 text-lg font-extrabold text-ivory sm:text-2xl">حيث تلتقي التحديات بالمتعة الجماعية</p>
-      <p className="mx-auto mt-3 max-w-xl text-base leading-8 text-muted">
-        تلفزيون واحد في الوسط، وجوالاتكم حواليه. بدون تسجيل وبدون تحميل، افتحوا الغرفة وابدأوا السهرة.
-      </p>
+    <section className="grid gap-6 pt-2 lg:grid-cols-[1.05fr_1fr] lg:items-center lg:gap-16 lg:pt-12">
+      <div className="grid gap-4">
+        <h1 className="text-[38px] leading-[48px] lg:text-[56px] lg:leading-[68px]">حيث تلتقي التحديات بالمتعة الجماعية</h1>
+        <p className="max-w-xl text-[17px] leading-[31px] text-mist lg:text-[19px] lg:leading-[34px]">
+          تلفزيون واحد في الوسط، وجوالاتكم حواليه. بدون تسجيل وبدون تحميل.
+        </p>
 
-      <div className="mt-7 flex flex-wrap justify-center gap-3">
-        <Link to="/play" search={{ game: "" }}>
-          <Button tone="primary">إنشاء غرفة</Button>
-        </Link>
-        <a
-          href="#games"
-          className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] px-5 text-sm font-bold text-ivory transition hover:border-neon/60"
-        >
-          استعرض الألعاب
-        </a>
+        {/* Phone and tablet: join first, then create. */}
+        <div className="grid gap-3 lg:hidden">
+          <JoinByCode />
+          <div className="flex items-center gap-3 text-[13px] text-faint before:h-px before:flex-1 before:bg-line after:h-px after:flex-1 after:bg-line">
+            أو
+          </div>
+          <Link to="/play" search={{ game: "" }} className={cx(buttonBase, buttonTone("secondary"), "min-h-14 w-full text-[17px]")}>
+            إنشاء غرفة
+          </Link>
+        </div>
+
+        {/* Computer: create first, join as a slim row. */}
+        <div className="hidden gap-4 lg:grid">
+          <div className="flex flex-wrap gap-3">
+            <Link to="/play" search={{ game: "" }} className={cx(buttonBase, buttonTone("primary"), "min-h-14 px-7 text-[17px]")}>
+              إنشاء غرفة
+            </Link>
+            <a href="#games" className={cx(buttonBase, buttonTone("outline"), "min-h-14 px-7 text-[17px]")}>
+              استعرضوا الألعاب
+            </a>
+          </div>
+          <JoinByCode compact />
+        </div>
+
+        <ul className="flex flex-wrap gap-2">
+          {TAGS.map((tag) => (
+            <li key={tag} className="inline-flex min-h-[30px] items-center rounded-full border border-line px-3 text-[13px] text-mist">
+              {tag}
+            </li>
+          ))}
+        </ul>
       </div>
-
-      <JoinByCode />
-
-      <ul className="mt-7 flex flex-wrap justify-center gap-2 text-xs text-muted">
-        <li className="rounded-full border border-white/10 px-3 py-1">بدون تسجيل</li>
-        <li className="rounded-full border border-white/10 px-3 py-1">بدون تحميل</li>
-        <li className="rounded-full border border-white/10 px-3 py-1">حتى 14 لاعبًا</li>
-        <li className="rounded-full border border-white/10 px-3 py-1">مجانًا</li>
-      </ul>
+      <div className="hidden sm:block">
+        <NestScene />
+      </div>
     </section>
   );
 }
 
 function HowItWorks() {
   return (
-    <section aria-labelledby="how-title" className="mx-auto mt-14 max-w-5xl">
-      <h2 id="how-title" className="mb-4 px-1 text-xl font-extrabold text-ivory">
+    <section id="how" aria-labelledby="how-title" className="mt-12 scroll-mt-24 lg:mt-16">
+      <h2 id="how-title" className="mb-5 text-2xl lg:text-[28px]">
         كيف تبدأ؟
       </h2>
-      <ol className="grid gap-4 sm:grid-cols-3">
+      <ol className="grid gap-6 lg:grid-cols-3 lg:gap-8">
         {STEPS.map((step, index) => (
-          <li key={step.title} className="glass-card rounded-3xl p-5">
-            <span className="grid size-9 place-items-center rounded-full bg-neon/15 text-sm font-extrabold text-neon">
+          <li key={step.title} className="step-line relative grid grid-cols-[40px_1fr] gap-3 lg:grid-cols-1">
+            <span className="relative z-[1] grid size-10 place-items-center rounded-full border border-neon/40 bg-neon/12 text-base font-bold text-neon">
               {index + 1}
             </span>
-            <h3 className="mt-4 text-base font-extrabold text-ivory">{step.title}</h3>
-            <p className="mt-2 text-sm leading-7 text-muted">{step.text}</p>
+            <div>
+              <h3 className="mt-1.5 mb-1 text-[19px] leading-7">{step.title}</h3>
+              <p className="text-[15px] leading-[27px] text-mist">{step.text}</p>
+            </div>
           </li>
         ))}
       </ol>
@@ -314,17 +393,17 @@ function Games() {
   );
 
   return (
-    <section id="games" aria-labelledby="games-title" className="mx-auto mt-14 max-w-5xl scroll-mt-6">
-      <div className="mb-4 px-1">
-        <h2 id="games-title" className="text-xl font-extrabold text-ivory">
+    <section id="games" aria-labelledby="games-title" className="mt-12 scroll-mt-24 lg:mt-16">
+      <div className="mb-4 flex items-baseline justify-between gap-3">
+        <h2 id="games-title" className="text-2xl lg:text-[28px]">
           الألعاب
         </h2>
-        <p className="mt-1 text-sm text-muted">
-          {liveCount} متاحة الآن · {GAMES.length - liveCount} قريبًا
+        <p className="text-[13px] text-mist">
+          {liveCount} متاحة الآن، و{GAMES.length - liveCount} قريبًا
         </p>
       </div>
 
-      <div role="group" aria-label="تصفية الألعاب" className="mb-5 flex gap-2 overflow-x-auto pb-1">
+      <div role="group" aria-label="تصفية الألعاب" className="no-scrollbar mb-4 flex gap-2 overflow-x-auto pb-1">
         {FILTERS.map((item) => {
           const active = filter === item.key;
           return (
@@ -334,8 +413,8 @@ function Games() {
               aria-pressed={active}
               onClick={() => setFilter(item.key)}
               className={cx(
-                "min-h-10 shrink-0 rounded-full border px-4 text-sm font-bold transition",
-                active ? "border-neon bg-neon/10 text-neon" : "border-white/10 text-muted hover:text-ivory",
+                "min-h-11 shrink-0 rounded-full border px-4 text-[15px] font-semibold transition",
+                active ? "border-neon bg-neon/12 text-neon" : "border-line-strong text-mist hover:text-ivory",
               )}
             >
               {item.label}
@@ -344,7 +423,15 @@ function Games() {
         })}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Phone: rows that open the rules sheet. */}
+      <div className="grid gap-2 sm:hidden">
+        {visible.map((game) => (
+          <GameRow key={game.id} game={game} onOpen={() => setSheetGame(game)} />
+        ))}
+      </div>
+
+      {/* Tablet and computer: cards. */}
+      <div className="hidden gap-4 sm:grid sm:grid-cols-2 lg:grid-cols-3">
         {visible.map((game) => (
           <GameTile key={game.id} game={game} onHowTo={() => setSheetGame(game)} />
         ))}
@@ -352,8 +439,49 @@ function Games() {
 
       <HowToSheet game={sheetGame} onClose={() => setSheetGame(null)} />
 
-      {visible.length === 0 ? <p className="mt-6 text-center text-sm text-muted">لا توجد ألعاب في هذا التصنيف بعد.</p> : null}
+      {visible.length === 0 ? <p className="mt-6 text-center text-[15px] text-mist">ما فيه ألعاب في هذا التصنيف بعد.</p> : null}
     </section>
+  );
+}
+
+function GameMeta({ game }: { game: GameCard }) {
+  const { min, max } = range(game);
+  return (
+    <span className="flex flex-wrap gap-x-3 gap-y-1 text-[13px] leading-[22px] text-mist">
+      <span className="inline-flex items-center gap-1">
+        <Glyph name="users" className="size-[15px]" />
+        {playersText(min, max)}
+      </span>
+      {game.live && game.howTo ? (
+        <span className="inline-flex items-center gap-1">
+          <Glyph name="clock" className="size-[15px]" />
+          {game.howTo.minutes}
+        </span>
+      ) : (
+        <span>قريبًا</span>
+      )}
+    </span>
+  );
+}
+
+function GameRow({ game, onOpen }: { game: GameCard; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={game.live ? onOpen : undefined}
+      aria-disabled={game.live ? undefined : true}
+      className={cx(
+        "flex min-h-[76px] w-full items-center gap-3 rounded-[14px] border px-4 py-3 text-start",
+        game.live ? "border-line bg-glass hover:bg-glass-strong" : "cursor-default border-dashed border-line-strong",
+      )}
+    >
+      <GameIcon id={game.id} size="sm" soon={!game.live} />
+      <span className="grid min-w-0 flex-1 gap-0.5">
+        <span className={cx("font-display text-[17px] font-semibold leading-[26px]", game.live ? "text-ivory" : "text-mist")}>{game.title}</span>
+        <GameMeta game={game} />
+      </span>
+      {game.live ? <Glyph name="chevron" className="size-5 text-faint" /> : null}
+    </button>
   );
 }
 
@@ -361,41 +489,34 @@ function GameTile({ game, onHowTo }: { game: GameCard; onHowTo: () => void }) {
   return (
     <article
       className={cx(
-        "glass-card flex flex-col gap-3 rounded-3xl p-5 transition",
-        game.live ? "hover:border-neon/60" : "opacity-70",
+        "flex flex-col gap-3 rounded-[20px] border p-6",
+        game.live ? "border-line bg-deep" : "border-dashed border-line-strong",
       )}
     >
-      <div className="flex items-center justify-between">
-        <span className="text-3xl" aria-hidden="true">
-          {game.icon}
-        </span>
-        <span className="rounded-full bg-white/[0.05] px-3 py-1 text-xs font-bold text-muted">
-          👥 {game.players} لاعب
-        </span>
+      <div className="flex items-start justify-between gap-3">
+        <GameIcon id={game.id} soon={!game.live} />
+        {game.live ? null : (
+          <span className="inline-flex min-h-7 items-center rounded-full border border-dashed border-line-strong px-2.5 text-[13px] text-mist">قريبًا</span>
+        )}
       </div>
-      <h3 className="text-lg font-extrabold text-ivory">{game.title}</h3>
-      <p className="flex-1 text-sm leading-7 text-muted">{game.blurb}</p>
+      <h3 className={cx("text-[21px] leading-[30px] font-semibold", game.live ? "text-ivory" : "text-mist")}>{game.title}</h3>
+      <GameMeta game={game} />
+      <p className="flex-1 text-[15px] leading-[27px] text-mist">{game.blurb}</p>
       {game.live ? (
         <div className="mt-1 grid grid-cols-2 gap-2">
-          <Button tone="glass" onClick={onHowTo} className="w-full px-3">
+          <Button tone="quiet" onClick={onHowTo} className="w-full px-3">
             كيف تُلعب؟
           </Button>
-          <Link to="/play" search={{ game: game.id }}>
-            <Button tone="violet" className="w-full px-3">
-              ابدأ الغرفة
-            </Button>
+          <Link to="/play" search={{ game: game.id }} className={cx(buttonBase, buttonTone("secondary"), "w-full px-3")}>
+            ابدأ الغرفة
           </Link>
         </div>
-      ) : (
-        <span className="mt-1 inline-flex min-h-11 items-center justify-center rounded-full border border-white/10 text-sm font-bold text-muted">
-          قريبًا
-        </span>
-      )}
+      ) : null}
     </article>
   );
 }
 
-/** Bottom sheet with the short rules of one game. Closes on Escape or a tap outside. */
+/** Bottom sheet on the phone, a centred window from 640px. Closes on Escape or a tap outside. */
 function HowToSheet({ game, onClose }: { game: GameCard | null; onClose: () => void }) {
   useEffect(() => {
     if (!game) return;
@@ -410,51 +531,46 @@ function HowToSheet({ game, onClose }: { game: GameCard | null; onClose: () => v
   const rules = game.howTo;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-night/70 sm:items-center sm:p-4"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-night/70 sm:items-center sm:p-6" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="howto-title"
         onClick={(event) => event.stopPropagation()}
-        className="glass-card max-h-[85vh] w-full overflow-y-auto rounded-t-3xl p-6 sm:max-w-lg sm:rounded-3xl"
+        className="sheet-up max-h-[88vh] w-full overflow-y-auto rounded-t-[28px] border border-b-0 border-line bg-deep px-6 pt-2.5 pb-[max(24px,env(safe-area-inset-bottom))] shadow-lift sm:max-w-lg sm:rounded-[28px] sm:border-b sm:pt-6"
       >
-        <div className="flex items-start justify-between gap-3">
-          <h3 id="howto-title" className="text-xl font-extrabold text-ivory">
-            <span aria-hidden="true">{game.icon}</span> {game.title}
+        <div aria-hidden="true" className="mx-auto mb-4 h-[5px] w-10 rounded-full bg-line-strong sm:hidden" />
+        <div className="flex items-center gap-3">
+          <GameIcon id={game.id} size="sm" />
+          <h3 id="howto-title" className="text-2xl">
+            {game.title}
           </h3>
           <button
             type="button"
             onClick={onClose}
             aria-label="إغلاق"
-            className="grid min-h-11 min-w-11 place-items-center rounded-full border border-white/10 text-ivory hover:border-neon/60"
+            className="ms-auto grid size-12 place-items-center rounded-full border border-line bg-glass text-ivory hover:border-line-strong"
           >
-            ✕
+            <Glyph name="x" />
           </button>
         </div>
 
-        <p className="mt-4 text-base leading-8 text-ivory">{rules.goal}</p>
-        <p className="mt-2 text-sm text-muted">
-          المدة التقريبية: <span className="font-bold text-ivory">{rules.minutes}</span>
+        <p className="mt-4 text-base leading-[29px] text-ivory">{rules.goal}</p>
+        <p className="mt-1 text-[13px] text-mist">
+          المدة التقريبية: <span className="font-semibold text-ivory">{rules.minutes}</span>
         </p>
 
-        <ol className="mt-5 grid gap-3">
+        <ol className="mt-4 grid gap-3">
           {rules.steps.map((step, index) => (
-            <li key={step} className="flex gap-3 text-sm leading-7 text-muted">
-              <span className="grid size-7 shrink-0 place-items-center rounded-full bg-neon/15 text-xs font-extrabold text-neon">
-                {index + 1}
-              </span>
+            <li key={step} className="flex gap-3 text-[15px] leading-[27px] text-mist">
+              <span className="grid size-7 shrink-0 place-items-center rounded-full bg-neon/12 text-[13px] font-bold text-neon">{index + 1}</span>
               <span>{step}</span>
             </li>
           ))}
         </ol>
 
-        <Link to="/play" search={{ game: game.id }} className="mt-6 block">
-          <Button tone="violet" className="w-full">
-            ابدأ الغرفة
-          </Button>
+        <Link to="/play" search={{ game: game.id }} className={cx(buttonBase, buttonTone("primary"), "mt-6 min-h-14 w-full text-[17px]")}>
+          ابدأ الغرفة
         </Link>
       </div>
     </div>
@@ -463,14 +579,14 @@ function HowToSheet({ game, onClose }: { game: GameCard | null; onClose: () => v
 
 function CallToAction() {
   return (
-    <section className="mx-auto mt-16 max-w-3xl rounded-3xl border border-white/10 bg-white/[0.03] p-6 text-center sm:p-8">
-      <h2 className="text-xl font-extrabold text-ivory">جاهزون للسهرة؟</h2>
-      <p className="mt-2 text-sm leading-7 text-muted">أنشئوا الغرفة الآن، وشاركوا الرمز مع أصدقائكم.</p>
-      <div className="mt-5 flex flex-wrap justify-center gap-3">
-        <Link to="/play" search={{ game: "" }}>
-          <Button tone="primary">إنشاء غرفة</Button>
+    <section className="mt-12 grid justify-items-center gap-3 rounded-[28px] border border-line bg-deep px-4 py-8 text-center lg:mt-16">
+      <h2 className="text-2xl lg:text-[28px]">جاهزون للسهرة؟</h2>
+      <p className="text-[17px] leading-[31px] text-mist">أنشئوا الغرفة الآن، وشاركوا الرمز مع أصدقائكم.</p>
+      <div className="mt-2 flex flex-wrap justify-center gap-3">
+        <Link to="/play" search={{ game: "" }} className={cx(buttonBase, buttonTone("primary"), "min-h-14 px-7 text-[17px]")}>
+          إنشاء غرفة
         </Link>
-        <ShareSite />
+        <ShareSite className="min-h-14 px-7 text-[17px]" />
       </div>
     </section>
   );

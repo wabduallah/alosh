@@ -1,57 +1,101 @@
 @import "tailwindcss";
 
 /*
- * Al3sh (العش) theme: "Dark Cosmic Cyber".
- *
- * Single source of truth for colour. Tailwind v4 is configured here (no
- * tailwind.config file): every token in @theme becomes a utility, so
- * `bg-neon`, `text-violet`, `border-emerald/40`, `bg-night` are generated from it.
+ * Al3sh (العش) identity: "a nest under the crescent" on the Moonhem night system.
+ * The full brand book lives in the «هوية العش» design system; values here mirror its tokens.json.
  *
  * Rules:
- *  - Backgrounds are dark. Text on dark is ivory or muted.
- *  - Accents: cyan (neon) for active state and glow, violet for secondary.
- *  - Answer states only: emerald = correct, crimson = wrong.
- *  - Warm metallic and yellow hues are not part of this theme.
+ *  - Grounds are night. Text is ivory (primary), mist (secondary), faint (tertiary only).
+ *  - neon = the action and the active state. Text on a neon fill is on-neon, never white.
+ *  - violet = the moment that belongs to a player. As text use violet-text; as a fill use violet-fill.
+ *  - correct / wrong are for answers and errors only, always with an icon and a word.
+ *  - No gold or yellow anywhere.
  */
-@theme {
-  --font-sans: "Tajawal", "Cairo", "IBM Plex Sans Arabic", system-ui, sans-serif;
-  --font-display: "Fraunces", "Cairo", serif;
+@theme static {
+  --font-sans: "Readex Pro", "Tajawal", system-ui, sans-serif;
+  --font-display: "Marhey", "Readex Pro", system-ui, sans-serif;
 
-  /* Surfaces, darkest to lightest. */
-  --color-night: #090d16; /* Page background */
-  --color-abyss: #0b1120; /* Lower gradient stop */
-  --color-deep: #131b2e; /* Upper mesh-gradient highlight */
+  /* Grounds */
+  --color-night: #090d16;
+  --color-abyss: #0b1120;
+  --color-deep: #131b2e;
+  --color-glass: #ffffff0a;
+  --color-glass-strong: #ffffff14;
+  --color-line: #ffffff1a;
+  --color-line-strong: #64708a;
 
   /* Text */
-  --color-ivory: #e8eefb; /* Primary text */
-  --color-muted: #94a3b8; /* Secondary text, captions */
-  --color-ink: #090d16; /* Text on light surfaces only */
+  --color-ivory: #e8eefb;
+  --color-mist: #94a3b8;
+  --color-faint: #8592ab;
+  --color-ink: #090d16; /* text on light surfaces */
 
   /* Accents */
-  --color-neon: #06b6d4; /* Electric Cyan: active state, focus, glow */
-  --color-violet: #8b5cf6; /* Neon Violet: secondary accent */
+  --color-neon: #22d3ee;
+  --color-neon-deep: #06b6d4;
+  --color-on-neon: #090d16;
+  --color-violet: #8b5cf6;
+  --color-violet-text: #a78bfa;
+  --color-violet-fill: #7c3aed;
 
   /* Answer states */
-  --color-emerald: #10b981; /* Correct */
-  --color-crimson: #ef4444; /* Wrong */
+  --color-correct: #34d399;
+  --color-correct-fill: #10b981;
+  --color-wrong: #f87171;
+  --color-wrong-fill: #ef4444;
+
+  /* Teams */
+  --color-team-red: #fb7185;
+  --color-team-blue: #60a5fa;
+
+  /* Player eggs, by join order (9–14 repeat with speckles) */
+  --color-egg-1: #e8eefb;
+  --color-egg-2: #22d3ee;
+  --color-egg-3: #a78bfa;
+  --color-egg-4: #fb7185;
+  --color-egg-5: #60a5fa;
+  --color-egg-6: #5eead4;
+  --color-egg-7: #e879f9;
+  --color-egg-8: #ff8f7a;
+
+  /* Older names, kept so existing screens keep working */
+  --color-muted: #94a3b8;
+  --color-emerald: #10b981;
+  --color-crimson: #ef4444;
+
+  --shadow-glow-neon: 0 0 28px #22d3ee4d;
+  --shadow-glow-violet: 0 0 28px #8b5cf64d;
+  --shadow-lift: 0 24px 64px #000000a6;
 }
 
 @layer base {
   html {
     font-family: var(--font-sans);
     color-scheme: dark;
+    -webkit-text-size-adjust: 100%;
   }
   body {
     background-color: var(--color-night);
     color: var(--color-ivory);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    line-height: 1.3;
   }
   button,
   [role="button"] {
     cursor: pointer;
   }
   :focus-visible {
-    outline: 2px solid var(--color-neon);
-    outline-offset: 2px;
+    outline: none;
+    box-shadow:
+      0 0 0 2px var(--color-night),
+      0 0 0 4px var(--color-neon);
   }
 }
 
@@ -60,54 +104,223 @@
   color: var(--color-ink);
 }
 
-/* Page-level mesh gradient, shared by full pages and game stages. */
+/* The sky: the page ground on every screen. */
 .nest,
 .game-shell,
-.stage {
+.stage,
+.sky {
   background-color: var(--color-night);
   background-image:
-    radial-gradient(900px 420px at 110% -10%, color-mix(in srgb, var(--color-neon) 18%, transparent), transparent 60%),
-    radial-gradient(700px 360px at -10% 0%, color-mix(in srgb, var(--color-violet) 16%, transparent), transparent 62%),
-    linear-gradient(180deg, var(--color-night) 0%, var(--color-deep) 42%, var(--color-abyss) 100%);
+    radial-gradient(900px 420px at 110% -10%, #22d3ee24, transparent 60%),
+    radial-gradient(700px 360px at -10% 0%, #8b5cf621, transparent 62%),
+    linear-gradient(180deg, var(--color-night) 0%, var(--color-deep) 46%, var(--color-abyss) 100%);
   color: var(--color-ivory);
 }
 
-/* Cards: glassmorphism with a soft cyan edge. */
+/* Surfaces: depth by surface, not by shadow. No glow on hover. */
+.surface {
+  background: var(--color-deep);
+  border: 1px solid var(--color-line);
+}
 .glass-card,
 .neon-card {
-  background: rgb(255 255 255 / 0.03);
-  border: 1px solid rgb(255 255 255 / 0.08);
-  box-shadow: 0 0 24px rgb(6 182 212 / 0.1);
-  backdrop-filter: blur(14px);
-  transition:
-    border-color 180ms ease,
-    transform 180ms ease,
-    box-shadow 180ms ease;
+  background: var(--color-deep);
+  border: 1px solid var(--color-line);
 }
-
-.glass-card:hover,
-.neon-card:hover {
-  border-color: rgb(6 182 212 / 0.45);
-  box-shadow: 0 0 28px rgb(6 182 212 / 0.2);
-}
-
 .glass {
-  background: rgb(255 255 255 / 0.04);
-  border: 1px solid rgb(255 255 255 / 0.1);
-  backdrop-filter: blur(14px);
+  background: var(--color-glass);
+  border: 1px solid var(--color-line);
 }
 
-/* Answer result states. */
+/* Room code: Latin, wide, the only tracked text. */
+.room-code {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  font-variation-settings: "HEXP" 100;
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Player egg */
+.egg {
+  aspect-ratio: 5 / 6;
+  border-radius: 50% 50% 50% 50% / 58% 58% 42% 42%;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  color: var(--color-night);
+  font-weight: 700;
+  line-height: 1;
+}
+.egg-speckled {
+  background-image:
+    radial-gradient(circle at 28% 34%, #090d1633 0 2.5px, transparent 3px),
+    radial-gradient(circle at 66% 26%, #090d1633 0 2px, transparent 2.5px),
+    radial-gradient(circle at 58% 70%, #090d1633 0 3px, transparent 3.5px),
+    radial-gradient(circle at 30% 72%, #090d1633 0 1.8px, transparent 2.3px);
+}
+
+/* Cradle: the hilal under the one thing that matters on a screen. */
+.cradle-moon {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 6 / 1;
+  margin-top: 6px;
+  fill: var(--color-neon);
+  filter: drop-shadow(0 0 18px #22d3ee66);
+}
+.cradle-hold .cradle-moon {
+  aspect-ratio: 12 / 5;
+  margin-top: -17%;
+}
+.cradle-soft .cradle-moon {
+  fill: #22d3ee33;
+  filter: none;
+}
+.cradle-violet .cradle-moon {
+  fill: var(--color-violet);
+  filter: drop-shadow(0 0 18px #8b5cf666);
+}
+
+/* Home hero figure: one TV, phones around it on the hilal. */
+.scene {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  aspect-ratio: 13 / 11.5;
+  margin-inline: auto;
+}
+.scene-tv {
+  position: absolute;
+  top: 0;
+  left: 16%;
+  right: 16%;
+  aspect-ratio: 16 / 9;
+  border-radius: 20px;
+  background: var(--color-abyss);
+  border: 2px solid var(--color-line-strong);
+  padding: 5%;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4%;
+  box-shadow: 0 0 60px #22d3ee26;
+}
+.scene-tv i {
+  border-radius: 6px;
+  background: var(--color-deep);
+  border: 1px solid var(--color-line);
+}
+.scene-tv i.h {
+  background: #8b5cf629;
+  border: 0;
+}
+.scene-tv i.a {
+  background: var(--color-neon);
+  box-shadow: 0 0 14px #22d3ee88;
+}
+.scene-tv i.d {
+  background: transparent;
+  border-style: dashed;
+}
+.scene-stand {
+  position: absolute;
+  top: 43.2%;
+  left: 45%;
+  width: 10%;
+  height: 4%;
+  background: var(--color-line-strong);
+  border-radius: 0 0 6px 6px;
+}
+.scene-moon {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 34%;
+  fill: var(--color-neon);
+  filter: drop-shadow(0 0 22px #22d3ee66);
+}
+.scene-phones {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 15%;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+.scene-phone {
+  width: 14%;
+  aspect-ratio: 9 / 17;
+  border-radius: 12px;
+  background: var(--color-deep);
+  border: 2px solid var(--color-line-strong);
+  display: grid;
+  place-items: center;
+}
+.scene-phone .egg {
+  width: 52%;
+  font-size: 12px;
+}
+.scene-phone:nth-child(1) {
+  transform: rotate(-12deg) translateY(-4%);
+}
+.scene-phone:nth-child(2) {
+  transform: rotate(-4deg) translateY(-16%);
+}
+.scene-phone:nth-child(3) {
+  transform: rotate(4deg) translateY(-16%);
+}
+.scene-phone:nth-child(4) {
+  transform: rotate(12deg) translateY(-4%);
+}
+
+/* Steps: a real sequence, joined by a line. */
+.step-line:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: 19px;
+  top: 44px;
+  bottom: -20px;
+  width: 2px;
+  background: linear-gradient(var(--color-neon), transparent);
+  opacity: 0.5;
+}
+@media (min-width: 64rem) {
+  .step-line:not(:last-child)::after {
+    inset-inline-start: 52px;
+    inset-inline-end: -20px;
+    top: 19px;
+    bottom: auto;
+    width: auto;
+    height: 2px;
+    background: linear-gradient(to left, var(--color-neon), transparent);
+  }
+}
+
+/* Answer result states. Always paired with ✓/✕ and a word in the markup. */
 .ok {
-  border-color: var(--color-emerald);
-  background: rgb(16 185 129 / 0.15);
+  border-color: var(--color-correct);
+  background: #10b98126;
 }
 .bad {
-  border-color: var(--color-crimson);
-  background: rgb(239 68 68 / 0.15);
+  border-color: var(--color-wrong);
+  background: #ef444426;
 }
 
-/* Motion. */
+/* Hide scrollbars on sideways chip rows. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Motion: answers a person's action or marks a moment. */
 @keyframes rise {
   from {
     opacity: 0;
@@ -121,6 +334,53 @@
 
 .rise {
   animation: rise 0.35s ease-out;
+}
+
+@keyframes sheet-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.sheet-up {
+  animation: sheet-up 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes buzz-ring {
+  from {
+    transform: scale(0.94);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.12);
+    opacity: 0;
+  }
+}
+.buzz-ring::before {
+  content: "";
+  position: absolute;
+  inset: -14px;
+  border-radius: 50%;
+  border: 3px solid #22d3ee80;
+  animation: buzz-ring 1.4s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+.code-caret::after {
+  content: "";
+  width: 2px;
+  height: 26px;
+  background: var(--color-neon);
+  animation: caret 1s steps(1) infinite;
 }
 
 /* Auto-advance bar: drains over the server's 2.5s reveal delay. */
@@ -159,10 +419,13 @@
 /* Respect the OS "reduce motion" setting: keep final states, drop movement. */
 @media (prefers-reduced-motion: reduce) {
   .rise,
+  .sheet-up,
   .cheer-rise,
   .neon-card,
   .glass-card,
-  .drain {
+  .drain,
+  .code-caret::after,
+  .buzz-ring::before {
     animation: none;
     transition: none;
   }

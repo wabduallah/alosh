@@ -1,12 +1,13 @@
-import { joinLink } from "@/components/ui";
+import { buttonBase, buttonTone, cx, joinLink } from "@/components/ui";
+import { Glyph } from "@/components/brand";
 
 /** WhatsApp share link with a prefilled message. Opens the app or WhatsApp Web. */
 function whatsappUrl(text: string) {
   return `https://wa.me/?text=${encodeURIComponent(text)}`;
 }
 
-const LINK_CLASS =
-  "inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-emerald/40 bg-emerald/10 px-5 text-sm font-bold text-ivory transition hover:border-emerald";
+/** Sharing is a quiet action: never the correct-answer green. */
+const LINK_CLASS = cx(buttonBase, buttonTone("quiet"));
 
 /** Sends the room code and join link to a WhatsApp chat. */
 export function ShareRoom({ code }: { code: string }) {
@@ -14,18 +15,20 @@ export function ShareRoom({ code }: { code: string }) {
   return (
     <div className="mb-4 flex justify-center">
       <a href={whatsappUrl(text)} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
-        أرسل الرابط عبر واتساب
+        <Glyph name="whatsapp" />
+        أرسلوا الرابط عبر واتساب
       </a>
     </div>
   );
 }
 
 /** Shares the home page with friends. */
-export function ShareSite() {
+export function ShareSite({ className }: { className?: string }) {
   const home = typeof window === "undefined" ? "https://al3sh.app" : window.location.origin;
   const text = `جرّبوا العش، ألعاب جماعية نلعبها من جوالاتنا، بدون تسجيل:\n${home}`;
   return (
-    <a href={whatsappUrl(text)} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
+    <a href={whatsappUrl(text)} target="_blank" rel="noopener noreferrer" className={cx(LINK_CLASS, className)}>
+      <Glyph name="whatsapp" />
       شاركوا العش عبر واتساب
     </a>
   );
