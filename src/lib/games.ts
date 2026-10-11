@@ -167,6 +167,9 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   classic: "كلاسيكية",
 };
 
+/** Public address of the site, used where an absolute URL is required. */
+export const SITE_URL = "https://al3sh.app";
+
 export function getGame(slug: string): GameCard | undefined {
   return GAMES.find((game) => game.id === slug);
 }
