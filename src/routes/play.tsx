@@ -107,8 +107,17 @@ function CreatePage() {
       )
       .subscribe();
 
+    // Fallback: realtime can drop silently on a phone or a sleeping tab. Re-read the list every few seconds.
+    const timer = window.setInterval(loadPlayers, 3000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") loadPlayers();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
       client.removeChannel(channel);
     };
   }, [room]);
