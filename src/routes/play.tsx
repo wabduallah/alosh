@@ -243,6 +243,15 @@ function CreatePage() {
                 {joinLink(room.room_code)}
               </a>
             </div>
+            <Link
+              to="/tv/$code"
+              params={{ code: room.room_code }}
+              target="_blank"
+              className={cx(buttonBase, buttonTone("outline"), "mt-1")}
+            >
+              <Glyph name="tv" />
+              افتح شاشة التلفزيون
+            </Link>
           </section>
 
           <section className="grid gap-5 lg:order-1">
