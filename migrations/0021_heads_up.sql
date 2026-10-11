@@ -6,6 +6,26 @@
 -- timer runs out. Two teams: players are split into team_color 'A' and 'B' on the
 -- first turn. The game ends when every word is answered.
 
+-- 0) Words live in their own table, locked to clients. questions_bank is readable
+-- by players (question_text is exposed), so the heads-up words must not stay there.
+create table if not exists public.heads_words (
+  id uuid primary key default gen_random_uuid(),
+  word text not null,
+  category_ar text,
+  created_at timestamptz not null default now()
+);
+alter table public.heads_words enable row level security;
+revoke all on public.heads_words from anon, authenticated;
+
+insert into public.heads_words (id, word, category_ar)
+  select q.id, q.question_text, q.category_ar
+  from public.questions_bank q
+  join public.games g on g.slug = q.game_slug
+  where g.slug = 'heads-up'
+on conflict (id) do nothing;
+
+delete from public.questions_bank where game_slug = 'heads-up';
+
 -- 1) Host starts a turn. Builds the shuffled word queue on the first turn.
 create or replace function public.heads_start_turn(p_room_id uuid)
 returns jsonb
@@ -18,7 +38,6 @@ declare
   v_queue jsonb;
   v_guessed jsonb;
   v_guesser uuid;
-  v_game uuid;
 begin
   if not (public.is_room_host(p_room_id) or public.is_app_admin()) then
     raise exception 'HOST_ONLY';
@@ -51,11 +70,8 @@ begin
   -- Build the queue once: every word of this game, shuffled.
   v_queue := v_state.state_data->'queue';
   if v_queue is null or jsonb_typeof(v_queue) <> 'array' then
-    select r.game_id into v_game from public.game_rooms r where r.id = p_room_id;
-    select coalesce(jsonb_agg(q.id::text order by random()), '[]'::jsonb) into v_queue
-      from public.questions_bank q
-      join public.games g on g.slug = q.game_slug
-      where g.id = v_game;
+    select coalesce(jsonb_agg(w.id::text order by random()), '[]'::jsonb) into v_queue
+      from public.heads_words w;
   end if;
 
   -- Pick the next guesser who has not guessed yet in this cycle.
@@ -237,9 +253,9 @@ stable
 security definer
 set search_path = public
 as $$
-  select q.question_text
+  select w.word
   from public.room_game_state s
-  join public.questions_bank q on q.id = s.active_question_id
+  join public.heads_words w on w.id = s.active_question_id
   where s.room_id = p_room_id
     and s.state_data->>'phase' = 'turn'
     and coalesce(s.state_data->>'guesser_id', '') <> coalesce(public.my_player_id(p_room_id)::text, '')
