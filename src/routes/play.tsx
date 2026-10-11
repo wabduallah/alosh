@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 import { Shell } from "@/components/shell";
-import { Button, Field, inputClass, cx } from "@/components/ui";
+import { Button, Field, inputClass, cx, joinLink } from "@/components/ui";
+import { QrCode } from "@/components/qr-code";
 import { ensureSession, supabase } from "@/lib/supabase";
 
 /**
@@ -147,6 +148,14 @@ function CreatePage() {
           <p className="text-sm text-muted">رمز الغرفة</p>
           <p className="mt-2 font-mono text-4xl font-extrabold tracking-[0.3em] text-neon">{room.room_code}</p>
           <p className="mt-3 text-sm text-muted">شارك الرمز مع اللاعبين ليدخلوا من جوالاتهم.</p>
+
+          <div className="mt-5 flex flex-col items-center gap-3">
+            <QrCode text={joinLink(room.room_code)} className="size-44" />
+            <p className="text-xs text-muted">امسح الـ QR من الجوال، أو افتح الرابط:</p>
+            <a href={joinLink(room.room_code)} className="break-all text-sm font-bold text-neon underline-offset-4 hover:underline">
+              {joinLink(room.room_code)}
+            </a>
+          </div>
 
           <h2 className="mt-6 text-right text-base font-extrabold text-ivory">اللاعبون ({players.length})</h2>
           <ul className="mt-2 space-y-2 text-right">

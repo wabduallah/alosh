@@ -1,8 +1,18 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+import { Shell } from "@/components/shell";
+import { JoinRoom } from "@/components/join-room";
 
-/** Old short link (/join/CODE). No game uses it now, so it returns to the homepage. */
+/** Join page opened from the QR code (/join/CODE). The code is prefilled. */
 export const Route = createFileRoute("/join/$code")({
-  beforeLoad: () => {
-    throw redirect({ to: "/", replace: true });
-  },
+  head: () => ({ meta: [{ title: "انضمام إلى غرفة — العش" }] }),
+  component: JoinWithCode,
 });
+
+function JoinWithCode() {
+  const { code } = Route.useParams();
+  return (
+    <Shell>
+      <JoinRoom initialCode={code} />
+    </Shell>
+  );
+}
