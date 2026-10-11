@@ -66,16 +66,39 @@ function CreatePage() {
       });
   }, []);
 
-  // Once a room exists, keep its player list current with a one-off read.
-  // Realtime subscription comes in the next step.
+  // Once a room exists, keep its player list live. Any insert, update or delete
+  // on this room's players triggers a fresh read, which respects RLS.
   useEffect(() => {
     if (!supabase || !room) return;
-    supabase
-      .from("room_players")
-      .select("id, player_name, is_host")
-      .eq("room_id", room.id)
-      .order("joined_at")
-      .then(({ data }) => setPlayers((data ?? []) as PlayerRow[]));
+    const client = supabase;
+    const roomId = room.id;
+    let cancelled = false;
+
+    async function loadPlayers() {
+      const { data } = await client
+        .from("room_players")
+        .select("id, player_name, is_host")
+        .eq("room_id", roomId)
+        .order("joined_at");
+      if (!cancelled) setPlayers((data ?? []) as PlayerRow[]);
+    }
+
+    loadPlayers();
+    const channel = client
+      .channel(`room-players-${roomId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "room_players", filter: `room_id=eq.${roomId}` },
+        () => {
+          loadPlayers();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      client.removeChannel(channel);
+    };
   }, [room]);
 
   async function createRoom(event: FormEvent) {
