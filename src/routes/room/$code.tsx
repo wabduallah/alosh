@@ -101,16 +101,28 @@ function PlayerBoard() {
     const client = supabase;
     const roomId = room.id;
 
+    // Re-read the live state. Used by realtime and by a short polling fallback,
+    // because realtime events can be missed on some connections.
+    async function refreshState() {
+      const { data: state } = await client
+        .from("room_game_state")
+        .select("active_question_id, state_data")
+        .eq("room_id", roomId)
+        .maybeSingle();
+      if (!state) return;
+      setActiveId((state.active_question_id as string | null) ?? null);
+      const data = (state.state_data as StateData) ?? {};
+      setStateData(data);
+      if (!data.buzzer) setBuzzMessage(null);
+    }
+
     const channel = client
       .channel(`player-board-${roomId}`)
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "room_game_state", filter: `room_id=eq.${roomId}` },
-        (payload) => {
-          const next = payload.new as { active_question_id: string | null; state_data: StateData };
-          setActiveId(next.active_question_id ?? null);
-          setStateData(next.state_data ?? {});
-          if (!next.state_data?.buzzer) setBuzzMessage(null);
+        { event: "*", schema: "public", table: "room_game_state", filter: `room_id=eq.${roomId}` },
+        () => {
+          refreshState();
         },
       )
       .on(
@@ -134,7 +146,29 @@ function PlayerBoard() {
       )
       .subscribe();
 
+    async function refreshPlayers() {
+      const { data } = await client
+        .from("room_players")
+        .select("id, user_id, player_name, score, is_host")
+        .eq("room_id", roomId);
+      if (data) setPlayers(data as PlayerRow[]);
+    }
+
+    const timer = window.setInterval(() => {
+      refreshState();
+      refreshPlayers();
+    }, 2000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        refreshState();
+        refreshPlayers();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
       client.removeChannel(channel);
     };
   }, [room?.id]);
