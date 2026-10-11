@@ -26,6 +26,10 @@ on conflict (id) do nothing;
 
 delete from public.questions_bank where game_slug = 'heads-up';
 
+-- The active word now comes from heads_words, so the foreign key to questions_bank
+-- must go. Other games still set this column from questions_bank in their own code.
+alter table public.room_game_state drop constraint if exists room_game_state_active_question_id_fkey;
+
 -- 1) Host starts a turn. Builds the shuffled word queue on the first turn.
 create or replace function public.heads_start_turn(p_room_id uuid)
 returns jsonb
@@ -245,7 +249,8 @@ begin
 end;
 $$;
 
--- 5) The current word for describers only. The guesser and the host never get it.
+-- 5) The current word for describers only. The guesser never gets it. The host gets it
+-- only when there is no other describer (a room with just the host and one guesser).
 create or replace function public.heads_my_word(p_room_id uuid)
 returns text
 language sql
@@ -260,7 +265,14 @@ as $$
     and s.state_data->>'phase' = 'turn'
     and coalesce(s.state_data->>'guesser_id', '') <> coalesce(public.my_player_id(p_room_id)::text, '')
     and public.my_player_id(p_room_id) is not null
-    and not public.is_room_host(p_room_id);
+    and (
+      not public.is_room_host(p_room_id)
+      or not exists (
+        select 1 from public.room_players p
+        where p.room_id = p_room_id and not p.is_host
+          and p.id::text <> coalesce(s.state_data->>'guesser_id', '')
+      )
+    );
 $$;
 
 revoke execute on function public.heads_start_turn(uuid) from public, anon;

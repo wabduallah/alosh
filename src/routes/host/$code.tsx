@@ -873,6 +873,7 @@ const HEADS_HOST_ERRORS: Record<string, string> = {
   NO_TEAM: "المخمِّن ليس في فريق.",
   WRONG_PHASE: "هذه الخطوة غير متاحة الآن.",
   NO_ACTIVE_WORD: "لا توجد كلمة الآن.",
+  NO_WORDS: "لا توجد كلمات في التصنيفات المختارة.",
 };
 
 /** Parses a timestamp from JSON, trimming microseconds that JS can't read. */
@@ -886,6 +887,9 @@ function parseTime(value: string | null | undefined): number | null {
 function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; roomCode: string; roomStatus: string }) {
   const [state, setState] = useState<HeadsState>({});
   const [players, setPlayers] = useState<HeadsPlayer[]>([]);
+  const [word, setWord] = useState<string | null>(null);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [picked, setPicked] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -896,15 +900,23 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
     const client = supabase;
     let cancelled = false;
     async function load() {
-      const [{ data: gs }, { data: ps }] = await Promise.all([
+      const [{ data: gs }, { data: ps }, { data: w }] = await Promise.all([
         client.from("room_game_state").select("state_data").eq("room_id", roomId).maybeSingle(),
         client.from("room_players").select("id, player_name, team_color, is_host").eq("room_id", roomId).order("joined_at"),
+        client.rpc("heads_my_word", { p_room_id: roomId }),
       ]);
       if (cancelled) return;
       if (gs) setState((gs.state_data ?? {}) as HeadsState);
       if (ps) setPlayers(ps as HeadsPlayer[]);
+      setWord(typeof w === "string" && w ? w : null);
     }
     load();
+    client.rpc("heads_categories").then(({ data }) => {
+      if (cancelled || !Array.isArray(data)) return;
+      const names = data.filter((c): c is string => typeof c === "string");
+      setCategories(names);
+      setPicked((current) => current ?? names);
+    });
     const poll = window.setInterval(load, 2000);
     const clock = window.setInterval(() => setNow(Date.now()), 250);
     return () => {
@@ -922,12 +934,15 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
   const timeUp = secondsLeft === 0;
 
   /** Runs one server step; returns true when it succeeded. */
-  async function run(fn: "heads_start_turn" | "heads_correct" | "heads_pass" | "heads_end_turn") {
+  async function run(
+    fn: "heads_start_turn" | "heads_correct" | "heads_pass" | "heads_end_turn",
+    extra: Record<string, unknown> = {},
+  ) {
     if (!supabase || busy) return false;
     setBusy(true);
     setError(null);
     try {
-      const { data, error: rpcError } = await supabase.rpc(fn, { p_room_id: roomId });
+      const { data, error: rpcError } = await supabase.rpc(fn, { p_room_id: roomId, ...extra });
       if (rpcError) throw rpcError;
       const result = data as { ok: boolean; reason?: string };
       if (!result.ok) {
@@ -1002,6 +1017,11 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
               المخمِّن: <span className="font-bold text-ivory">{guesser?.player_name ?? "—"}</span>
               {guesser?.team_color ? ` (${TEAM_NAMES[guesser.team_color ?? ""] ?? ""})` : ""}
             </p>
+            {word ? (
+              <p className="mt-3 rounded-2xl border border-neon/40 bg-white/[0.04] px-4 py-3 text-lg font-extrabold text-neon">
+                الكلمة (للوصف فقط): {word}
+              </p>
+            ) : null}
             <p className={cx("mt-2 font-mono text-5xl font-extrabold", timeUp ? "text-crimson" : "text-neon")}>
               {timeUp ? "انتهى الوقت" : `${secondsLeft ?? 0}s`}
             </p>
@@ -1023,7 +1043,42 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
         {phase === "" || phase === "between" || phase === "idle" ? (
           <>
             <p className="mt-6 text-sm text-muted">ابدأ دورًا جديدًا. يتناوب اللاعبون على التخمين.</p>
-            <Button type="button" tone="primary" className="mt-4" onClick={() => run("heads_start_turn")} disabled={busy}>
+            {!state.queue && categories.length > 0 ? (
+              <div className="mx-auto mt-5 max-w-md">
+                <p className="text-sm font-bold text-ivory">اختاروا التصنيفات</p>
+                <div className="mt-3 flex flex-wrap justify-center gap-2">
+                  {categories.map((c) => {
+                    const on = (picked ?? []).includes(c);
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() =>
+                          setPicked((current) => {
+                            const list = current ?? [];
+                            return on ? list.filter((x) => x !== c) : [...list, c];
+                          })
+                        }
+                        className={cx(
+                          "min-h-11 rounded-full border px-4 text-sm font-bold transition",
+                          on ? "border-neon bg-neon/10 text-neon" : "border-white/10 text-muted",
+                        )}
+                        aria-pressed={on}
+                      >
+                        {c}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+            <Button
+              type="button"
+              tone="primary"
+              className="mt-4"
+              onClick={() => run("heads_start_turn", { p_categories: picked && picked.length > 0 ? picked : null })}
+              disabled={busy || (!state.queue && (picked ?? []).length === 0 && categories.length > 0)}
+            >
               ابدأ الدور
             </Button>
           </>
