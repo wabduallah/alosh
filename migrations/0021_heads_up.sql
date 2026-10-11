@@ -1,9 +1,10 @@
 -- هل تعرف (heads-up): database layer for the turn-based guessing game.
 -- Each turn: host starts it -> one guesser is chosen (every player guesses once
 -- before anyone repeats) -> everyone except the guesser sees the current word on
--- their phone and describes it aloud -> host marks correct (guesser gets the
--- word's points) or passes (word goes to the back) -> host ends the turn when the
--- timer runs out. The game ends when every word is answered.
+-- their phone and describes it aloud -> host marks correct (the guesser's TEAM
+-- gets 1 point) or passes (word goes to the back) -> host ends the turn when the
+-- timer runs out. Two teams: players are split into team_color 'A' and 'B' on the
+-- first turn. The game ends when every word is answered.
 
 -- 1) Host starts a turn. Builds the shuffled word queue on the first turn.
 create or replace function public.heads_start_turn(p_room_id uuid)
@@ -31,6 +32,20 @@ begin
   end if;
   if coalesce(v_state.state_data->>'phase', '') not in ('', 'idle', 'between', 'heads_idle') then
     return jsonb_build_object('ok', false, 'reason', 'WRONG_PHASE');
+  end if;
+
+  -- Split players into two teams once (A and B alternate over a shuffled list).
+  if v_state.state_data->'teams' is null then
+    update public.room_players p set team_color = t.team
+      from (
+        select x.id, case when x.rn % 2 = 1 then 'A' else 'B' end as team
+        from (select rp.id, row_number() over (order by random()) as rn
+              from public.room_players rp where rp.room_id = p_room_id and not rp.is_host) x
+      ) t
+      where p.id = t.id;
+    v_state.state_data := v_state.state_data || jsonb_build_object(
+      'teams', jsonb_build_array('A', 'B'),
+      'team_scores', jsonb_build_object('A', 0, 'B', 0));
   end if;
 
   -- Build the queue once: every word of this game, shuffled.
@@ -68,7 +83,7 @@ begin
 
   update public.room_game_state
     set active_question_id = (v_queue->>0)::uuid,
-        state_data = state_data || jsonb_build_object(
+        state_data = (v_state.state_data) || jsonb_build_object(
           'phase', 'turn',
           'queue', v_queue - 0,
           'guessed', v_guessed || jsonb_build_array(v_guesser::text),
@@ -93,6 +108,7 @@ declare
   v_state public.room_game_state%rowtype;
   v_points int;
   v_guesser uuid;
+  v_team text;
   v_answered jsonb;
   v_next jsonb;
 begin
@@ -107,9 +123,19 @@ begin
     return jsonb_build_object('ok', false, 'reason', 'WRONG_PHASE');
   end if;
 
-  select coalesce(q.points, 0) into v_points from public.questions_bank q where q.id = v_state.active_question_id;
+  v_points := 1;
   v_guesser := (v_state.state_data->>'guesser_id')::uuid;
-  update public.room_players set score = score + v_points where id = v_guesser and room_id = p_room_id;
+  select p.team_color into v_team from public.room_players p where p.id = v_guesser and p.room_id = p_room_id;
+  if v_team is null then
+    return jsonb_build_object('ok', false, 'reason', 'NO_TEAM');
+  end if;
+  update public.room_game_state
+    set state_data = state_data || jsonb_build_object(
+      'team_scores', jsonb_set(
+        coalesce(state_data->'team_scores', '{"A":0,"B":0}'::jsonb),
+        array[v_team],
+        to_jsonb(coalesce((state_data->'team_scores'->>v_team)::int, 0) + v_points)))
+    where room_id = p_room_id;
 
   v_answered := coalesce(v_state.state_data->'answered', '[]'::jsonb) || to_jsonb(v_state.active_question_id::text);
   v_next := coalesce(v_state.state_data->'queue', '[]'::jsonb);
