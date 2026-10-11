@@ -50,6 +50,7 @@ function HostBoard() {
   const [busy, setBusy] = useState(false);
   const isBluff = gameSlug === "bluff-master";
   const isOutsider = gameSlug === "outsider";
+  const isHeads = gameSlug === "heads-up";
 
   // Load the room, its questions, its live state, and its players.
   useEffect(() => {
@@ -385,6 +386,14 @@ function HostBoard() {
     return (
       <Shell>
         <OutsiderHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
+      </Shell>
+    );
+  }
+
+  if (isHeads) {
+    return (
+      <Shell>
+        <HeadsHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
       </Shell>
     );
   }
@@ -829,6 +838,202 @@ function OutsiderHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; r
               </li>
             ))}
           </ul>
+        ) : null}
+      </div>
+
+      {!ended ? (
+        <div className="mt-6 text-center">
+          <Button type="button" tone="violet" onClick={endGame} disabled={busy}>
+            إنهاء الغرفة للجميع
+          </Button>
+        </div>
+      ) : (
+        <p className="mt-6 text-center text-sm text-muted">انتهت الغرفة.</p>
+      )}
+    </section>
+  );
+}
+
+
+type HeadsPlayer = { id: string; player_name: string; team_color: string | null; is_host: boolean };
+type HeadsState = {
+  phase?: string;
+  guesser_id?: string;
+  turn_ends_at?: string | null;
+  team_scores?: Record<string, number>;
+  queue?: string[];
+};
+
+const HEADS_HOST_ERRORS: Record<string, string> = {
+  GAME_OVER: "انتهت كل الكلمات.",
+  ROOM_NOT_PLAYING: "ابدأ الغرفة أولًا.",
+  NOT_ENOUGH_PLAYERS: "تحتاج اللعبة إلى لاعبين على الأقل.",
+  NO_TEAM: "المخمِّن ليس في فريق.",
+  WRONG_PHASE: "هذه الخطوة غير متاحة الآن.",
+  NO_ACTIVE_WORD: "لا توجد كلمة الآن.",
+};
+
+/** Parses a timestamp from JSON, trimming microseconds that JS can't read. */
+function parseTime(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const t = Date.parse(value.replace(/(\.\d{3})\d+/, "$1"));
+  return Number.isNaN(t) ? null : t;
+}
+
+/** Host controls for هل تعرف: teams, timer, correct / pass / end turn. */
+function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; roomCode: string; roomStatus: string }) {
+  const [state, setState] = useState<HeadsState>({});
+  const [players, setPlayers] = useState<HeadsPlayer[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [ended, setEnded] = useState(roomStatus === "finished");
+
+  useEffect(() => {
+    if (!supabase) return;
+    const client = supabase;
+    let cancelled = false;
+    async function load() {
+      const [{ data: gs }, { data: ps }] = await Promise.all([
+        client.from("room_game_state").select("state_data").eq("room_id", roomId).maybeSingle(),
+        client.from("room_players").select("id, player_name, team_color, is_host").eq("room_id", roomId).order("joined_at"),
+      ]);
+      if (cancelled) return;
+      if (gs) setState((gs.state_data ?? {}) as HeadsState);
+      if (ps) setPlayers(ps as HeadsPlayer[]);
+    }
+    load();
+    const poll = window.setInterval(load, 2000);
+    const clock = window.setInterval(() => setNow(Date.now()), 250);
+    return () => {
+      cancelled = true;
+      window.clearInterval(poll);
+      window.clearInterval(clock);
+    };
+  }, [roomId]);
+
+  const phase = state.phase ?? "";
+  const scores = { A: state.team_scores?.A ?? 0, B: state.team_scores?.B ?? 0 };
+  const guesser = players.find((p) => p.id === state.guesser_id) ?? null;
+  const endsAt = parseTime(state.turn_ends_at);
+  const secondsLeft = phase === "turn" && endsAt ? Math.max(0, Math.ceil((endsAt - now) / 1000)) : null;
+  const timeUp = secondsLeft === 0;
+
+  /** Runs one server step; returns true when it succeeded. */
+  async function run(fn: "heads_start_turn" | "heads_correct" | "heads_pass" | "heads_end_turn") {
+    if (!supabase || busy) return false;
+    setBusy(true);
+    setError(null);
+    try {
+      const { data, error: rpcError } = await supabase.rpc(fn, { p_room_id: roomId });
+      if (rpcError) throw rpcError;
+      const result = data as { ok: boolean; reason?: string };
+      if (!result.ok) {
+        setError(HEADS_HOST_ERRORS[result.reason ?? ""] ?? "تعذّر تنفيذ الخطوة.");
+        return false;
+      }
+      return true;
+    } catch {
+      setError("تعذّر تنفيذ الخطوة.");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Keyboard shortcuts for the host: → correct, ← pass.
+  useEffect(() => {
+    if (phase !== "turn") return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "ArrowRight") run("heads_correct");
+      if (e.key === "ArrowLeft") run("heads_pass");
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // run reads busy/roomId; re-binding on phase change is enough here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, busy]);
+
+  async function endGame() {
+    if (!supabase) return;
+    setBusy(true);
+    try {
+      const { error: updateError } = await supabase.from("game_rooms").update({ status: "finished" }).eq("id", roomId);
+      if (updateError) throw updateError;
+      setEnded(true);
+    } catch {
+      setError("تعذّر إنهاء الغرفة.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const winner =
+    scores.A === scores.B ? "تعادل" : scores.A > scores.B ? "الفريق A" : "الفريق B";
+
+  return (
+    <section className="mx-auto mt-4 max-w-2xl">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-xl font-extrabold text-ivory">
+          رمز الغرفة <span className="font-mono text-neon">{roomCode}</span>
+        </h1>
+        <span className="text-sm text-muted">هل تعرف</span>
+      </div>
+
+      {error ? <p className="mb-4 text-sm text-crimson">{error}</p> : null}
+
+      <div className="glass-card rounded-3xl p-6 text-center">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="rounded-2xl bg-white/[0.04] p-4">
+            <p className="text-sm text-muted">الفريق A</p>
+            <p className="text-4xl font-extrabold text-ivory">{scores.A}</p>
+          </div>
+          <div className="rounded-2xl bg-white/[0.04] p-4">
+            <p className="text-sm text-muted">الفريق B</p>
+            <p className="text-4xl font-extrabold text-ivory">{scores.B}</p>
+          </div>
+        </div>
+
+        {phase === "turn" ? (
+          <>
+            <p className="mt-6 text-sm text-muted">
+              المخمِّن: <span className="font-bold text-ivory">{guesser?.player_name ?? "—"}</span>
+              {guesser?.team_color ? ` (الفريق ${guesser.team_color})` : ""}
+            </p>
+            <p className={cx("mt-2 font-mono text-5xl font-extrabold", timeUp ? "text-crimson" : "text-neon")}>
+              {timeUp ? "انتهى الوقت" : `${secondsLeft ?? 0}s`}
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <Button type="button" tone="primary" onClick={() => run("heads_correct")} disabled={busy}>
+                إجابة صحيحة (+1)
+              </Button>
+              <Button type="button" tone="ghost" onClick={() => run("heads_pass")} disabled={busy}>
+                تخطّي
+              </Button>
+              <Button type="button" tone="danger" onClick={() => run("heads_end_turn")} disabled={busy}>
+                إنهاء الدور
+              </Button>
+            </div>
+            <p className="mt-4 text-xs text-muted">اختصارات لوحة المفاتيح: → صحيح، ← تخطّي</p>
+          </>
+        ) : null}
+
+        {phase === "" || phase === "between" || phase === "idle" ? (
+          <>
+            <p className="mt-6 text-sm text-muted">ابدأ دورًا جديدًا. يتناوب اللاعبون على التخمين.</p>
+            <Button type="button" tone="primary" className="mt-4" onClick={() => run("heads_start_turn")} disabled={busy}>
+              ابدأ الدور
+            </Button>
+          </>
+        ) : null}
+
+        {phase === "turn_over" || phase === "over" ? (
+          <>
+            <p className="mt-6 text-xl font-extrabold text-ivory">انتهت كل الكلمات</p>
+            <p className="mt-2 text-sm text-muted">
+              {scores.A === scores.B ? "تعادل" : `الفائز: ${winner} بـ ${Math.max(scores.A, scores.B)} نقطة`}
+            </p>
+          </>
         ) : null}
       </div>
 
