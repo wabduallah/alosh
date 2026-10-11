@@ -31,6 +31,7 @@ type RoomRow = {
   id: string;
   room_code: string;
   game_id: string;
+  status: string;
 };
 
 type PlayerRow = {
@@ -49,6 +50,8 @@ function CreatePage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [room, setRoom] = useState<RoomRow | null>(null);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
 
   // Load the active games (public read per RLS).
   useEffect(() => {
@@ -102,6 +105,51 @@ function CreatePage() {
     };
   }, [room]);
 
+  // Keep the room status live, so the host sees changes made from anywhere.
+  useEffect(() => {
+    if (!supabase || !room) return;
+    const client = supabase;
+    const roomId = room.id;
+    const channel = client
+      .channel(`room-status-${roomId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "game_rooms", filter: `id=eq.${roomId}` },
+        (payload) => {
+          const next = (payload.new as { status?: string }).status;
+          if (next) setRoom((current) => (current ? { ...current, status: next } : current));
+        },
+      )
+      .subscribe();
+
+    return () => {
+      client.removeChannel(channel);
+    };
+  }, [room?.id]);
+
+  async function startGame() {
+    if (!supabase || !room) return;
+    setStartError(null);
+    setStarting(true);
+    try {
+      // Only the host can change the room (RLS). Only a lobby can be started.
+      const { data, error } = await supabase
+        .from("game_rooms")
+        .update({ status: "playing" })
+        .eq("id", room.id)
+        .eq("status", "lobby")
+        .select("status")
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return setStartError("لم تبدأ اللعبة. ربما بدأت بالفعل، حدّث الصفحة.");
+      setRoom((current) => (current ? { ...current, status: "playing" } : current));
+    } catch {
+      setStartError("تعذّر بدء اللعبة، حاول مرة أخرى.");
+    } finally {
+      setStarting(false);
+    }
+  }
+
   async function createRoom(event: FormEvent) {
     event.preventDefault();
     setFormError(null);
@@ -119,7 +167,7 @@ function CreatePage() {
       const { data: created, error: roomError } = await supabase
         .from("game_rooms")
         .insert({ game_id: selected, settings: {} })
-        .select("id, room_code, game_id")
+        .select("id, room_code, game_id, status")
         .single();
       if (roomError || !created) throw roomError ?? new Error("ROOM_CREATE_FAILED");
       const newRoom = created as RoomRow;
@@ -156,6 +204,38 @@ function CreatePage() {
               {joinLink(room.room_code)}
             </a>
           </div>
+
+          {room.status === "playing" ? (
+            <p className="mt-6 rounded-2xl border border-emerald/40 bg-emerald/10 p-4 text-sm font-bold text-ivory">
+              بدأت اللعبة. تابع الشاشة الكبيرة.
+            </p>
+          ) : (
+            <div className="mt-6">
+              {(() => {
+                const game = games?.find((g) => g.id === room.game_id);
+                const min = game?.min_players ?? 2;
+                const max = game?.max_players ?? 12;
+                const enough = players.length >= min;
+                return (
+                  <>
+                    <p className="text-sm text-muted">
+                      {enough ? "جاهزون للبدء." : `تحتاج ${min} لاعبين على الأقل للبدء.`} الحد الأقصى {max}.
+                    </p>
+                    {startError ? <p className="mt-2 text-sm text-crimson">{startError}</p> : null}
+                    <Button
+                      type="button"
+                      tone="primary"
+                      className="mt-3 w-full"
+                      disabled={!enough || starting}
+                      onClick={startGame}
+                    >
+                      {starting ? "جارٍ البدء…" : "ابدأ اللعبة"}
+                    </Button>
+                  </>
+                );
+              })()}
+            </div>
+          )}
 
           <h2 className="mt-6 text-right text-base font-extrabold text-ivory">اللاعبون ({players.length})</h2>
           <ul className="mt-2 space-y-2 text-right">
