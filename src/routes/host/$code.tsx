@@ -886,6 +886,7 @@ function parseTime(value: string | null | undefined): number | null {
 function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; roomCode: string; roomStatus: string }) {
   const [state, setState] = useState<HeadsState>({});
   const [players, setPlayers] = useState<HeadsPlayer[]>([]);
+  const [word, setWord] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -896,13 +897,15 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
     const client = supabase;
     let cancelled = false;
     async function load() {
-      const [{ data: gs }, { data: ps }] = await Promise.all([
+      const [{ data: gs }, { data: ps }, { data: w }] = await Promise.all([
         client.from("room_game_state").select("state_data").eq("room_id", roomId).maybeSingle(),
         client.from("room_players").select("id, player_name, team_color, is_host").eq("room_id", roomId).order("joined_at"),
+        client.rpc("heads_my_word", { p_room_id: roomId }),
       ]);
       if (cancelled) return;
       if (gs) setState((gs.state_data ?? {}) as HeadsState);
       if (ps) setPlayers(ps as HeadsPlayer[]);
+      setWord(typeof w === "string" && w ? w : null);
     }
     load();
     const poll = window.setInterval(load, 2000);
@@ -1002,6 +1005,11 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
               المخمِّن: <span className="font-bold text-ivory">{guesser?.player_name ?? "—"}</span>
               {guesser?.team_color ? ` (${TEAM_NAMES[guesser.team_color ?? ""] ?? ""})` : ""}
             </p>
+            {word ? (
+              <p className="mt-3 rounded-2xl border border-neon/40 bg-white/[0.04] px-4 py-3 text-lg font-extrabold text-neon">
+                الكلمة (للوصف فقط): {word}
+              </p>
+            ) : null}
             <p className={cx("mt-2 font-mono text-5xl font-extrabold", timeUp ? "text-crimson" : "text-neon")}>
               {timeUp ? "انتهى الوقت" : `${secondsLeft ?? 0}s`}
             </p>
