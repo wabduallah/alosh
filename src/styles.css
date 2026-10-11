@@ -1,42 +1,48 @@
 @import "tailwindcss";
 
 /*
- * Al3sh (العش) identity: "a nest under the crescent" on the Moonhem night system.
- * The full brand book lives in the «هوية العش» design system; values here mirror its tokens.json.
+ * Al3sh (العش) identity: a blue chick in its nest, on deep navy.
  *
- * Rules:
- *  - Grounds are night. Text is ivory (primary), mist (secondary), faint (tertiary only).
- *  - neon = the action and the active state. Text on a neon fill is on-neon, never white.
- *  - violet = the moment that belongs to a player. As text use violet-text; as a fill use violet-fill.
- *  - correct / wrong are for answers and errors only, always with an icon and a word.
- *  - No gold or yellow anywhere.
+ * Roles:
+ *  - Grounds: night (page), deep (cards), deep-2 (raised). Thin glowing borders in blue and violet.
+ *  - gold (orange-gold gradient): the main action on a screen and the active state. Text on it is on-gold.
+ *  - violet and blue: supporting accents (secondary actions, category heads, glows).
+ *  - cream (ivory) for text; mist for secondary text; faint for tertiary.
+ *  - correct / wrong for answers and errors only, always with an icon and a word.
  */
 @theme static {
   --font-sans: "Readex Pro", "Tajawal", system-ui, sans-serif;
-  --font-display: "Marhey", "Readex Pro", system-ui, sans-serif;
+  --font-display: "Baloo Bhaijaan 2", "Readex Pro", system-ui, sans-serif;
 
   /* Grounds */
-  --color-night: #090d16;
-  --color-abyss: #0b1120;
-  --color-deep: #131b2e;
+  --color-night: #060b26;
+  --color-abyss: #040921;
+  --color-deep: #0f1640;
+  --color-deep-2: #151d52;
   --color-glass: #ffffff0a;
   --color-glass-strong: #ffffff14;
-  --color-line: #ffffff1a;
-  --color-line-strong: #64708a;
+  --color-line: #262f6e;
+  --color-line-strong: #6470c0;
+  --color-glow: #6b7bff;
 
   /* Text */
-  --color-ivory: #e8eefb;
-  --color-mist: #94a3b8;
-  --color-faint: #8592ab;
-  --color-ink: #090d16; /* text on light surfaces */
+  --color-ivory: #fbe9da;
+  --color-mist: #b9bbe3;
+  --color-faint: #8f94c8;
+  --color-ink: #0c1033; /* text on light surfaces */
 
-  /* Accents */
-  --color-neon: #22d3ee;
-  --color-neon-deep: #06b6d4;
-  --color-on-neon: #090d16;
-  --color-violet: #8b5cf6;
-  --color-violet-text: #a78bfa;
-  --color-violet-fill: #7c3aed;
+  /* Main action: orange-gold */
+  --color-gold: #ffa53a;
+  --color-gold-light: #ffc04d;
+  --color-gold-deep: #f7832a;
+  --color-on-gold: #1a1033;
+
+  /* Supporting accents */
+  --color-violet: #663ade;
+  --color-violet-text: #a58bff;
+  --color-violet-fill: #5b32d6;
+  --color-blue: #3070e9;
+  --color-blue-text: #7fa8ff;
 
   /* Answer states */
   --color-correct: #34d399;
@@ -49,9 +55,9 @@
   --color-team-blue: #60a5fa;
 
   /* Player eggs, by join order (9–14 repeat with speckles) */
-  --color-egg-1: #e8eefb;
-  --color-egg-2: #22d3ee;
-  --color-egg-3: #a78bfa;
+  --color-egg-1: #fbe9da;
+  --color-egg-2: #ffc04d;
+  --color-egg-3: #a58bff;
   --color-egg-4: #fb7185;
   --color-egg-5: #60a5fa;
   --color-egg-6: #5eead4;
@@ -59,12 +65,16 @@
   --color-egg-8: #ff8f7a;
 
   /* Older names, kept so existing screens keep working */
-  --color-muted: #94a3b8;
+  --color-muted: #b9bbe3;
   --color-emerald: #10b981;
   --color-crimson: #ef4444;
 
-  --shadow-glow-neon: 0 0 28px #22d3ee4d;
-  --shadow-glow-violet: 0 0 28px #8b5cf64d;
+  /* Big screens (a TV in the living room): larger type, code and QR. */
+  --breakpoint-tv: 100rem;
+
+  --shadow-glow-gold: 0 10px 28px -8px #f7832aaa;
+  --shadow-glow-violet: 0 0 28px #663ade66;
+  --shadow-glow-line: 0 0 0 1px #6b7bff40, 0 0 26px -6px #4b5bff55;
   --shadow-lift: 0 24px 64px #000000a6;
 }
 
@@ -84,8 +94,8 @@
   h2,
   h3 {
     font-family: var(--font-display);
-    font-weight: 700;
-    line-height: 1.3;
+    font-weight: 800;
+    line-height: 1.35;
   }
   button,
   [role="button"] {
@@ -95,7 +105,7 @@
     outline: none;
     box-shadow:
       0 0 0 2px var(--color-night),
-      0 0 0 4px var(--color-neon);
+      0 0 0 4px var(--color-gold);
   }
 }
 
@@ -104,34 +114,66 @@
   color: var(--color-ink);
 }
 
-/* The sky: the page ground on every screen. */
+/* The page ground: deep navy with soft violet and blue light. */
 .nest,
 .game-shell,
 .stage,
 .sky {
   background-color: var(--color-night);
   background-image:
-    radial-gradient(900px 420px at 110% -10%, #22d3ee24, transparent 60%),
-    radial-gradient(700px 360px at -10% 0%, #8b5cf621, transparent 62%),
-    linear-gradient(180deg, var(--color-night) 0%, var(--color-deep) 46%, var(--color-abyss) 100%);
+    radial-gradient(1000px 520px at 85% -10%, #663ade2e, transparent 60%),
+    radial-gradient(800px 460px at 0% 10%, #3070e922, transparent 62%),
+    radial-gradient(900px 600px at 50% 110%, #f7832a14, transparent 60%);
   color: var(--color-ivory);
 }
 
-/* Surfaces: depth by surface, not by shadow. No glow on hover. */
-.surface {
-  background: var(--color-deep);
-  border: 1px solid var(--color-line);
-}
-.glass-card,
-.neon-card {
-  background: var(--color-deep);
-  border: 1px solid var(--color-line);
-}
-.glass {
-  background: var(--color-glass);
-  border: 1px solid var(--color-line);
+/* Lantern-lit forest backdrop used behind the hero and the big screen. */
+@utility forest-bg {
+  background-color: #0a0f33;
+  background-image:
+    radial-gradient(60% 80% at 30% 70%, #f7832a22, transparent 70%),
+    radial-gradient(50% 60% at 75% 20%, #663ade40, transparent 70%),
+    url("/brand/al3sh-backdrop.svg");
+  background-size: auto, auto, cover;
+  background-position: center;
 }
 
+/* Cards: lighter navy with a thin glowing border. A utility, so screen variants (lg:surface) work. */
+@utility surface {
+  background: linear-gradient(180deg, #121a4ad9, #0c1238e6);
+  border: 1px solid #6b7bff40;
+  box-shadow:
+    inset 0 1px 0 #ffffff10,
+    0 0 26px -10px #4b5bff66;
+}
+@layer components {
+  .glass-card,
+  .neon-card {
+    background: linear-gradient(180deg, #121a4ad9, #0c1238e6);
+    border: 1px solid #6b7bff40;
+    box-shadow:
+      inset 0 1px 0 #ffffff10,
+      0 0 26px -10px #4b5bff66;
+  }
+  .glass {
+    background: var(--color-glass);
+    border: 1px solid var(--color-line);
+  }
+}
+
+/* The main action: an orange-gold gradient, lighter on the left like the reference. */
+@utility btn-gold {
+  background-image: linear-gradient(90deg, var(--color-gold-light), var(--color-gold-deep));
+  color: var(--color-on-gold);
+  box-shadow:
+    inset 0 1px 0 #ffffff66,
+    var(--shadow-glow-gold);
+  &:hover {
+    filter: brightness(1.06);
+  }
+}
+
+@layer components {
 /* Room code: Latin, wide, the only tracked text. */
 .room-code {
   font-family: var(--font-sans);
@@ -143,6 +185,30 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Game cards: a colour per game, set with --c1 / --c2 on the element. */
+.gcard {
+  background: linear-gradient(160deg, var(--c1), var(--c2));
+  border: 1.5px solid color-mix(in srgb, var(--c1) 70%, white 30%);
+  box-shadow:
+    inset 0 1px 0 #ffffff30,
+    0 10px 30px -14px var(--c1);
+  transition:
+    transform 200ms ease,
+    box-shadow 200ms ease,
+    filter 200ms ease;
+}
+@media (hover: hover) {
+  .gcard:hover {
+    transform: translateY(-4px);
+    box-shadow:
+      inset 0 1px 0 #ffffff30,
+      0 18px 40px -12px var(--c1);
+  }
+}
+.gcard-icon {
+  background: radial-gradient(circle, #ffffff2e, #ffffff00 70%);
+}
+
 /* Player egg */
 .egg {
   aspect-ratio: 5 / 6;
@@ -150,155 +216,56 @@
   display: inline-grid;
   place-items: center;
   flex: none;
-  color: var(--color-night);
+  color: var(--color-ink);
   font-weight: 700;
   line-height: 1;
 }
 .egg-speckled {
   background-image:
-    radial-gradient(circle at 28% 34%, #090d1633 0 2.5px, transparent 3px),
-    radial-gradient(circle at 66% 26%, #090d1633 0 2px, transparent 2.5px),
-    radial-gradient(circle at 58% 70%, #090d1633 0 3px, transparent 3.5px),
-    radial-gradient(circle at 30% 72%, #090d1633 0 1.8px, transparent 2.3px);
+    radial-gradient(circle at 28% 34%, #0c103333 0 2.5px, transparent 3px),
+    radial-gradient(circle at 66% 26%, #0c103333 0 2px, transparent 2.5px),
+    radial-gradient(circle at 58% 70%, #0c103333 0 3px, transparent 3.5px),
+    radial-gradient(circle at 30% 72%, #0c103333 0 1.8px, transparent 2.3px);
 }
 
-/* Cradle: the hilal under the one thing that matters on a screen. */
+/* Nest cradle: the woven bowl under the one thing that matters on a screen (an egg, the buzzer, a code). */
 .cradle-moon {
   display: block;
   width: 100%;
   height: auto;
   aspect-ratio: 6 / 1;
   margin-top: 6px;
-  fill: var(--color-neon);
-  filter: drop-shadow(0 0 18px #22d3ee66);
+  filter: drop-shadow(0 6px 16px #f7832a55);
 }
 .cradle-hold .cradle-moon {
   aspect-ratio: 12 / 5;
   margin-top: -17%;
 }
 .cradle-soft .cradle-moon {
-  fill: #22d3ee33;
+  opacity: 0.45;
   filter: none;
-}
-.cradle-violet .cradle-moon {
-  fill: var(--color-violet);
-  filter: drop-shadow(0 0 18px #8b5cf666);
-}
-
-/* Home hero figure: one TV, phones around it on the hilal. */
-.scene {
-  position: relative;
-  width: 100%;
-  max-width: 520px;
-  aspect-ratio: 13 / 11.5;
-  margin-inline: auto;
-}
-.scene-tv {
-  position: absolute;
-  top: 0;
-  left: 16%;
-  right: 16%;
-  aspect-ratio: 16 / 9;
-  border-radius: 20px;
-  background: var(--color-abyss);
-  border: 2px solid var(--color-line-strong);
-  padding: 5%;
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 4%;
-  box-shadow: 0 0 60px #22d3ee26;
-}
-.scene-tv i {
-  border-radius: 6px;
-  background: var(--color-deep);
-  border: 1px solid var(--color-line);
-}
-.scene-tv i.h {
-  background: #8b5cf629;
-  border: 0;
-}
-.scene-tv i.a {
-  background: var(--color-neon);
-  box-shadow: 0 0 14px #22d3ee88;
-}
-.scene-tv i.d {
-  background: transparent;
-  border-style: dashed;
-}
-.scene-stand {
-  position: absolute;
-  top: 43.2%;
-  left: 45%;
-  width: 10%;
-  height: 4%;
-  background: var(--color-line-strong);
-  border-radius: 0 0 6px 6px;
-}
-.scene-moon {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  width: 100%;
-  height: 34%;
-  fill: var(--color-neon);
-  filter: drop-shadow(0 0 22px #22d3ee66);
-}
-.scene-phones {
-  position: absolute;
-  left: 8%;
-  right: 8%;
-  bottom: 15%;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-}
-.scene-phone {
-  width: 14%;
-  aspect-ratio: 9 / 17;
-  border-radius: 12px;
-  background: var(--color-deep);
-  border: 2px solid var(--color-line-strong);
-  display: grid;
-  place-items: center;
-}
-.scene-phone .egg {
-  width: 52%;
-  font-size: 12px;
-}
-.scene-phone:nth-child(1) {
-  transform: rotate(-12deg) translateY(-4%);
-}
-.scene-phone:nth-child(2) {
-  transform: rotate(-4deg) translateY(-16%);
-}
-.scene-phone:nth-child(3) {
-  transform: rotate(4deg) translateY(-16%);
-}
-.scene-phone:nth-child(4) {
-  transform: rotate(12deg) translateY(-4%);
 }
 
 /* Steps: a real sequence, joined by a line. */
 .step-line:not(:last-child)::after {
   content: "";
   position: absolute;
-  inset-inline-start: 19px;
-  top: 44px;
+  inset-inline-start: 23px;
+  top: 52px;
   bottom: -20px;
   width: 2px;
-  background: linear-gradient(var(--color-neon), transparent);
+  background: linear-gradient(var(--color-gold), transparent);
   opacity: 0.5;
 }
 @media (min-width: 64rem) {
   .step-line:not(:last-child)::after {
-    inset-inline-start: 52px;
+    inset-inline-start: 60px;
     inset-inline-end: -20px;
-    top: 19px;
+    top: 23px;
     bottom: auto;
     width: auto;
     height: 2px;
-    background: linear-gradient(to left, var(--color-neon), transparent);
+    background: linear-gradient(to left, var(--color-gold), transparent);
   }
 }
 
@@ -312,7 +279,7 @@
   background: #ef444426;
 }
 
-/* Hide scrollbars on sideways chip rows. */
+/* Hide scrollbars on sideways rows. */
 .no-scrollbar {
   scrollbar-width: none;
 }
@@ -320,20 +287,39 @@
   display: none;
 }
 
+/* Room for the phone bottom bar so it never covers content. */
+.pb-tabbar {
+  padding-bottom: calc(88px + env(safe-area-inset-bottom));
+}
+
+}
+
 /* Motion: answers a person's action or marks a moment. */
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
     transform: none;
   }
 }
-
 .rise {
-  animation: rise 0.35s ease-out;
+  animation: rise 0.4s ease-out both;
+}
+
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+.bob {
+  animation: bob 5s ease-in-out infinite;
 }
 
 @keyframes sheet-up {
@@ -365,7 +351,7 @@
   position: absolute;
   inset: -14px;
   border-radius: 50%;
-  border: 3px solid #22d3ee80;
+  border: 3px solid #ffa53a99;
   animation: buzz-ring 1.4s ease-out infinite;
   pointer-events: none;
 }
@@ -379,7 +365,7 @@
   content: "";
   width: 2px;
   height: 26px;
-  background: var(--color-neon);
+  background: var(--color-gold);
   animation: caret 1s steps(1) infinite;
 }
 
@@ -392,7 +378,6 @@
     width: 0%;
   }
 }
-
 .drain {
   animation: drain 2.5s linear forwards;
 }
@@ -411,7 +396,6 @@
     transform: translate3d(var(--cheer-drift), -46vh, 0) scale(1.05);
   }
 }
-
 .cheer-rise {
   animation: cheer-rise 3.4s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
 }
@@ -419,15 +403,19 @@
 /* Respect the OS "reduce motion" setting: keep final states, drop movement. */
 @media (prefers-reduced-motion: reduce) {
   .rise,
+  .bob,
   .sheet-up,
   .cheer-rise,
-  .neon-card,
-  .glass-card,
   .drain,
   .code-caret::after,
   .buzz-ring::before {
     animation: none;
     transition: none;
+  }
+  .gcard,
+  .gcard:hover {
+    transition: none;
+    transform: none;
   }
   .cheer-rise {
     opacity: 1;

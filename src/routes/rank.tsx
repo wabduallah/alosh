@@ -1,6 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Shell } from "@/components/shell";
 import { EmptyState } from "@/components/empty-state";
+import { Glyph } from "@/components/brand";
 import { buttonBase, buttonTone, cx } from "@/components/ui";
 
 export const Route = createFileRoute("/rank")({
@@ -13,12 +14,13 @@ function RankPage() {
   return (
     <Shell>
       <EmptyState
-        title="التصنيف قريبًا"
-        text="يرجع ترتيب الألعاب مع قائمة الألعاب الجديدة."
+        title="التصنيف"
+        text="يعود التصنيف مع قائمة الألعاب الجديدة."
         action={
-          <a href="/#games" className={cx(buttonBase, buttonTone("quiet"), "min-h-14 px-7")}>
-            استعرضوا الألعاب
-          </a>
+          <Link to="/" className={cx(buttonBase, buttonTone("quiet"), "min-h-12 px-6")}>
+            <Glyph name="home" className="size-[18px]" />
+            العودة للرئيسية
+          </Link>
         }
       />
     </Shell>

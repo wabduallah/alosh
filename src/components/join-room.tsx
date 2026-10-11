@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 import { Button, Field, buttonBase, buttonTone, cx, inputClass } from "@/components/ui";
-import { CodeCells, Cradle, Egg, Glyph } from "@/components/brand";
+import { CodeCells, Cradle, Egg, Glyph, Mark } from "@/components/brand";
 import { ensureSession, supabase } from "@/lib/supabase";
 
 /** Room codes use this alphabet only (no I, O, 0, 1), matching the database. */
@@ -89,7 +89,7 @@ export function JoinRoom({ initialCode = "" }: { initialCode?: string }) {
     const cleanCode = code.trim().toUpperCase();
     const cleanName = name.trim().replace(/\s+/g, " ");
 
-    if (!CODE_PATTERN.test(cleanCode)) return setError("الرمز يتكون من 5 حروف أو أرقام، مثل K7Q4M.");
+    if (!CODE_PATTERN.test(cleanCode)) return setError("الرمز يتكون من 5 أحرف أو أرقام.");
     if (cleanName.length < 2 || cleanName.length > 24) return setError("الاسم بين حرفين و24 حرفًا.");
     if (!supabase) return setError("الاتصال بقاعدة البيانات غير مضبوط بعد.");
 
@@ -105,7 +105,7 @@ export function JoinRoom({ initialCode = "" }: { initialCode?: string }) {
         .eq("room_code", cleanCode)
         .maybeSingle();
       if (findError) throw findError;
-      if (!found) return setError("ما لقينا غرفة بهذا الرمز. تأكدوا منه على شاشة المضيف.");
+      if (!found) return setError("لم نجد غرفة بهذا الرمز.");
       const target = found as RoomRow;
       if (target.status === "finished") return setError("انتهت هذه الغرفة.");
 
@@ -143,76 +143,73 @@ export function JoinRoom({ initialCode = "" }: { initialCode?: string }) {
   if (room && me) {
     const myIndex = Math.max(1, players.findIndex((p) => p.id === me.id) + 1);
     return (
-      <section className="mx-auto mt-2 grid max-w-md justify-items-center gap-4 text-center">
-        <span className="inline-flex min-h-9 items-center gap-2 rounded-full border border-line bg-glass px-3 text-[13px] font-semibold text-mist">
-          الغرفة <b className="room-code text-base text-neon">{room.room_code}</b>
-        </span>
+      <section className="surface mx-auto mt-2 grid max-w-md justify-items-center gap-4 rounded-[28px] p-6 text-center sm:p-8">
+        <div className="grid justify-items-center gap-1">
+          <p className="text-[13px] font-semibold text-mist">أنت في الغرفة</p>
+          <p className="room-code text-[34px] leading-[44px] text-gold">{room.room_code}</p>
+        </div>
         <Cradle hold style={{ padding: "0 26px" }}>
           <Egg name={me.player_name} index={myIndex} size="xl" me />
         </Cradle>
-        <h1 className="text-[30px] leading-10">أنت في العش!</h1>
+        <p className="font-display text-[26px] font-extrabold leading-9 text-ivory">مرحبًا {me.player_name}</p>
         {room.status === "playing" ? (
           <div className="grid w-full gap-3">
             <p className="flex items-center justify-center gap-2 rounded-[14px] border border-correct/50 bg-correct-fill/15 p-3 text-[15px] font-semibold text-ivory">
               <Glyph name="check" className="size-5 text-correct" />
-              بدأت اللعبة! تابعوا الشاشة الكبيرة.
+              بدأت اللعبة! تابع الشاشة الكبيرة.
             </p>
             <Link to="/room/$code" params={{ code: room.room_code }} className={cx(buttonBase, buttonTone("primary"), "min-h-16 w-full text-[19px]")}>
-              افتحوا لوحة اللعب
+              افتح لوحة اللعب
             </Link>
           </div>
         ) : (
           <p className="flex items-center gap-2 rounded-[14px] border border-line bg-glass px-4 py-3 text-[15px] text-mist">
-            <Glyph name="hourglass" className="size-5" />
-            بانتظار المضيف ليبدأ اللعبة. خلّوا الجوال مفتوحًا.
+            <Glyph name="hourglass" className="size-5 text-gold" />
+            بانتظار المضيف ليبدأ اللعبة.
           </p>
         )}
 
         <div className="mt-2 w-full text-start">
-          <div className="mb-3 flex items-baseline justify-between">
-            <h2 className="text-[19px]">اللاعبون</h2>
-            <span className="text-[13px] text-mist">{players.length} في الغرفة</span>
-          </div>
-          <ul className="grid grid-cols-[repeat(auto-fill,minmax(72px,1fr))] gap-x-2 gap-y-4">
+          <h2 className="mb-3 text-[19px]">اللاعبون ({players.length})</h2>
+          <ul className="grid gap-2">
             {players.map((p, i) => (
-              <li key={p.id} className="grid justify-items-center gap-1.5">
-                <Egg name={p.player_name} index={i + 1} host={p.is_host} me={p.id === me.id} />
-                <span className="max-w-full truncate text-sm font-semibold text-ivory">{p.player_name}</span>
+              <li
+                key={p.id}
+                className={cx(
+                  "flex min-h-14 items-center gap-3 rounded-[14px] border px-3 py-2",
+                  p.id === me.id ? "border-gold/50 bg-gold/10" : "border-line bg-deep-2/50",
+                )}
+              >
+                <Egg name={p.player_name} index={i + 1} size="sm" />
+                <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-ivory">{p.player_name}</span>
+                {p.is_host ? <span className="rounded-full bg-violet/25 px-2.5 py-0.5 text-[13px] font-semibold text-violet-text">المضيف</span> : null}
               </li>
             ))}
           </ul>
         </div>
+
+        <Link to="/" className={cx(buttonBase, buttonTone("quiet"), "mt-2")}>
+          <Glyph name="home" className="size-[18px]" />
+          الرئيسية
+        </Link>
       </section>
     );
   }
 
-  const fromQr = initialCode.length === 5;
-
   return (
-    <section className="mx-auto mt-2 max-w-md">
-      {fromQr ? (
-        <span className="mb-3 inline-flex min-h-9 items-center gap-2 rounded-full border border-line bg-glass px-3 text-[13px] font-semibold text-mist">
-          الغرفة <b className="room-code text-base text-neon">{code}</b>
-        </span>
-      ) : null}
-      <h1 className="text-[30px] leading-10">{fromQr ? "اكتبوا اسمكم وادخلوا" : "انضموا إلى غرفة"}</h1>
-      <p className="mt-1 text-[13px] leading-[22px] text-mist">{fromQr ? "هذه بيضتكم في العش." : "اكتبوا الرمز الظاهر على شاشة المضيف."}</p>
+    <section className="surface mx-auto mt-2 max-w-md rounded-[28px] p-6 sm:p-8">
+      <div className="grid justify-items-center text-center">
+        <Mark height={88} className="bob" />
+        <h1 className="mt-2 text-[30px] leading-10">انضمام إلى غرفة</h1>
+        <p className="mt-1 text-[15px] leading-[26px] text-mist">اكتب رمز الغرفة من شاشة المضيف، أو امسح الـ QR.</p>
+      </div>
 
       <form onSubmit={join} className="mt-6 grid gap-5">
-        {fromQr ? (
-          <div className="grid justify-items-center">
-            <Cradle hold style={{ padding: "0 22px" }}>
-              <Egg name={name || "؟"} index={3} size="xl" />
-            </Cradle>
-          </div>
-        ) : (
-          <div className="grid justify-items-center gap-2">
-            <Cradle tone="soft" style={{ padding: "0 22px" }}>
-              <CodeCells value={code} onChange={setCode} invalid={!!error && !/^[A-HJ-NP-Z2-9]{5}$/.test(code)} />
-            </Cradle>
-            <p className="text-[13px] text-mist">5 حروف أو أرقام، مثل K7Q4M</p>
-          </div>
-        )}
+        <Field label="رمز الغرفة">
+          <span className="flex justify-center">
+            <CodeCells value={code} onChange={(next) => setCode(next.replace(/[^A-Z0-9]/g, "").slice(0, 5))} placeholder="ABCDE" />
+          </span>
+        </Field>
 
         <Field label="اسمك">
           <input
@@ -220,20 +217,19 @@ export function JoinRoom({ initialCode = "" }: { initialCode?: string }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             maxLength={24}
-            placeholder="مثل: سارة"
+            placeholder="اكتب اسمك"
             autoComplete="nickname"
-            autoFocus={fromQr}
           />
         </Field>
 
         {error ? (
-          <p role="alert" className="flex items-center gap-1.5 text-[13px] font-semibold text-wrong">
+          <p className="flex items-center gap-1.5 text-[14px] font-semibold text-wrong">
             <Glyph name="alert" className="size-4" />
             {error}
           </p>
         ) : null}
 
-        <Button type="submit" tone="primary" disabled={busy} className="min-h-16 w-full text-[19px]">
+        <Button type="submit" tone="primary" disabled={busy} className="min-h-14 w-full text-[18px]">
           {busy ? "جارٍ الانضمام…" : "انضم"}
         </Button>
       </form>

@@ -1,6 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Shell } from "@/components/shell";
 import { EmptyState } from "@/components/empty-state";
+import { Glyph } from "@/components/brand";
 import { buttonBase, buttonTone, cx } from "@/components/ui";
 
 export const Route = createFileRoute("/questions")({
@@ -13,12 +14,13 @@ function QuestionsPage() {
   return (
     <Shell>
       <EmptyState
-        title="بنك الأسئلة قريبًا"
-        text="يرجع بنك الأسئلة مع قائمة الألعاب الجديدة. إلى ذلك الحين، الأسئلة جاهزة داخل كل لعبة."
+        title="بنك الأسئلة"
+        text="يعود بنك الأسئلة مع قائمة الألعاب الجديدة."
         action={
-          <a href="/#games" className={cx(buttonBase, buttonTone("quiet"), "min-h-14 px-7")}>
-            استعرضوا الألعاب
-          </a>
+          <Link to="/" className={cx(buttonBase, buttonTone("quiet"), "min-h-12 px-6")}>
+            <Glyph name="home" className="size-[18px]" />
+            العودة للرئيسية
+          </Link>
         }
       />
     </Shell>

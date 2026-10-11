@@ -7,8 +7,8 @@ export function cx(...parts: Array<string | false | null | undefined>) {
 
 /**
  * Button tones of the identity:
- *  - primary   neon fill: the one action the screen exists for (once per screen)
- *  - secondary violet fill: a repeated start action next to an item
+ *  - primary   orange-gold gradient: the main action on a screen
+ *  - secondary violet fill: a supporting start action
  *  - quiet     glass: secondary actions, sharing, closing
  *  - outline   a second choice next to a primary
  *  - danger    ends or deducts something
@@ -23,18 +23,18 @@ export const buttonBase =
 export function buttonTone(tone: ButtonTone) {
   switch (tone) {
     case "primary":
-      return "bg-neon text-on-neon shadow-glow-neon hover:brightness-110 active:bg-neon-deep";
+      return "btn-gold font-bold";
     case "secondary":
     case "violet":
-      return "bg-violet-fill text-ivory hover:brightness-110";
+      return "bg-violet-fill text-ivory shadow-glow-violet hover:brightness-110";
     case "light":
       return "bg-ivory text-night hover:brightness-95";
     case "quiet":
     case "glass":
-      return "border border-line bg-glass text-ivory hover:border-line-strong hover:bg-glass-strong";
+      return "border border-line-strong/70 bg-deep-2/60 text-ivory hover:border-glow hover:bg-deep-2";
     case "outline":
     case "ghost":
-      return "border border-line-strong bg-transparent text-ivory hover:border-neon hover:text-neon";
+      return "border border-glow/60 bg-night/40 text-ivory shadow-[0_0_20px_-8px_#6b7bff] hover:border-gold hover:text-gold";
     case "danger":
       return "border border-wrong bg-wrong-fill/15 text-ivory hover:bg-wrong-fill/25";
     case "correct":
@@ -74,9 +74,9 @@ export function Field({
   );
 }
 
-/** Text input styling. 48px tall, 16px text (no iOS zoom), a 3:1 border, neon on focus. */
+/** Text input styling. 48px tall, 16px text (no iOS zoom), a 3:1 border, gold on focus. */
 export const inputClass =
-  "min-h-12 w-full rounded-[14px] border border-line-strong bg-glass px-3.5 text-base text-ivory placeholder:text-faint outline-none transition focus:border-neon focus:shadow-[0_0_0_3px_#22d3ee26] aria-[invalid=true]:border-wrong disabled:opacity-60";
+  "min-h-12 w-full rounded-[14px] border border-line-strong bg-deep-2/70 px-3.5 text-base text-ivory placeholder:text-faint outline-none transition focus:border-gold focus:shadow-[0_0_0_3px_#ffa53a33] aria-[invalid=true]:border-wrong disabled:opacity-60";
 
 /** Absolute join link for a room code. Relative during server render. */
 export function joinLink(code: string) {

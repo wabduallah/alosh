@@ -357,9 +357,9 @@ function HostBoard() {
   if (error && !room) {
     return (
       <Shell play>
-        <section className="glass-card mx-auto mt-8 max-w-xl rounded-3xl p-6 text-center">
-          <p className="text-sm text-crimson">{error}</p>
-          <Link to="/" className="mt-5 inline-flex min-h-11 items-center rounded-full border border-white/15 px-5 text-sm font-bold text-ivory">
+        <section className="glass-card mx-auto mt-8 max-w-xl rounded-[28px] p-6 text-center">
+          <p className="text-sm text-wrong">{error}</p>
+          <Link to="/" className="mt-5 inline-flex min-h-11 items-center rounded-full border border-line-strong/70 px-5 text-sm font-bold text-ivory">
             الرئيسية
           </Link>
         </section>
@@ -378,7 +378,7 @@ function HostBoard() {
   if (!isHost) {
     return (
       <Shell play>
-        <section className="glass-card mx-auto mt-8 max-w-xl rounded-3xl p-6 text-center">
+        <section className="glass-card mx-auto mt-8 max-w-xl rounded-[28px] p-6 text-center">
           <p className="text-base font-bold text-ivory">هذه الشاشة للمضيف فقط.</p>
         </section>
       </Shell>
@@ -414,30 +414,31 @@ function HostBoard() {
 
   return (
     <Shell play>
-      <section className="mx-auto mt-4 max-w-5xl">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-xl font-extrabold text-ivory">
-            رمز الغرفة <span className="room-code text-neon">{room.room_code}</span>
+      <section className="mx-auto mt-2 max-w-5xl tv:max-w-[1440px]">
+        <div className="surface mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[22px] px-4 py-3 lg:px-6 lg:py-4">
+          <h1 className="flex flex-wrap items-center gap-3 text-xl font-extrabold text-ivory lg:text-2xl tv:text-4xl">
+            رمز الغرفة <span className="room-code rounded-[12px] border border-gold/40 bg-night/60 px-3 py-0.5 text-gold shadow-glow-gold">{room.room_code}</span>
           </h1>
-          <span className="text-sm text-muted">
+          <span className="text-sm text-muted lg:text-base tv:text-2xl">
             أُجيب {answered.size} من {questions.length}
           </span>
         </div>
 
         <ShareRoom code={room.room_code} />
 
-        {error ? <p className="mb-4 text-sm text-crimson">{error}</p> : null}
+        {error ? <p className="mb-4 text-sm text-wrong">{error}</p> : null}
 
         {gameOver ? (
-          <div className="glass-card mb-6 rounded-3xl p-6 text-center">
-            <p className="text-sm font-bold text-violet-text">انتهت اللعبة</p>
+          <div className="glass-card mb-6 rounded-[28px] p-6 text-center lg:p-8 tv:p-12">
+            <Glyph name="trophy" className="mx-auto mb-2 size-12 text-gold tv:size-20" />
+            <p className="text-sm font-bold text-violet-text lg:text-lg tv:text-2xl">انتهت اللعبة</p>
             {winners.length > 0 ? (
-              <p className="mt-2 text-3xl font-extrabold text-ivory">
+              <p className="mt-2 font-display text-3xl font-extrabold text-ivory lg:text-5xl tv:text-7xl">
                 {winners.length > 1 ? "التعادل بين: " : "الفائز: "}
                 {winners.map((w) => w.player_name).join("، ")}
               </p>
             ) : null}
-            <p className="mt-1 text-sm text-muted">بنقاط {topScore}</p>
+            <p className="mt-1 text-sm text-muted lg:text-lg tv:text-2xl">بنقاط {topScore}</p>
             {room.status !== "finished" ? (
               <Button type="button" tone="violet" className="mt-5" onClick={endGame} disabled={busy}>
                 إنهاء الغرفة للجميع
@@ -447,15 +448,15 @@ function HostBoard() {
         ) : null}
 
         {active ? (
-          <div className="glass-card mb-6 rounded-3xl p-6 text-center">
-            <p className="text-sm font-bold text-violet-text">
+          <div className="glass-card mb-6 rounded-[28px] p-6 text-center lg:p-8 tv:p-12">
+            <p className="inline-flex rounded-full bg-violet/20 px-3 py-1 text-sm font-bold text-violet-text lg:text-lg tv:px-5 tv:text-2xl">
               {active.category_ar} · {active.points} نقطة
             </p>
-            <p className="mt-3 text-2xl font-extrabold leading-relaxed text-ivory">{active.question_text}</p>
+            <p className="mt-3 font-display text-2xl font-extrabold leading-relaxed text-ivory lg:text-4xl lg:leading-[1.5] tv:text-6xl">{active.question_text}</p>
             {active.options.length > 0 ? (
-              <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+              <ul className="mt-5 grid gap-3 sm:grid-cols-2">
                 {active.options.map((opt) => (
-                  <li key={opt} className="rounded-xl bg-white/[0.05] px-4 py-2 text-ivory">
+                  <li key={opt} className="rounded-[16px] border border-line-strong/60 bg-deep-2/70 px-4 py-3 text-lg font-semibold text-ivory lg:text-2xl tv:py-5 tv:text-4xl">
                     {opt}
                   </li>
                 ))}
@@ -478,9 +479,12 @@ function HostBoard() {
             {!isBluff ? (
             <div className="mt-5">
               {buzzer ? (
-                <div className="rounded-2xl border border-violet/40 bg-violet/10 p-4">
-                  <p className="text-sm text-muted">ضغط الجرس</p>
-                  <p className="mt-1 text-xl font-extrabold text-ivory">{buzzer.player_name}</p>
+                <div className="rounded-[22px] border border-violet/50 bg-violet/15 p-4 shadow-glow-violet lg:p-6">
+                  <p className="inline-flex items-center gap-1.5 text-sm text-muted lg:text-lg tv:text-2xl">
+                    <Glyph name="bell" className="size-5 text-gold tv:size-8" />
+                    ضغط الجرس
+                  </p>
+                  <p className="mt-1 font-display text-2xl font-extrabold text-ivory lg:text-4xl tv:text-6xl">{buzzer.player_name}</p>
                   <div className="mt-3 flex flex-wrap justify-center gap-3">
                     <Button type="button" tone="primary" onClick={() => judge(true)} disabled={busy}>
                       إجابة صحيحة (+{active.points})
@@ -500,13 +504,13 @@ function HostBoard() {
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-muted">{roomState?.state_data?.buzzer_open ? "بانتظار الجرس…" : "الجرس مغلق."}</p>
+                <p className="inline-flex items-center gap-2 text-sm text-muted lg:text-lg tv:text-2xl"><Glyph name="bell" className="size-5" />{roomState?.state_data?.buzzer_open ? "بانتظار الجرس…" : "الجرس مغلق."}</p>
               )}
             </div>
             ) : null}
 
             {!isBluff && revealed ? (
-              <p className="mt-4 rounded-xl border border-emerald/40 bg-emerald/10 p-3 font-bold text-ivory">
+              <p className="mt-4 rounded-[16px] border border-correct/50 bg-correct-fill/15 p-3 font-bold text-ivory lg:text-2xl tv:p-5 tv:text-4xl">
                 الإجابة: {revealed}
               </p>
             ) : null}
@@ -538,11 +542,11 @@ function HostBoard() {
         ) : (
           <div className="overflow-x-auto">
             <div
-              className="grid min-w-[480px] gap-2"
+              className="grid min-w-[480px] gap-2 lg:gap-3"
               style={{ gridTemplateColumns: `repeat(${categories.length}, minmax(0, 1fr))` }}
             >
               {categories.map((cat) => (
-                <div key={cat} className="grid min-h-14 place-items-center rounded-[14px] bg-violet/16 p-2 text-center text-[15px] font-semibold text-ivory">
+                <div key={cat} className="grid min-h-14 place-items-center rounded-[14px] border border-violet/40 bg-violet/20 p-2 text-center text-[15px] font-semibold text-ivory lg:min-h-16 lg:text-lg tv:min-h-24 tv:text-3xl">
                   {cat}
                 </div>
               ))}
@@ -557,9 +561,9 @@ function HostBoard() {
                       disabled={!q || done || busy || !!active}
                       onClick={() => q && openQuestion(q)}
                       className={cx(
-                        "grid min-h-16 place-items-center rounded-[14px] border p-3 text-[22px] font-bold tabular-nums transition",
+                        "grid min-h-16 place-items-center rounded-[14px] border p-3 text-[22px] font-bold tabular-nums transition lg:min-h-20 lg:text-3xl tv:min-h-28 tv:text-5xl",
                         q && !done && !active
-                          ? "border-line bg-deep text-neon hover:border-neon"
+                          ? "border-glow/40 bg-deep text-gold shadow-[0_0_18px_-8px_#6b7bff] hover:border-gold hover:shadow-glow-gold"
                           : done && q
                             ? "border-dashed border-line bg-transparent text-faint"
                             : "border-line bg-deep/60 text-faint",
@@ -576,15 +580,18 @@ function HostBoard() {
         )}
 
         {ranking.length > 0 ? (
-          <div className="glass-card mt-6 rounded-2xl p-4">
-            <h2 className="mb-2 text-sm font-extrabold text-ivory">النتائج</h2>
+          <div className="glass-card mt-6 rounded-[24px] p-5 tv:p-8">
+            <h2 className="mb-3 flex items-center gap-2 text-lg font-extrabold text-ivory tv:text-3xl">
+              <Glyph name="trophy" className="size-5 text-gold tv:size-8" />
+              النتائج
+            </h2>
             <ul className="grid gap-2 sm:grid-cols-2">
               {ranking.map((p, i) => (
-                <li key={p.id} className="flex items-center justify-between rounded-xl bg-white/[0.03] px-3 py-2 text-sm text-ivory/80">
+                <li key={p.id} className="flex items-center justify-between rounded-[14px] border border-line bg-deep-2/50 px-4 py-2.5 text-base text-ivory/90 tv:py-4 tv:text-2xl">
                   <span>
                     {i + 1}. {p.player_name}
                   </span>
-                  <span className="font-extrabold text-neon">{p.score}</span>
+                  <span className="font-extrabold text-gold">{p.score}</span>
                 </li>
               ))}
             </ul>
@@ -650,7 +657,7 @@ function BluffHostPanel({ phase, status, reveal, busy, onStart, onOpenVote, onRe
                 key={o.key}
                 className={cx(
                   "flex items-center justify-between rounded-xl px-4 py-2 text-sm",
-                  o.is_correct ? "border border-emerald/40 bg-emerald/10 text-ivory" : "bg-white/[0.04] text-ivory/80",
+                  o.is_correct ? "border border-correct/50 bg-correct-fill/15 text-ivory" : "bg-deep-2/60 text-ivory/80",
                 )}
               >
                 <span>
@@ -782,17 +789,17 @@ function OutsiderHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; r
   const round = status?.round ?? 0;
 
   return (
-    <section className="mx-auto mt-4 max-w-2xl">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-extrabold text-ivory">
-          رمز الغرفة <span className="room-code text-neon">{roomCode}</span>
+    <section className="mx-auto mt-2 max-w-2xl lg:max-w-3xl tv:max-w-5xl">
+      <div className="surface mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[22px] px-4 py-3 lg:px-6 lg:py-4">
+        <h1 className="flex flex-wrap items-center gap-3 text-xl font-extrabold text-ivory lg:text-2xl tv:text-4xl">
+          رمز الغرفة <span className="room-code rounded-[12px] border border-gold/40 bg-night/60 px-3 py-0.5 text-gold shadow-glow-gold">{roomCode}</span>
         </h1>
         <span className="text-sm text-muted">الجولة {round}</span>
       </div>
 
-      {error ? <p className="mb-4 text-sm text-crimson">{error}</p> : null}
+      {error ? <p className="mb-4 text-sm text-wrong">{error}</p> : null}
 
-      <div className="glass-card rounded-3xl p-6 text-center">
+      <div className="glass-card rounded-[28px] p-6 text-center">
         {phase === "" || phase === "idle" || phase === "board" ? (
           <>
             <p className="text-sm text-muted">تُختار الكلمة والبرة عشوائيًا.</p>
@@ -851,7 +858,7 @@ function OutsiderHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; r
         {reveal?.votes && reveal.votes.length > 0 && (phase === "guess" || phase === "done") ? (
           <ul className="mt-5 grid gap-2 text-right">
             {reveal.votes.map((v) => (
-              <li key={v.name} className="flex items-center justify-between rounded-xl bg-white/[0.04] px-4 py-2 text-sm text-ivory">
+              <li key={v.name} className="flex items-center justify-between rounded-xl bg-deep-2/60 px-4 py-2 text-sm text-ivory">
                 <span>{v.name}</span>
                 <span className="font-bold">{v.votes} صوت</span>
               </li>
@@ -1008,31 +1015,31 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
     scores.red === scores.blue ? "تعادل" : scores.red > scores.blue ? "الفريق الأحمر" : "الفريق الأزرق";
 
   return (
-    <section className="mx-auto mt-4 max-w-2xl">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-extrabold text-ivory">
-          رمز الغرفة <span className="room-code text-neon">{roomCode}</span>
+    <section className="mx-auto mt-2 max-w-2xl lg:max-w-3xl tv:max-w-5xl">
+      <div className="surface mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[22px] px-4 py-3 lg:px-6 lg:py-4">
+        <h1 className="flex flex-wrap items-center gap-3 text-xl font-extrabold text-ivory lg:text-2xl tv:text-4xl">
+          رمز الغرفة <span className="room-code rounded-[12px] border border-gold/40 bg-night/60 px-3 py-0.5 text-gold shadow-glow-gold">{roomCode}</span>
         </h1>
         <span className="text-sm text-muted">هل تعرف</span>
       </div>
 
-      {error ? <p className="mb-4 text-sm text-crimson">{error}</p> : null}
+      {error ? <p className="mb-4 text-sm text-wrong">{error}</p> : null}
 
-      <div className="glass-card rounded-3xl p-6 text-center">
+      <div className="glass-card rounded-[28px] p-6 text-center">
         <div className="grid grid-cols-2 gap-4">
-          <div className="rounded-2xl bg-white/[0.04] p-4">
+          <div className="rounded-2xl bg-deep-2/60 p-4">
             <p className="inline-flex items-center gap-1.5 text-[15px] font-semibold text-team-red">
               <Glyph name="triangle" className="size-3.5" />
               الفريق الأحمر
             </p>
-            <p className="text-4xl font-bold tabular-nums text-ivory">{scores.red}</p>
+            <p className="text-4xl font-bold tabular-nums text-ivory tv:text-7xl">{scores.red}</p>
           </div>
-          <div className="rounded-2xl bg-white/[0.04] p-4">
+          <div className="rounded-2xl bg-deep-2/60 p-4">
             <p className="inline-flex items-center gap-1.5 text-[15px] font-semibold text-team-blue">
               <Glyph name="circle" className="size-3.5" />
               الفريق الأزرق
             </p>
-            <p className="text-4xl font-bold tabular-nums text-ivory">{scores.blue}</p>
+            <p className="text-4xl font-bold tabular-nums text-ivory tv:text-7xl">{scores.blue}</p>
           </div>
         </div>
 
@@ -1043,11 +1050,11 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
               {guesser?.team_color ? ` (${TEAM_NAMES[guesser.team_color ?? ""] ?? ""})` : ""}
             </p>
             {word ? (
-              <p className="mt-3 rounded-2xl border border-neon/40 bg-white/[0.04] px-4 py-3 text-lg font-extrabold text-neon">
+              <p className="mt-3 rounded-2xl border border-gold/40 bg-deep-2/60 px-4 py-3 text-lg font-extrabold text-gold">
                 الكلمة (للوصف فقط): {word}
               </p>
             ) : null}
-            <p dir="ltr" className={cx("mt-2 text-5xl font-bold tabular-nums", timeUp ? "text-wrong" : "text-neon")}>
+            <p dir="ltr" className={cx("mt-2 text-5xl font-bold tabular-nums tv:text-8xl", timeUp ? "text-wrong" : "text-gold")}>
               {timeUp ? "انتهى الوقت" : `${secondsLeft ?? 0}s`}
             </p>
             <div className="mt-6 flex flex-wrap justify-center gap-3">
@@ -1086,7 +1093,7 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
                         }
                         className={cx(
                           "min-h-11 rounded-full border px-4 text-sm font-bold transition",
-                          on ? "border-neon bg-neon/10 text-neon" : "border-white/10 text-muted",
+                          on ? "border-gold bg-gold/10 text-gold" : "border-line text-muted",
                         )}
                         aria-pressed={on}
                       >
@@ -1218,10 +1225,10 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
     : "انتهت اللعبة";
 
   return (
-    <section className="mx-auto mt-4 max-w-2xl">
-      <div className="glass-card rounded-3xl p-6 text-center">
+    <section className="mx-auto mt-2 max-w-2xl lg:max-w-3xl tv:max-w-5xl">
+      <div className="glass-card rounded-[28px] p-6 text-center">
         <p className="text-xs font-bold text-violet-text">رمز الغرفة</p>
-        <p className="room-code mt-1 text-3xl text-neon">{roomCode}</p>
+        <p className="room-code mt-1 text-3xl text-gold">{roomCode}</p>
         <p className="mt-4 text-xl font-extrabold text-ivory">{headline}</p>
         {state.last_result ? <p className="mt-3 text-sm font-bold text-ivory">{state.last_result}</p> : null}
 
@@ -1231,7 +1238,7 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
               key={p.player_id}
               className={cx(
                 "rounded-xl px-3 py-2 text-sm font-bold",
-                p.alive ? "bg-white/[0.05] text-ivory" : "bg-white/[0.02] text-muted line-through",
+                p.alive ? "bg-deep-2/70 text-ivory" : "bg-deep/50 text-muted line-through",
               )}
             >
               {p.player_name}
@@ -1272,7 +1279,7 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
           </p>
         ) : null}
         {error ? (
-          <p role="alert" className="mt-3 text-sm text-crimson">
+          <p role="alert" className="mt-3 text-sm text-wrong">
             {error}
           </p>
         ) : null}

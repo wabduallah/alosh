@@ -16,7 +16,7 @@ export function ShareRoom({ code }: { code: string }) {
     <div className="mb-4 flex justify-center">
       <a href={whatsappUrl(text)} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
         <Glyph name="whatsapp" />
-        أرسلوا الرابط عبر واتساب
+        أرسل الرابط عبر واتساب
       </a>
     </div>
   );
