@@ -3,6 +3,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Shell } from "@/components/shell";
 import { Logo } from "@/components/logo";
 import { ShareSite } from "@/components/share";
+import { supabase } from "@/lib/supabase";
 import { Button, cx, inputClass } from "@/components/ui";
 
 /** Room codes use this alphabet only (no I, O, 0, 1), matching the join page. */
@@ -334,7 +335,45 @@ function HowItWorks() {
   );
 }
 
+/**
+ * Live counts of rooms, shown as numbers only. Reads just the row count of
+ * game_rooms, which is publicly readable, so no player data is touched.
+ */
+function useLiveRoomCounts() {
+  const [counts, setCounts] = useState<{ playing: number; today: number } | null>(null);
+
+  useEffect(() => {
+    if (!supabase) return;
+    const client = supabase;
+    let cancelled = false;
+
+    async function load() {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const [playing, today] = await Promise.all([
+        client.from("game_rooms").select("id", { count: "exact", head: true }).eq("status", "playing"),
+        client
+          .from("game_rooms")
+          .select("id", { count: "exact", head: true })
+          .gte("created_at", startOfDay.toISOString()),
+      ]);
+      if (cancelled || playing.error || today.error) return;
+      setCounts({ playing: playing.count ?? 0, today: today.count ?? 0 });
+    }
+
+    void load();
+    const timer = window.setInterval(() => void load(), 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  return counts;
+}
+
 function Games() {
+  const liveRooms = useLiveRoomCounts();
   const [filter, setFilter] = useState<"all" | Category>("all");
   const [players, setPlayers] = useState<"any" | 2 | 4 | 6 | 8>("any");
   const [query, setQuery] = useState("");
@@ -358,6 +397,11 @@ function Games() {
         <h2 id="games-title" className="text-xl font-extrabold text-ivory">
           الألعاب
         </h2>
+        {liveRooms ? (
+          <p className="mt-1 text-sm font-bold text-neon" aria-live="polite">
+            {liveRooms.playing} لعبة جارية الآن · {liveRooms.today} غرفة اليوم
+          </p>
+        ) : null}
         <p className="mt-1 text-sm text-muted">
           {filtersActive
             ? `${visible.length} من ${GAMES.length} لعبة`
