@@ -1,17 +1,32 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Shell } from "@/components/shell";
 import { Button, cx } from "@/components/ui";
-import { CATEGORY_LABELS, getGame } from "@/lib/games";
+import { CATEGORY_LABELS, SITE_URL, getGame, playerRange } from "@/lib/games";
 
 export const Route = createFileRoute("/games/$slug")({
   head: ({ params }) => {
     const game = getGame(params.slug);
     if (!game) return { meta: [{ title: "لعبة غير موجودة — العش" }] };
+    const { min, max } = playerRange(game.players);
+    // Structured data for search engines. Only this page gets it; the site-wide
+    // shell stays untouched.
+    const structured = {
+      "@context": "https://schema.org",
+      "@type": "VideoGame",
+      name: game.title,
+      description: game.blurb,
+      url: `${SITE_URL}/games/${game.id}`,
+      inLanguage: "ar",
+      gamePlatform: "Web browser",
+      numberOfPlayers: { "@type": "QuantitativeValue", minValue: min, maxValue: max },
+      offers: { "@type": "Offer", price: "0", priceCurrency: "SAR" },
+    };
     return {
       meta: [
         { title: `${game.title} — العش` },
         { name: "description", content: game.blurb },
       ],
+      scripts: [{ type: "application/ld+json", children: JSON.stringify(structured) }],
     };
   },
   component: GamePage,
