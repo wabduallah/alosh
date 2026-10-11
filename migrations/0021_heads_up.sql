@@ -26,6 +26,10 @@ on conflict (id) do nothing;
 
 delete from public.questions_bank where game_slug = 'heads-up';
 
+-- The active word now comes from heads_words, so the foreign key to questions_bank
+-- must go. Other games still set this column from questions_bank in their own code.
+alter table public.room_game_state drop constraint if exists room_game_state_active_question_id_fkey;
+
 -- 1) Host starts a turn. Builds the shuffled word queue on the first turn.
 create or replace function public.heads_start_turn(p_room_id uuid)
 returns jsonb
