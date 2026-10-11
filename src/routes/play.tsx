@@ -214,9 +214,18 @@ function CreatePage() {
           </div>
 
           {room.status === "playing" ? (
-            <p className="mt-6 rounded-2xl border border-emerald/40 bg-emerald/10 p-4 text-sm font-bold text-ivory">
-              بدأت اللعبة. تابع الشاشة الكبيرة.
-            </p>
+            <div className="mt-6 space-y-3">
+              <p className="rounded-2xl border border-emerald/40 bg-emerald/10 p-4 text-sm font-bold text-ivory">
+                بدأت اللعبة. تابع الشاشة الكبيرة.
+              </p>
+              <Link
+                to="/host/$code"
+                params={{ code: room.room_code }}
+                className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-neon px-5 text-sm font-bold text-night"
+              >
+                افتح شاشة المضيف
+              </Link>
+            </div>
           ) : (
             <div className="mt-6">
               {(() => {
