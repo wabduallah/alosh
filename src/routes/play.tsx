@@ -51,6 +51,7 @@ function CreatePage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [room, setRoom] = useState<RoomRow | null>(null);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
+  const [playersError, setPlayersError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
@@ -87,12 +88,23 @@ function CreatePage() {
     let cancelled = false;
 
     async function loadPlayers() {
-      const { data } = await client
-        .from("room_players")
-        .select("id, player_name, is_host")
-        .eq("room_id", roomId)
-        .order("joined_at");
-      if (!cancelled) setPlayers((data ?? []) as PlayerRow[]);
+      try {
+        const { data, error } = await client
+          .from("room_players")
+          .select("id, player_name, is_host")
+          .eq("room_id", roomId)
+          .order("joined_at");
+        if (cancelled) return;
+        if (error) {
+          // Show the real reason on screen instead of an empty list.
+          setPlayersError(`تعذّر تحديث قائمة اللاعبين: ${error.message}`);
+          return;
+        }
+        setPlayers((data ?? []) as PlayerRow[]);
+        setPlayersError(null);
+      } catch (err) {
+        if (!cancelled) setPlayersError(`تعذّر تحديث قائمة اللاعبين: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
 
     loadPlayers();
@@ -264,6 +276,11 @@ function CreatePage() {
           )}
 
           <h2 className="mt-6 text-right text-base font-extrabold text-ivory">اللاعبون ({players.length})</h2>
+          {playersError ? (
+            <p role="alert" className="mt-2 rounded-xl border border-crimson/40 bg-crimson/10 p-3 text-right text-sm text-ivory">
+              {playersError}
+            </p>
+          ) : null}
           <ul className="mt-2 space-y-2 text-right">
             {players.map((p) => (
               <li key={p.id} className="flex items-center justify-between rounded-xl bg-white/[0.04] px-4 py-2 text-sm">
