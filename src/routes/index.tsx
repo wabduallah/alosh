@@ -312,7 +312,13 @@ function Games() {
         </h2>
         {liveRooms ? (
           <p className="mt-1 text-sm font-bold text-neon" aria-live="polite">
-            {liveRooms.playing} لعبة جارية الآن · {liveRooms.today} غرفة اليوم
+            {liveRooms.playing > 0
+              ? [`${liveRooms.playing} لعبة جارية الآن`, liveRooms.today > 0 ? `${liveRooms.today} غرفة اليوم` : null]
+                  .filter(Boolean)
+                  .join(" · ")
+              : liveRooms.today > 0
+                ? `${liveRooms.today} غرفة اليوم`
+                : "كن أول من يبدأ الليلة"}
           </p>
         ) : null}
         <p className="mt-1 text-sm text-muted">
