@@ -3,7 +3,6 @@
     "games": "Games",
     "home": "Home",
     "how": "How to play",
-    "premium": "Premium",
     "join": "Join a room",
     "play": "Create a room",
     "signin": "Sign in",
@@ -35,8 +34,6 @@
     "3t": "The round stays on the big screen",
     "3d": "Answers come from the phone. Scores are counted on the server."
   },
-  "premiumTitle": "Play without the cap",
-  "premiumSub": "Free is enough to try. Premium opens every game and lifts the daily room limit.",
   "footer": "The Nest — living-room games, in the browser.",
   "join": {
     "title": "Join a game",
@@ -147,7 +144,6 @@
     "history": "History",
     "favorites": "Favorites",
     "empty": "No games yet.",
-    "premium": "Premium is active",
     "free": "Free account"
   },
   "ads": "A quiet slot for free play. Hidden on Premium.",

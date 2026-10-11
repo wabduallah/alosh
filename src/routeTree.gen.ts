@@ -13,7 +13,6 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as PlayRouteImport } from './routes/play'
-import { Route as PremiumRouteImport } from './routes/premium'
 import { Route as FeedbackRouteImport } from './routes/feedback'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as TermsRouteImport } from './routes/terms'
@@ -51,11 +50,6 @@ const LoginRoute = LoginRouteImport.update({
 const PlayRoute = PlayRouteImport.update({
   id: '/play',
   path: '/play',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PremiumRoute = PremiumRouteImport.update({
-  id: '/premium',
-  path: '/premium',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FeedbackRoute = FeedbackRouteImport.update({
@@ -154,7 +148,6 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRoute
   '/login': typeof LoginRoute
   '/play': typeof PlayRoute
-  '/premium': typeof PremiumRoute
   '/feedback': typeof FeedbackRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
@@ -179,7 +172,6 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/login': typeof LoginRoute
   '/play': typeof PlayRoute
-  '/premium': typeof PremiumRoute
   '/feedback': typeof FeedbackRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
@@ -205,7 +197,6 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/login': typeof LoginRoute
   '/play': typeof PlayRoute
-  '/premium': typeof PremiumRoute
   '/feedback': typeof FeedbackRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
@@ -232,7 +223,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/login'
     | '/play'
-    | '/premium'
     | '/feedback'
     | '/privacy'
     | '/terms'
@@ -257,7 +247,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/login'
     | '/play'
-    | '/premium'
     | '/feedback'
     | '/privacy'
     | '/terms'
@@ -282,7 +271,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/login'
     | '/play'
-    | '/premium'
     | '/feedback'
     | '/privacy'
     | '/terms'
@@ -308,7 +296,6 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   LoginRoute: typeof LoginRoute
   PlayRoute: typeof PlayRoute
-  PremiumRoute: typeof PremiumRoute
   FeedbackRoute: typeof FeedbackRoute
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
@@ -357,13 +344,6 @@ declare module '@tanstack/react-router' {
       path: '/play'
       fullPath: '/play'
       preLoaderRoute: typeof PlayRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/premium': {
-      id: '/premium'
-      path: '/premium'
-      fullPath: '/premium'
-      preLoaderRoute: typeof PremiumRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/feedback': {
@@ -479,7 +459,6 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   LoginRoute: LoginRoute,
   PlayRoute: PlayRoute,
-  PremiumRoute: PremiumRoute,
   FeedbackRoute: FeedbackRoute,
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,

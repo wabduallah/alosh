@@ -3,6 +3,7 @@ import { Shell } from "@/components/shell";
 import { Button, cx } from "@/components/ui";
 import { CATEGORY_LABELS, SITE_URL, getGame, playerRange } from "@/lib/games";
 import { trackEvent } from "@/lib/analytics";
+import { rememberGame } from "@/lib/last-game";
 import { NotifyForm } from "@/components/notify-form";
 
 export const Route = createFileRoute("/games/$slug")({
@@ -131,7 +132,10 @@ function GamePage() {
 
         <div className={cx("mt-8 flex flex-wrap gap-3", !game.live && "items-center")}>
           {game.live ? (
-            <Link to="/play" search={{ game: game.id }} onClick={() => trackEvent("start_room", game.id)}>
+            <Link to="/play" search={{ game: game.id }} onClick={() => {
+                trackEvent("start_room", game.id);
+                rememberGame(game.id);
+              }}>
               <Button tone="violet">ابدأ الغرفة</Button>
             </Link>
           ) : (

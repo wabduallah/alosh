@@ -5,6 +5,8 @@ import { Logo } from "@/components/logo";
 import { ShareSite } from "@/components/share";
 import { supabase } from "@/lib/supabase";
 import { trackEvent } from "@/lib/analytics";
+import { rememberGame, readLastGame } from "@/lib/last-game";
+import { getGame } from "@/lib/games";
 import { NotifyForm } from "@/components/notify-form";
 import {
   CATEGORY_LABELS,
@@ -245,6 +247,39 @@ function HowItWorks() {
   );
 }
 
+/** Offers the game the visitor picked last, if it is open for play. */
+function ResumeGame() {
+  const [lastId, setLastId] = useState<string | null>(null);
+  useEffect(() => {
+    setLastId(readLastGame());
+  }, []);
+
+  const game = lastId ? getGame(lastId) : undefined;
+  if (!game || !game.live) return null;
+
+  return (
+    <div className="glass-card mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl p-4">
+      <div className="flex items-center gap-3">
+        <span className="text-2xl" aria-hidden="true">{game.icon}</span>
+        <div>
+          <p className="text-xs font-bold text-muted">استأنف آخر لعبة</p>
+          <p className="font-extrabold text-ivory">{game.title}</p>
+        </div>
+      </div>
+      <Link
+        to="/play"
+        search={{ game: game.id }}
+        onClick={() => {
+          trackEvent("resume_game", game.id);
+          rememberGame(game.id);
+        }}
+      >
+        <Button tone="violet">ابدأ الغرفة</Button>
+      </Link>
+    </div>
+  );
+}
+
 /**
  * Live counts of rooms, shown as numbers only. Reads just the row count of
  * game_rooms, which is publicly readable, so no player data is touched.
@@ -316,6 +351,7 @@ function Games() {
 
   return (
     <section id="games" aria-labelledby="games-title" className="mx-auto mt-14 max-w-5xl scroll-mt-6">
+      <ResumeGame />
       <div className="mb-4 px-1">
         <h2 id="games-title" className="text-xl font-extrabold text-ivory">
           الألعاب
@@ -481,13 +517,17 @@ function GameTile({ game, onHowTo }: { game: GameCard; onHowTo: () => void }) {
             tone="glass"
             onClick={() => {
               trackEvent("rules_open", game.id);
+              rememberGame(game.id);
               onHowTo();
             }}
             className="w-full px-3"
           >
             كيف تُلعب؟
           </Button>
-          <Link to="/play" search={{ game: game.id }} onClick={() => trackEvent("start_room", game.id)}>
+          <Link to="/play" search={{ game: game.id }} onClick={() => {
+            trackEvent("start_room", game.id);
+            rememberGame(game.id);
+          }}>
             <Button tone="violet" className="w-full px-3">
               ابدأ الغرفة
             </Button>
@@ -598,7 +638,10 @@ function HowToSheet({ game, onClose }: { game: GameCard | null; onClose: () => v
           ))}
         </ol>
 
-        <Link to="/play" search={{ game: game.id }} className="mt-6 block" onClick={() => trackEvent("start_room", game.id)}>
+        <Link to="/play" search={{ game: game.id }} className="mt-6 block" onClick={() => {
+            trackEvent("start_room", game.id);
+            rememberGame(game.id);
+          }}>
           <Button tone="violet" className="w-full">
             ابدأ الغرفة
           </Button>
