@@ -47,6 +47,7 @@ function PlayerBoard() {
   const [gameSlug, setGameSlug] = useState<string | null>(null);
   const isBluff = gameSlug === "bluff-master";
   const isOutsider = gameSlug === "outsider";
+  const isHeads = gameSlug === "heads-up";
   const [error, setError] = useState<string | null>(null);
 
   // Load the room, its public questions, its state, and its players.
@@ -69,11 +70,14 @@ function PlayerBoard() {
       const r = found as Room;
 
       const { data: game } = await client.from("games").select("slug").eq("id", r.game_id).single();
-      const { data: qs } = await client
-        .from("questions_public")
-        .select("id, category_ar, question_text, options, points")
-        .eq("game_slug", game?.slug ?? "")
-        .order("points");
+      // Heads-up words are never loaded on phones: describers get the current word from the server.
+      const { data: qs } = game?.slug === "heads-up"
+        ? { data: [] }
+        : await client
+            .from("questions_public")
+            .select("id, category_ar, question_text, options, points")
+            .eq("game_slug", game?.slug ?? "")
+            .order("points");
       const { data: state } = await client
         .from("room_game_state")
         .select("active_question_id, state_data")
@@ -280,7 +284,11 @@ function PlayerBoard() {
           />
         ) : null}
 
-        {active ? (
+        {isHeads ? (
+          <HeadsPlayerPanel roomId={room.id} meId={me?.id ?? null} state={stateData} />
+        ) : null}
+
+        {active && !isHeads ? (
           <div className="glass-card mb-5 rounded-3xl p-5 text-center">
             <p className="text-xs font-bold text-violet">
               {active.category_ar} · {active.points} نقطة
@@ -324,11 +332,11 @@ function PlayerBoard() {
             </div>
             ) : null}
           </div>
-        ) : room.status === "playing" && !isOutsider ? (
+        ) : room.status === "playing" && !isOutsider && !isHeads ? (
           <p className="glass-card mb-5 rounded-2xl p-4 text-center text-sm text-muted">اختر المضيف سؤالاً من اللوحة.</p>
         ) : null}
 
-        {categories.length > 0 ? (
+        {categories.length > 0 && !isHeads ? (
           <div className="overflow-x-auto">
             <div
               className="grid min-w-[360px] gap-1.5"
@@ -752,6 +760,135 @@ function OutsiderPlayerPanel({
 
       {phase !== "discuss" && phase !== "vote" && phase !== "guess" && phase !== "done" ? (
         <p className="mt-3 text-sm text-muted">بانتظار المضيف ليبدأ الجولة.</p>
+      ) : null}
+
+      {message ? <p className="mt-3 text-sm text-crimson">{message}</p> : null}
+    </section>
+  );
+}
+
+
+const HEADS_PLAYER_ERRORS: Record<string, string> = {
+  NOT_IN_ROOM: "انضم إلى الغرفة أولًا.",
+};
+
+/** Parses a timestamp from JSON, trimming microseconds that JS can't read. */
+function parseTime(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const t = Date.parse(value.replace(/(\.\d{3})\d+/, "$1"));
+  return Number.isNaN(t) ? null : t;
+}
+
+/** Player side of هل تعرف: the timer, the teams, and the word for describers only. */
+function HeadsPlayerPanel({ roomId, meId, state }: { roomId: string; meId: string | null; state: StateData }) {
+  const [players, setPlayers] = useState<{ id: string; player_name: string; team_color: string | null; is_host: boolean }[]>([]);
+  const [word, setWord] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [message, setMessage] = useState<string | null>(null);
+
+  const phase = String(state.phase ?? "");
+  const guesserId = typeof state.guesser_id === "string" ? state.guesser_id : null;
+  const iAmGuesser = !!meId && meId === guesserId;
+  const me = players.find((p) => p.id === meId) ?? null;
+  const scores = state.team_scores ?? {};
+  const scoreA = Number(scores.A ?? 0);
+  const scoreB = Number(scores.B ?? 0);
+  const guesser = players.find((p) => p.id === guesserId) ?? null;
+
+  useEffect(() => {
+    if (!supabase) return;
+    const client = supabase;
+    let cancelled = false;
+    async function loadPlayers() {
+      const { data } = await client
+        .from("room_players")
+        .select("id, player_name, team_color, is_host")
+        .eq("room_id", roomId)
+        .order("joined_at");
+      if (!cancelled && data) setPlayers(data as typeof players);
+    }
+    loadPlayers();
+    const poll = window.setInterval(loadPlayers, 2000);
+    const clock = window.setInterval(() => setNow(Date.now()), 250);
+    return () => {
+      cancelled = true;
+      window.clearInterval(poll);
+      window.clearInterval(clock);
+    };
+    // players is set by loadPlayers; the effect only depends on the room.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId]);
+
+  // Describers (not the guesser) see the current word. The server never sends it to the guesser.
+  useEffect(() => {
+    if (!supabase || phase !== "turn" || !meId || iAmGuesser) {
+      setWord(null);
+      return;
+    }
+    const client = supabase;
+    let cancelled = false;
+    async function loadWord() {
+      const { data, error } = await client.rpc("heads_my_word", { p_room_id: roomId });
+      if (cancelled) return;
+      if (error) return setMessage(HEADS_PLAYER_ERRORS.NOT_IN_ROOM);
+      setWord((data as string | null) ?? null);
+    }
+    loadWord();
+    const poll = window.setInterval(loadWord, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(poll);
+    };
+  }, [roomId, phase, meId, iAmGuesser, state.guesser_id, state.turn_ends_at]);
+
+  const endsAt = parseTime(typeof state.turn_ends_at === "string" ? state.turn_ends_at : null);
+  const secondsLeft = phase === "turn" && endsAt ? Math.max(0, Math.ceil((endsAt - now) / 1000)) : null;
+
+  const winnerText =
+    scoreA === scoreB ? "تعادل" : `الفائز: ${scoreA > scoreB ? "الفريق A" : "الفريق B"}`;
+
+  return (
+    <section className="glass-card mb-5 rounded-3xl p-5 text-center">
+      <p className="text-xs font-bold text-violet">هل تعرف</p>
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <div className="rounded-2xl bg-white/[0.04] p-3">
+          <p className="text-xs text-muted">الفريق A</p>
+          <p className="text-2xl font-extrabold text-ivory">{scoreA}</p>
+        </div>
+        <div className="rounded-2xl bg-white/[0.04] p-3">
+          <p className="text-xs text-muted">الفريق B</p>
+          <p className="text-2xl font-extrabold text-ivory">{scoreB}</p>
+        </div>
+      </div>
+      {me?.team_color ? <p className="mt-2 text-sm text-muted">أنت في الفريق {me.team_color}</p> : null}
+
+      {phase === "turn" ? (
+        <div className="mt-4">
+          <p className="text-sm text-muted">
+            المخمِّن: <span className="font-bold text-ivory">{guesser?.player_name ?? "—"}</span>
+          </p>
+          <p className="mt-1 font-mono text-3xl font-extrabold text-neon">{secondsLeft !== null ? `${secondsLeft}s` : ""}</p>
+          {iAmGuesser ? (
+            <p className="mt-4 rounded-2xl border border-violet/40 bg-violet/10 p-4 font-bold text-ivory">
+              أنت المخمِّن! خمّن الكلمة من تلميحات زملائك.
+            </p>
+          ) : word ? (
+            <div className="mt-4 rounded-2xl border border-neon/40 bg-neon/10 p-5">
+              <p className="text-sm text-muted">صِفها دون أن تقولها</p>
+              <p className="mt-2 text-3xl font-extrabold text-ivory">{word}</p>
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-muted">بانتظار الكلمة…</p>
+          )}
+        </div>
+      ) : null}
+
+      {phase === "between" || phase === "" || phase === "idle" ? (
+        <p className="mt-4 text-sm text-muted">بانتظار المضيف ليبدأ الدور.</p>
+      ) : null}
+
+      {phase === "turn_over" || phase === "over" ? (
+        <p className="mt-4 text-xl font-extrabold text-ivory">انتهت كل الكلمات. {winnerText}</p>
       ) : null}
 
       {message ? <p className="mt-3 text-sm text-crimson">{message}</p> : null}

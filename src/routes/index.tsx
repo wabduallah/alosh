@@ -45,6 +45,15 @@ const GAMES: GameCard[] = [
     live: true,
   },
   {
+    id: "heads-up",
+    title: "هل تعرف",
+    icon: "🧠",
+    players: "2-10",
+    category: "words",
+    blurb: "اختاروا فريقين. مخمِّن يتوسط الفريق، وزملاؤه يصفون الكلمة دون أن يقولوها.",
+    live: true,
+  },
+  {
     id: "word-guess",
     title: "خمّن الكلمة",
     icon: "🔠",
