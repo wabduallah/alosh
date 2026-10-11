@@ -49,6 +49,7 @@ function HostBoard() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const isBluff = gameSlug === "bluff-master";
+  const isOutsider = gameSlug === "outsider";
 
   // Load the room, its questions, its live state, and its players.
   useEffect(() => {
@@ -380,6 +381,14 @@ function HostBoard() {
     );
   }
 
+  if (isOutsider) {
+    return (
+      <Shell>
+        <OutsiderHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
+      </Shell>
+    );
+  }
+
   return (
     <Shell>
       <section className="mx-auto mt-4 max-w-5xl">
@@ -630,5 +639,208 @@ function BluffHostPanel({ phase, status, reveal, busy, onStart, onOpenVote, onRe
         </>
       ) : null}
     </div>
+  );
+}
+
+
+type OutsiderStatus = { phase: string; round: number; voted: number; players: number };
+type OutsiderVoteCount = { name: string; votes: number };
+type OutsiderReveal = {
+  outsider?: string;
+  caught?: boolean;
+  topic?: string;
+  word?: string;
+  guess?: string;
+  guess_ok?: boolean;
+  votes?: OutsiderVoteCount[];
+};
+
+const OUTSIDER_HOST_ERRORS: Record<string, string> = {
+  NOT_ENOUGH_PLAYERS: "تحتاج الجولة إلى 3 لاعبين على الأقل.",
+  ROOM_NOT_PLAYING: "ابدأ الغرفة أولًا.",
+  WRONG_PHASE: "هذه الخطوة غير متاحة الآن.",
+};
+
+/** Host controls for برة السالفة: start, vote, reveal, and the next round. */
+function OutsiderHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; roomCode: string; roomStatus: string }) {
+  const [status, setStatus] = useState<OutsiderStatus | null>(null);
+  const [reveal, setReveal] = useState<OutsiderReveal | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ended, setEnded] = useState(roomStatus === "finished");
+
+  async function refresh() {
+    if (!supabase) return;
+    const [{ data: st }, { data: gs }] = await Promise.all([
+      supabase.rpc("outsider_status", { p_room_id: roomId }),
+      supabase.from("room_game_state").select("state_data").eq("room_id", roomId).maybeSingle(),
+    ]);
+    if (st) setStatus(st as OutsiderStatus);
+    setReveal(((gs?.state_data as { reveal?: OutsiderReveal } | undefined)?.reveal ?? null) as OutsiderReveal | null);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    const tick = () => {
+      if (!cancelled) refresh();
+    };
+    tick();
+    const timer = window.setInterval(tick, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+    // refresh only depends on roomId, which the effect already tracks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId]);
+
+  /** Calls one step on the server; returns true when it succeeded. */
+  async function call(fn: "outsider_start_round" | "outsider_open_vote" | "outsider_reveal" | "outsider_finish_round") {
+    if (!supabase) return false;
+    const { data, error: rpcError } = await supabase.rpc(fn, { p_room_id: roomId });
+    if (rpcError) throw rpcError;
+    const result = data as { ok: boolean; reason?: string };
+    if (!result.ok) {
+      setError(OUTSIDER_HOST_ERRORS[result.reason ?? ""] ?? "تعذّر تنفيذ الخطوة.");
+      return false;
+    }
+    return true;
+  }
+
+  async function step(fn: Parameters<typeof call>[0]) {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await call(fn);
+      await refresh();
+    } catch {
+      setError("تعذّر تنفيذ الخطوة.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Finish the current round and start the next one in one go. */
+  async function nextRound() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (await call("outsider_finish_round")) await call("outsider_start_round");
+      await refresh();
+    } catch {
+      setError("تعذّر بدء الجولة التالية.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function endGame() {
+    if (!supabase) return;
+    setBusy(true);
+    try {
+      const { error: updateError } = await supabase.from("game_rooms").update({ status: "finished" }).eq("id", roomId);
+      if (updateError) throw updateError;
+      setEnded(true);
+    } catch {
+      setError("تعذّر إنهاء الغرفة.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const phase = status?.phase ?? "";
+  const round = status?.round ?? 0;
+
+  return (
+    <section className="mx-auto mt-4 max-w-2xl">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-xl font-extrabold text-ivory">
+          رمز الغرفة <span className="font-mono text-neon">{roomCode}</span>
+        </h1>
+        <span className="text-sm text-muted">الجولة {round}</span>
+      </div>
+
+      {error ? <p className="mb-4 text-sm text-crimson">{error}</p> : null}
+
+      <div className="glass-card rounded-3xl p-6 text-center">
+        {phase === "" || phase === "idle" || phase === "board" ? (
+          <>
+            <p className="text-sm text-muted">تُختار الكلمة والبرة عشوائيًا.</p>
+            <Button type="button" tone="primary" className="mt-4" onClick={() => step("outsider_start_round")} disabled={busy}>
+              ابدأ الجولة
+            </Button>
+          </>
+        ) : null}
+
+        {phase === "discuss" ? (
+          <>
+            <p className="text-lg font-bold text-ivory">الجولة جارية: ناقشوا الكلمة بالصوت.</p>
+            <p className="mt-2 text-sm text-muted">لا تذكروا الكلمة بوضوح، والبرة يحاول أن يتعرّف عليها.</p>
+            <Button type="button" tone="primary" className="mt-4" onClick={() => step("outsider_open_vote")} disabled={busy}>
+              افتح التصويت
+            </Button>
+          </>
+        ) : null}
+
+        {phase === "vote" ? (
+          <>
+            <p className="text-lg font-bold text-ivory">
+              صوّت {status?.voted ?? 0} من {status?.players ?? 0}
+            </p>
+            <Button type="button" tone="primary" className="mt-4" onClick={() => step("outsider_reveal")} disabled={busy}>
+              اكشف النتائج
+            </Button>
+          </>
+        ) : null}
+
+        {phase === "guess" ? (
+          <>
+            <p className="text-lg font-bold text-ivory">{reveal?.outsider ?? "البرة"} برة السالفة!</p>
+            <p className="mt-2 text-sm text-muted">بانتظار تخمينه للكلمة…</p>
+          </>
+        ) : null}
+
+        {phase === "done" && reveal ? (
+          <>
+            <p className="text-sm text-muted">{reveal.caught ? "تم كشف البرة" : "لم يُكشف البرة"}</p>
+            <p className="mt-1 text-xl font-extrabold text-ivory">البرة: {reveal.outsider}</p>
+            <p className="mt-2 text-sm text-muted">
+              الموضوع: {reveal.topic} · الكلمة: <span className="font-bold text-ivory">{reveal.word}</span>
+            </p>
+            {reveal.guess !== undefined ? (
+              <p className="mt-2 text-sm text-ivory">
+                تخمينه: {reveal.guess} {reveal.guess_ok ? "✓" : "✗"}
+              </p>
+            ) : null}
+            <Button type="button" tone="primary" className="mt-5" onClick={nextRound} disabled={busy}>
+              جولة جديدة
+            </Button>
+          </>
+        ) : null}
+
+        {reveal?.votes && reveal.votes.length > 0 && (phase === "guess" || phase === "done") ? (
+          <ul className="mt-5 grid gap-2 text-right">
+            {reveal.votes.map((v) => (
+              <li key={v.name} className="flex items-center justify-between rounded-xl bg-white/[0.04] px-4 py-2 text-sm text-ivory">
+                <span>{v.name}</span>
+                <span className="font-bold">{v.votes} صوت</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+
+      {!ended ? (
+        <div className="mt-6 text-center">
+          <Button type="button" tone="violet" onClick={endGame} disabled={busy}>
+            إنهاء الغرفة للجميع
+          </Button>
+        </div>
+      ) : (
+        <p className="mt-6 text-center text-sm text-muted">انتهت الغرفة.</p>
+      )}
+    </section>
   );
 }

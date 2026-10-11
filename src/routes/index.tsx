@@ -60,7 +60,7 @@ const GAMES: GameCard[] = [
     players: "3-8",
     category: "talk",
     blurb: "لاعب واحد لا يعرف الموضوع. هل تكشفه قبل أن يكشف نفسه؟",
-    live: false,
+    live: true,
   },
   {
     id: "secret-code",
