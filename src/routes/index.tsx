@@ -191,6 +191,41 @@ function fitsPlayers(game: GameCard, key: "any" | 2 | 4 | 6 | 8) {
   return min <= key && key <= max;
 }
 
+type OccasionKey = "family" | "quick4" | "friends" | "words";
+
+/** Ready-made answers to "what should we play?". Each one narrows the list. */
+const OCCASIONS: Array<{
+  key: OccasionKey;
+  label: string;
+  hint: string;
+  match: (game: GameCard) => boolean;
+}> = [
+  {
+    key: "family",
+    label: "سهرة عائلية",
+    hint: "ألعاب مريحة للجميع، من الصغار إلى الكبار.",
+    match: (game) => ["tactical-grid", "heads-up", "outsider"].includes(game.id),
+  },
+  {
+    key: "quick4",
+    label: "لعبة لـ 4",
+    hint: "ألعاب متاحة الآن تناسب أربعة لاعبين.",
+    match: (game) => game.live && fitsPlayers(game, 4),
+  },
+  {
+    key: "friends",
+    label: "للأصدقاء والتحدي",
+    hint: "ألعاب تنافسية تحتاج خداعًا واستراتيجية.",
+    match: (game) => ["tactical-grid", "bluff-master", "social-mafia"].includes(game.id),
+  },
+  {
+    key: "words",
+    label: "لعب بالكلمات",
+    hint: "ألعاب تعتمد على الكلمات والوصف.",
+    match: (game) => game.category === "words",
+  },
+];
+
 const CATEGORY_LABELS: Record<Category, string> = {
   words: "كلمات",
   talk: "حوار وتخمين",
@@ -406,20 +441,23 @@ function Games() {
   const liveRooms = useLiveRoomCounts();
   const [filter, setFilter] = useState<"all" | Category>("all");
   const [players, setPlayers] = useState<"any" | 2 | 4 | 6 | 8>("any");
+  const [occasion, setOccasion] = useState<OccasionKey | null>(null);
   const [query, setQuery] = useState("");
   const [sheetGame, setSheetGame] = useState<GameCard | null>(null);
   const liveCount = GAMES.filter((game) => game.live).length;
   const term = query.trim();
+  const activeOccasion = OCCASIONS.find((item) => item.key === occasion) ?? null;
   const visible = GAMES.filter(
     (game) =>
       (filter === "all" || game.category === filter) &&
       fitsPlayers(game, players) &&
+      (activeOccasion === null || activeOccasion.match(game)) &&
       (term === "" ||
         game.title.includes(term) ||
         game.blurb.includes(term) ||
         CATEGORY_LABELS[game.category].includes(term)),
   ).sort((a, b) => Number(b.live) - Number(a.live));
-  const filtersActive = filter !== "all" || players !== "any" || term !== "";
+  const filtersActive = filter !== "all" || players !== "any" || term !== "" || occasion !== null;
 
   return (
     <section id="games" aria-labelledby="games-title" className="mx-auto mt-14 max-w-5xl scroll-mt-6">
@@ -452,6 +490,27 @@ function Games() {
           className={inputClass}
         />
       </div>
+
+      <div role="group" aria-label="اختر حسب المناسبة" className="mb-2 flex gap-2 overflow-x-auto pb-1">
+        {OCCASIONS.map((item) => {
+          const active = occasion === item.key;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              aria-pressed={active}
+              onClick={() => setOccasion(active ? null : item.key)}
+              className={cx(
+                "min-h-10 shrink-0 rounded-full border px-4 text-sm font-bold transition",
+                active ? "border-violet bg-violet/10 text-ivory" : "border-white/10 text-muted hover:text-ivory",
+              )}
+            >
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
+      {activeOccasion ? <p className="mb-3 px-1 text-sm text-muted">{activeOccasion.hint}</p> : <div className="mb-3" />}
 
       <div role="group" aria-label="عدد اللاعبين" className="mb-3 flex gap-2 overflow-x-auto pb-1">
         {PLAYER_FILTERS.map((item) => {
@@ -510,6 +569,7 @@ function Games() {
               onClick={() => {
                 setFilter("all");
                 setPlayers("any");
+                setOccasion(null);
                 setQuery("");
               }}
               className="mt-3 min-h-11 rounded-full border border-white/10 px-5 font-bold text-ivory hover:border-neon/60"
