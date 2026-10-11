@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 import { Shell } from "@/components/shell";
-import { Button, Field, inputClass, cx, joinLink } from "@/components/ui";
+import { Button, Field, buttonBase, buttonTone, inputClass, cx, joinLink } from "@/components/ui";
+import { Egg, GameIcon, Glyph, Mark } from "@/components/brand";
 import { QrCode } from "@/components/qr-code";
 import { ensureSession, supabase } from "@/lib/supabase";
 
@@ -219,134 +220,180 @@ function CreatePage() {
   }
 
   if (room) {
+    const game = games?.find((g) => g.id === room.game_id);
+    const min = game?.min_players ?? 2;
+    const max = game?.max_players ?? 12;
+    const enough = players.length >= min;
     return (
-      <Shell>
-        <section className="glass-card mx-auto mt-6 max-w-xl rounded-3xl p-6 text-center">
-          <p className="text-sm text-muted">رمز الغرفة</p>
-          <p className="mt-2 font-mono text-4xl font-extrabold tracking-[0.3em] text-neon">{room.room_code}</p>
-          <p className="mt-3 text-sm text-muted">شارك الرمز مع اللاعبين ليدخلوا من جوالاتهم.</p>
-
-          <div className="mt-5 flex flex-col items-center gap-3">
-            <QrCode text={joinLink(room.room_code)} className="size-44" />
-            <p className="text-xs text-muted">امسح الـ QR من الجوال، أو افتح الرابط:</p>
-            <a href={joinLink(room.room_code)} className="break-all text-sm font-bold text-neon underline-offset-4 hover:underline">
-              {joinLink(room.room_code)}
-            </a>
-          </div>
-
-          {room.status === "playing" ? (
-            <div className="mt-6 space-y-3">
-              <p className="rounded-2xl border border-emerald/40 bg-emerald/10 p-4 text-sm font-bold text-ivory">
-                بدأت اللعبة. تابع الشاشة الكبيرة.
-              </p>
-              <Link
-                to="/host/$code"
-                params={{ code: room.room_code }}
-                className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-neon px-5 text-sm font-bold text-night"
-              >
-                افتح شاشة المضيف
-              </Link>
-            </div>
-          ) : (
-            <div className="mt-6">
-              {(() => {
-                const game = games?.find((g) => g.id === room.game_id);
-                const min = game?.min_players ?? 2;
-                const max = game?.max_players ?? 12;
-                const enough = players.length >= min;
-                return (
-                  <>
-                    <p className="text-sm text-muted">
-                      {enough ? "جاهزون للبدء." : `تحتاج ${min} لاعبين على الأقل للبدء.`} الحد الأقصى {max}.
-                    </p>
-                    {startError ? <p className="mt-2 text-sm text-crimson">{startError}</p> : null}
-                    <Button
-                      type="button"
-                      tone="primary"
-                      className="mt-3 w-full"
-                      disabled={!enough || starting}
-                      onClick={startGame}
-                    >
-                      {starting ? "جارٍ البدء…" : "ابدأ اللعبة"}
-                    </Button>
-                  </>
-                );
-              })()}
-            </div>
-          )}
-
-          <h2 className="mt-6 text-right text-base font-extrabold text-ivory">اللاعبون ({players.length})</h2>
-          {playersError ? (
-            <p role="alert" className="mt-2 rounded-xl border border-crimson/40 bg-crimson/10 p-3 text-right text-sm text-ivory">
-              {playersError}
+      <Shell wide>
+        <div className="mx-auto grid max-w-5xl gap-5 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start lg:gap-8 tv:max-w-none tv:grid-cols-[minmax(0,1fr)_600px]">
+          {/* The room code and QR: what everyone in the room needs to see, large on a TV. */}
+          <section aria-label="رمز الغرفة" className="surface relative grid justify-items-center gap-3 overflow-hidden rounded-[28px] p-6 text-center lg:order-2 lg:p-8">
+            <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 -top-24 mx-auto size-64 rounded-full bg-gold/15 blur-3xl" />
+            <p className="text-[15px] font-semibold text-mist tv:text-xl">رمز الغرفة</p>
+            <p className="room-code rounded-[18px] border border-gold/40 bg-night/60 px-5 py-2 text-[40px] leading-[52px] text-gold shadow-glow-gold lg:text-[48px] lg:leading-[60px] tv:text-[72px] tv:leading-[88px]">
+              {room.room_code}
             </p>
-          ) : null}
-          <ul className="mt-2 space-y-2 text-right">
-            {players.map((p) => (
-              <li key={p.id} className="flex items-center justify-between rounded-xl bg-white/[0.04] px-4 py-2 text-sm">
-                <span className="text-ivory">{p.player_name}</span>
-                {p.is_host ? <span className="text-xs font-bold text-violet">المضيف</span> : null}
-              </li>
-            ))}
-          </ul>
+            <p className="text-[15px] leading-[26px] text-mist tv:text-xl">شارك الرمز مع اللاعبين ليدخلوا من جوالاتهم.</p>
 
-          <Link to="/" className="mt-6 inline-flex min-h-11 items-center rounded-full border border-white/15 px-5 text-sm font-bold text-ivory">
-            العودة للرئيسية
-          </Link>
-        </section>
+            <div className="mt-2 flex flex-col items-center gap-3">
+              <QrCode text={joinLink(room.room_code)} className="size-44 lg:size-52 tv:size-72" />
+              <p className="text-[13px] text-mist tv:text-lg">امسح الـ QR من الجوال، أو افتح الرابط:</p>
+              <a href={joinLink(room.room_code)} className="break-all text-[15px] font-bold text-gold underline-offset-4 hover:underline tv:text-xl">
+                {joinLink(room.room_code)}
+              </a>
+            </div>
+          </section>
+
+          <section className="grid gap-5 lg:order-1">
+            {game ? (
+              <div className="flex items-center gap-3">
+                <GameIcon id={game.slug} />
+                <h1 className="text-[26px] leading-9 lg:text-[34px] lg:leading-[46px] tv:text-[48px] tv:leading-[64px]">{game.title_ar}</h1>
+              </div>
+            ) : null}
+
+            {room.status === "playing" ? (
+              <div className="grid gap-3">
+                <p className="flex items-center gap-2 rounded-[18px] border border-correct/50 bg-correct-fill/15 p-4 text-[16px] font-bold text-ivory">
+                  <Glyph name="check" className="size-5 text-correct" />
+                  بدأت اللعبة. تابع الشاشة الكبيرة.
+                </p>
+                <Link to="/host/$code" params={{ code: room.room_code }} className={cx(buttonBase, buttonTone("primary"), "min-h-14 w-full text-[17px]")}>
+                  <Glyph name="tv" />
+                  افتح شاشة المضيف
+                </Link>
+              </div>
+            ) : (
+              <div className="surface grid gap-3 rounded-[24px] p-5">
+                <p className={cx("flex items-center gap-2 text-[16px] tv:text-xl", enough ? "text-ivory" : "text-mist")}>
+                  <Glyph name={enough ? "check" : "hourglass"} className={cx("size-5", enough ? "text-correct" : "text-gold")} />
+                  {enough ? "جاهزون للبدء." : `تحتاج ${min} لاعبين على الأقل للبدء.`} الحد الأقصى {max}.
+                </p>
+                {startError ? (
+                  <p className="flex items-center gap-1.5 text-[14px] font-semibold text-wrong">
+                    <Glyph name="alert" className="size-4" />
+                    {startError}
+                  </p>
+                ) : null}
+                <Button type="button" tone="primary" className="min-h-14 w-full text-[18px]" disabled={!enough || starting} onClick={startGame}>
+                  {starting ? "جارٍ البدء…" : "ابدأ اللعبة"}
+                </Button>
+              </div>
+            )}
+
+            <div className="surface rounded-[24px] p-5">
+              <h2 className="mb-3 flex items-center gap-2 text-[20px] tv:text-[30px]">
+                <Glyph name="users" className="size-6 text-gold" />
+                اللاعبون ({players.length})
+              </h2>
+              {playersError ? (
+                <p role="alert" className="mb-3 flex items-start gap-2 rounded-[14px] border border-wrong/50 bg-wrong-fill/15 p-3 text-[14px] text-ivory">
+                  <Glyph name="alert" className="mt-0.5 size-4 text-wrong" />
+                  {playersError}
+                </p>
+              ) : null}
+              <ul className="grid gap-2 sm:grid-cols-2">
+                {players.map((p, i) => (
+                  <li key={p.id} className="rise flex min-h-14 items-center gap-3 rounded-[14px] border border-line bg-deep-2/50 px-3 py-2 tv:min-h-20">
+                    <Egg name={p.player_name} index={i + 1} size="sm" className="tv:w-11 tv:text-lg" />
+                    <span className="min-w-0 flex-1 truncate text-[16px] font-semibold text-ivory tv:text-2xl">{p.player_name}</span>
+                    {p.is_host ? <span className="rounded-full bg-violet/25 px-2.5 py-0.5 text-[13px] font-semibold text-violet-text tv:text-base">المضيف</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <Link to="/" className={cx(buttonBase, buttonTone("quiet"), "w-fit")}>
+              <Glyph name="home" className="size-[18px]" />
+              العودة للرئيسية
+            </Link>
+          </section>
+        </div>
       </Shell>
     );
   }
 
   return (
     <Shell>
-      <section className="mx-auto mt-6 max-w-3xl">
-        <h1 className="text-2xl font-extrabold text-ivory">إنشاء غرفة</h1>
-        <p className="mt-2 text-sm text-muted">اختر اللعبة، واكتب اسمك، ثم افتح الغرفة.</p>
+      <section className="mx-auto max-w-4xl">
+        <div className="flex items-center gap-4">
+          <Mark height={72} className="hidden sm:block" />
+          <div>
+            <h1 className="text-[30px] leading-10 lg:text-[40px] lg:leading-[52px]">إنشاء غرفة</h1>
+            <p className="mt-1 text-[15px] leading-[26px] text-mist">اختر اللعبة، واكتب اسمك، ثم افتح الغرفة.</p>
+          </div>
+        </div>
 
         {loadError ? (
-          <p className="mt-6 rounded-2xl border border-crimson/40 bg-crimson/10 p-4 text-sm text-ivory">{loadError}</p>
+          <p className="mt-6 flex items-center gap-2 rounded-[18px] border border-wrong/50 bg-wrong-fill/15 p-4 text-[15px] text-ivory">
+            <Glyph name="alert" className="size-5 text-wrong" />
+            {loadError}
+          </p>
         ) : games === null ? (
-          <p className="mt-6 text-sm text-muted">جارٍ تحميل الألعاب…</p>
+          <p className="mt-6 flex items-center gap-3 text-[15px] text-mist">
+            <span aria-hidden="true" className="size-5 animate-spin rounded-full border-2 border-gold border-t-transparent motion-reduce:animate-none" />
+            جارٍ تحميل الألعاب…
+          </p>
         ) : (
-          <form onSubmit={createRoom} className="mt-6 space-y-6">
+          <form onSubmit={createRoom} className="mt-6 grid gap-6">
             <div className="grid gap-3 sm:grid-cols-2">
-              {games.map((g) => (
-                <button
-                  key={g.id}
-                  type="button"
-                  onClick={() => setSelected(g.id)}
-                  aria-pressed={selected === g.id}
-                  className={cx(
-                    "glass-card rounded-2xl p-4 text-right transition",
-                    selected === g.id ? "border-neon/70 shadow-[0_0_0_3px_rgb(6_182_212/0.15)]" : "hover:border-neon/40",
-                  )}
-                >
-                  <span className="block text-base font-extrabold text-ivory">{g.title_ar}</span>
-                  <span className="mt-1 block text-sm leading-6 text-muted">{g.description_ar}</span>
-                  <span className="mt-2 block text-xs font-bold text-muted">
-                    👥 {g.min_players}–{g.max_players} لاعب
-                  </span>
-                </button>
-              ))}
+              {games.map((g) => {
+                const on = selected === g.id;
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => setSelected(g.id)}
+                    aria-pressed={on}
+                    className={cx(
+                      "surface relative flex items-start gap-3 rounded-[22px] p-4 text-start transition",
+                      on ? "border-gold! shadow-[0_0_0_3px_#ffa53a33,0_0_30px_-8px_#ffa53a88]!" : "hover:border-glow!",
+                    )}
+                  >
+                    <GameIcon id={g.slug} />
+                    <span className="grid min-w-0 flex-1 gap-1">
+                      <span className="font-display text-[19px] font-bold leading-7 text-ivory">{g.title_ar}</span>
+                      <span className="text-[14px] leading-6 text-mist">{g.description_ar}</span>
+                      <span className="mt-1 inline-flex items-center gap-1.5 text-[13px] font-bold text-mist">
+                        <Glyph name="users" className="size-[15px]" />
+                        {g.min_players}–{g.max_players} لاعب
+                      </span>
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className={cx("grid size-7 shrink-0 place-items-center rounded-full border-2", on ? "border-gold bg-gold text-on-gold" : "border-line-strong")}
+                    >
+                      {on ? <Glyph name="check" className="size-4" /> : null}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
-            <Field label="اسمك (المضيف)">
-              <input
-                className={inputClass}
-                value={hostName}
-                onChange={(e) => setHostName(e.target.value)}
-                maxLength={24}
-                placeholder="اكتب اسمك"
-                autoComplete="nickname"
-              />
-            </Field>
+            <div className="surface grid gap-5 rounded-[24px] p-5 sm:p-6">
+              <Field label="اسمك (المضيف)">
+                <input
+                  className={inputClass}
+                  value={hostName}
+                  onChange={(e) => setHostName(e.target.value)}
+                  maxLength={24}
+                  placeholder="اكتب اسمك"
+                  autoComplete="nickname"
+                />
+              </Field>
 
-            {formError ? <p className="text-sm text-crimson">{formError}</p> : null}
+              {formError ? (
+                <p className="flex items-center gap-1.5 text-[14px] font-semibold text-wrong">
+                  <Glyph name="alert" className="size-4" />
+                  {formError}
+                </p>
+              ) : null}
 
-            <Button type="submit" tone="primary" disabled={busy || !selected} className="w-full">
-              {busy ? "جارٍ الإنشاء…" : "افتح الغرفة"}
-            </Button>
+              <Button type="submit" tone="primary" disabled={busy || !selected} className="min-h-14 w-full text-[18px]">
+                {busy ? "جارٍ الإنشاء…" : "افتح الغرفة"}
+              </Button>
+            </div>
           </form>
         )}
       </section>

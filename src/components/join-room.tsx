@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
-import { Button, Field, inputClass } from "@/components/ui";
+import { Button, Field, buttonBase, buttonTone, cx, inputClass } from "@/components/ui";
+import { CodeCells, Cradle, Egg, Glyph, Mark } from "@/components/brand";
 import { ensureSession, supabase } from "@/lib/supabase";
 
 /** Room codes use this alphabet only (no I, O, 0, 1), matching the database. */
@@ -140,39 +141,55 @@ export function JoinRoom({ initialCode = "" }: { initialCode?: string }) {
   }
 
   if (room && me) {
+    const myIndex = Math.max(1, players.findIndex((p) => p.id === me.id) + 1);
     return (
-      <section className="glass-card mx-auto mt-6 max-w-md rounded-3xl p-6 text-center">
-        <p className="text-sm text-muted">أنت في الغرفة</p>
-        <p className="mt-2 font-mono text-3xl font-extrabold tracking-[0.3em] text-neon">{room.room_code}</p>
-        <p className="mt-3 text-base font-bold text-ivory">مرحبًا {me.player_name}</p>
+      <section className="surface mx-auto mt-2 grid max-w-md justify-items-center gap-4 rounded-[28px] p-6 text-center sm:p-8">
+        <div className="grid justify-items-center gap-1">
+          <p className="text-[13px] font-semibold text-mist">أنت في الغرفة</p>
+          <p className="room-code text-[34px] leading-[44px] text-gold">{room.room_code}</p>
+        </div>
+        <Cradle hold style={{ padding: "0 26px" }}>
+          <Egg name={me.player_name} index={myIndex} size="xl" me />
+        </Cradle>
+        <p className="font-display text-[26px] font-extrabold leading-9 text-ivory">مرحبًا {me.player_name}</p>
         {room.status === "playing" ? (
-          <div className="mt-3 space-y-3">
-            <p className="rounded-2xl border border-emerald/40 bg-emerald/10 p-3 text-sm font-bold text-ivory">
+          <div className="grid w-full gap-3">
+            <p className="flex items-center justify-center gap-2 rounded-[14px] border border-correct/50 bg-correct-fill/15 p-3 text-[15px] font-semibold text-ivory">
+              <Glyph name="check" className="size-5 text-correct" />
               بدأت اللعبة! تابع الشاشة الكبيرة.
             </p>
-            <Link
-              to="/room/$code"
-              params={{ code: room.room_code }}
-              className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-neon px-5 text-sm font-bold text-night"
-            >
+            <Link to="/room/$code" params={{ code: room.room_code }} className={cx(buttonBase, buttonTone("primary"), "min-h-16 w-full text-[19px]")}>
               افتح لوحة اللعب
             </Link>
           </div>
         ) : (
-          <p className="mt-1 text-sm text-muted">بانتظار المضيف ليبدأ اللعبة.</p>
+          <p className="flex items-center gap-2 rounded-[14px] border border-line bg-glass px-4 py-3 text-[15px] text-mist">
+            <Glyph name="hourglass" className="size-5 text-gold" />
+            بانتظار المضيف ليبدأ اللعبة.
+          </p>
         )}
 
-        <h2 className="mt-6 text-right text-base font-extrabold text-ivory">اللاعبون ({players.length})</h2>
-        <ul className="mt-2 space-y-2 text-right">
-          {players.map((p) => (
-            <li key={p.id} className="flex items-center justify-between rounded-xl bg-white/[0.04] px-4 py-2 text-sm">
-              <span className="text-ivory">{p.player_name}</span>
-              {p.is_host ? <span className="text-xs font-bold text-violet">المضيف</span> : null}
-            </li>
-          ))}
-        </ul>
+        <div className="mt-2 w-full text-start">
+          <h2 className="mb-3 text-[19px]">اللاعبون ({players.length})</h2>
+          <ul className="grid gap-2">
+            {players.map((p, i) => (
+              <li
+                key={p.id}
+                className={cx(
+                  "flex min-h-14 items-center gap-3 rounded-[14px] border px-3 py-2",
+                  p.id === me.id ? "border-gold/50 bg-gold/10" : "border-line bg-deep-2/50",
+                )}
+              >
+                <Egg name={p.player_name} index={i + 1} size="sm" />
+                <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-ivory">{p.player_name}</span>
+                {p.is_host ? <span className="rounded-full bg-violet/25 px-2.5 py-0.5 text-[13px] font-semibold text-violet-text">المضيف</span> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
 
-        <Link to="/" className="mt-6 inline-flex min-h-11 items-center rounded-full border border-white/15 px-5 text-sm font-bold text-ivory">
+        <Link to="/" className={cx(buttonBase, buttonTone("quiet"), "mt-2")}>
+          <Glyph name="home" className="size-[18px]" />
           الرئيسية
         </Link>
       </section>
@@ -180,22 +197,18 @@ export function JoinRoom({ initialCode = "" }: { initialCode?: string }) {
   }
 
   return (
-    <section className="glass-card mx-auto mt-6 max-w-md rounded-3xl p-6">
-      <h1 className="text-2xl font-extrabold text-ivory">انضمام إلى غرفة</h1>
-      <p className="mt-2 text-sm text-muted">اكتب رمز الغرفة من شاشة المضيف، أو امسح الـ QR.</p>
+    <section className="surface mx-auto mt-2 max-w-md rounded-[28px] p-6 sm:p-8">
+      <div className="grid justify-items-center text-center">
+        <Mark height={88} className="bob" />
+        <h1 className="mt-2 text-[30px] leading-10">انضمام إلى غرفة</h1>
+        <p className="mt-1 text-[15px] leading-[26px] text-mist">اكتب رمز الغرفة من شاشة المضيف، أو امسح الـ QR.</p>
+      </div>
 
-      <form onSubmit={join} className="mt-6 space-y-4">
+      <form onSubmit={join} className="mt-6 grid gap-5">
         <Field label="رمز الغرفة">
-          <input
-            className={`${inputClass} text-center font-mono text-xl tracking-[0.3em] uppercase`}
-            value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5))}
-            maxLength={5}
-            inputMode="text"
-            autoCapitalize="characters"
-            autoComplete="off"
-            placeholder="ABCDE"
-          />
+          <span className="flex justify-center">
+            <CodeCells value={code} onChange={(next) => setCode(next.replace(/[^A-Z0-9]/g, "").slice(0, 5))} placeholder="ABCDE" />
+          </span>
         </Field>
 
         <Field label="اسمك">
@@ -209,9 +222,14 @@ export function JoinRoom({ initialCode = "" }: { initialCode?: string }) {
           />
         </Field>
 
-        {error ? <p className="text-sm text-crimson">{error}</p> : null}
+        {error ? (
+          <p className="flex items-center gap-1.5 text-[14px] font-semibold text-wrong">
+            <Glyph name="alert" className="size-4" />
+            {error}
+          </p>
+        ) : null}
 
-        <Button type="submit" tone="primary" disabled={busy} className="w-full">
+        <Button type="submit" tone="primary" disabled={busy} className="min-h-14 w-full text-[18px]">
           {busy ? "جارٍ الانضمام…" : "انضم"}
         </Button>
       </form>

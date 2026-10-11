@@ -1,9 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Shell } from "@/components/shell";
-import { Logo } from "@/components/logo";
 import { ShareSite } from "@/components/share";
-import { Button, cx, inputClass } from "@/components/ui";
+import { Button, buttonBase, buttonTone, cx } from "@/components/ui";
+import { CodeCells, GameIcon, Glyph, GlyphBadge, HeroArt, Mark, Wordmark, gameStyle, gameVars } from "@/components/brand";
+
 
 /** Room codes use this alphabet only (no I, O, 0, 1), matching the join page. */
 const CODE_PATTERN = /^[A-HJ-NP-Z2-9]{5}$/;
@@ -183,6 +184,14 @@ const STEPS = [
   },
 ];
 
+/** The four promises of the original hero chips, shown as the feature bar. */
+const FEATURES = [
+  { icon: "shield", label: "بدون تسجيل" },
+  { icon: "phone", label: "بدون تحميل" },
+  { icon: "users", label: "حتى 14 لاعبًا" },
+  { icon: "heart", label: "مجانًا" },
+];
+
 function Home() {
   return (
     <Shell>
@@ -194,7 +203,8 @@ function Home() {
   );
 }
 
-function JoinByCode() {
+/** Join by code: a compact row inside the hero on computers, a card under it on phones. */
+function JoinByCode({ compact = false }: { compact?: boolean }) {
   const navigate = useNavigate();
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -210,39 +220,41 @@ function JoinByCode() {
     navigate({ to: "/join/$code", params: { code: normalized } });
   }
 
+  const inputId = compact ? "join-code-row" : "join-code";
   return (
-    <form onSubmit={submit} noValidate className="glass-card mx-auto mt-8 max-w-md rounded-3xl p-4 text-right">
-      <label htmlFor="join-code" className="block text-sm font-bold text-ivory">
+    <form
+      onSubmit={submit}
+      noValidate
+      className={cx(
+        "surface",
+        compact ? "grid w-fit grid-cols-[auto_auto_auto] items-center gap-x-3 gap-y-1 rounded-[22px] py-2.5 ps-5 pe-2.5" : "grid justify-items-center gap-3 rounded-[22px] p-4 text-center",
+      )}
+    >
+      <label htmlFor={inputId} className="text-[15px] font-semibold text-ivory">
         عندكم رمز غرفة؟
       </label>
-      <div className="mt-3 flex gap-2">
-        <input
-          id="join-code"
-          value={code}
-          onChange={(e) => {
-            setCode(e.target.value.toUpperCase());
-            if (error) setError(null);
-          }}
-          maxLength={5}
-          autoComplete="off"
-          autoCapitalize="characters"
-          spellCheck={false}
-          placeholder="ABC23"
-          inputMode="text"
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? "join-code-error" : "join-code-hint"}
-          className={cx(inputClass, "font-mono text-lg tracking-[0.3em] uppercase")}
-        />
-        <Button type="submit" tone="violet" className="shrink-0">
-          انضم
-        </Button>
-      </div>
+      <CodeCells
+        id={inputId}
+        compact
+        value={code}
+        onChange={(next) => {
+          setCode(next);
+          if (error) setError(null);
+        }}
+        invalid={!!error}
+        describedBy={error ? `${inputId}-error` : `${inputId}-hint`}
+        placeholder="ABC23"
+      />
+      <Button type="submit" tone="violet" className={compact ? "min-h-11" : "w-full"}>
+        انضم
+      </Button>
       {error ? (
-        <p id="join-code-error" role="alert" className="mt-2 text-sm text-crimson">
+        <p id={`${inputId}-error`} role="alert" className={cx("flex items-center gap-1.5 text-[13px] font-semibold text-wrong", compact && "col-span-3")}>
+          <Glyph name="alert" className="size-4" />
           {error}
         </p>
       ) : (
-        <p id="join-code-hint" className="mt-2 text-xs text-muted">
+        <p id={`${inputId}-hint`} className={cx("text-[13px] text-mist", compact && "col-span-3")}>
           الرمز يظهر على شاشة المضيف، أو امسحوا رمز QR.
         </p>
       )}
@@ -252,52 +264,87 @@ function JoinByCode() {
 
 function Hero() {
   return (
-    <section className="mx-auto max-w-3xl pt-8 text-center sm:pt-14">
-      <h1 className="sr-only">العش</h1>
-      <Logo size="lg" />
-      <p className="mt-6 text-lg font-extrabold text-ivory sm:text-2xl">حيث تلتقي التحديات بالمتعة الجماعية</p>
-      <p className="mx-auto mt-3 max-w-xl text-base leading-8 text-muted">
-        تلفزيون واحد في الوسط، وجوالاتكم حواليه. بدون تسجيل وبدون تحميل، افتحوا الغرفة وابدأوا السهرة.
-      </p>
-
-      <div className="mt-7 flex flex-wrap justify-center gap-3">
-        <Link to="/play" search={{ game: "" }}>
-          <Button tone="primary">إنشاء غرفة</Button>
-        </Link>
-        <a
-          href="#games"
-          className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] px-5 text-sm font-bold text-ivory transition hover:border-neon/60"
-        >
-          استعرض الألعاب
-        </a>
+    <section aria-labelledby="hero-title">
+      <div className="forest-bg relative overflow-hidden rounded-[28px] border border-glow/30 shadow-glow-line">
+        <div className="grid items-center gap-2 px-5 pt-4 pb-7 sm:px-8 lg:grid-cols-[1fr_1.05fr] lg:gap-6 lg:px-14 lg:py-10">
+          <div className="order-2 grid justify-items-center gap-4 text-center lg:order-1 lg:justify-items-start lg:text-start">
+            <h1 id="hero-title" className="sr-only">
+              العش
+            </h1>
+            <Wordmark height={104} className="lg:h-[150px]!" />
+            <p className="font-display text-[26px] font-extrabold leading-[40px] text-balance text-ivory lg:text-[38px] lg:leading-[56px]">
+              حيث تلتقي التحديات بالمتعة الجماعية
+            </p>
+            <p className="max-w-md rounded-2xl bg-night/40 px-4 py-3 text-[16px] leading-[29px] text-mist lg:bg-transparent lg:p-0 lg:text-[18px] lg:leading-8">
+              تلفزيون واحد في الوسط، وجوالاتكم حواليه. بدون تسجيل وبدون تحميل، افتحوا الغرفة وابدأوا السهرة.
+            </p>
+            <div className="mt-1 grid w-full gap-3 sm:flex sm:w-auto sm:flex-wrap sm:justify-center lg:justify-start">
+              <Link to="/play" search={{ game: "" }} className={cx(buttonBase, buttonTone("primary"), "min-h-14 px-8 text-[17px]")}>
+                <Glyph name="users" />
+                إنشاء غرفة
+              </Link>
+              <a href="#games" className={cx(buttonBase, buttonTone("outline"), "min-h-14 px-8 text-[17px]")}>
+                <Glyph name="gamepad" />
+                استعرض الألعاب
+              </a>
+            </div>
+            <div className="hidden lg:block">
+              <JoinByCode compact />
+            </div>
+          </div>
+          <div className="order-1 mx-auto w-full max-w-[300px] sm:max-w-[420px] lg:order-2 lg:max-w-[600px]">
+            <HeroArt className="bob" />
+          </div>
+        </div>
       </div>
 
-      <JoinByCode />
+      <div className="mt-4 lg:hidden">
+        <JoinByCode />
+      </div>
 
-      <ul className="mt-7 flex flex-wrap justify-center gap-2 text-xs text-muted">
-        <li className="rounded-full border border-white/10 px-3 py-1">بدون تسجيل</li>
-        <li className="rounded-full border border-white/10 px-3 py-1">بدون تحميل</li>
-        <li className="rounded-full border border-white/10 px-3 py-1">حتى 14 لاعبًا</li>
-        <li className="rounded-full border border-white/10 px-3 py-1">مجانًا</li>
+      <ul className="mt-4 grid grid-cols-2 gap-3 lg:surface lg:mt-6 lg:grid-cols-4 lg:gap-0 lg:rounded-[22px] lg:py-5">
+        {FEATURES.map((f, i) => (
+          <li
+            key={f.label}
+            className={cx(
+              "surface grid justify-items-center gap-2.5 rounded-[18px] px-3 py-4 text-center lg:rounded-none lg:border-0 lg:bg-none lg:shadow-none",
+              i > 0 && "lg:border-s lg:border-line",
+            )}
+          >
+            <GlyphBadge name={f.icon} className="size-12 lg:size-14" />
+            <span className="font-display text-[17px] font-bold leading-6 text-ivory lg:text-[19px]">{f.label}</span>
+          </li>
+        ))}
       </ul>
     </section>
   );
 }
 
+function SectionTitle({ id, icon, children }: { id: string; icon: string; children: string }) {
+  return (
+    <h2 id={id} className="flex items-center gap-2 text-[22px] leading-8 lg:text-[28px] lg:leading-10">
+      <Glyph name={icon} className="size-7 text-gold" />
+      {children}
+    </h2>
+  );
+}
+
 function HowItWorks() {
   return (
-    <section aria-labelledby="how-title" className="mx-auto mt-14 max-w-5xl">
-      <h2 id="how-title" className="mb-4 px-1 text-xl font-extrabold text-ivory">
-        كيف تبدأ؟
-      </h2>
-      <ol className="grid gap-4 sm:grid-cols-3">
+    <section aria-labelledby="how-title" className="mt-10 lg:mt-14">
+      <div className="mb-5">
+        <SectionTitle id="how-title" icon="question">
+          كيف تبدأ؟
+        </SectionTitle>
+      </div>
+      <ol className="grid gap-6 lg:grid-cols-3 lg:gap-8">
         {STEPS.map((step, index) => (
-          <li key={step.title} className="glass-card rounded-3xl p-5">
-            <span className="grid size-9 place-items-center rounded-full bg-neon/15 text-sm font-extrabold text-neon">
-              {index + 1}
-            </span>
-            <h3 className="mt-4 text-base font-extrabold text-ivory">{step.title}</h3>
-            <p className="mt-2 text-sm leading-7 text-muted">{step.text}</p>
+          <li key={step.title} className="step-line relative grid grid-cols-[48px_1fr] gap-3 lg:grid-cols-1">
+            <span className="btn-gold relative z-[1] grid size-12 place-items-center rounded-full text-lg font-extrabold">{index + 1}</span>
+            <div>
+              <h3 className="mt-1 mb-1 text-[20px] leading-8">{step.title}</h3>
+              <p className="text-[15px] leading-[27px] text-mist">{step.text}</p>
+            </div>
           </li>
         ))}
       </ol>
@@ -314,17 +361,17 @@ function Games() {
   );
 
   return (
-    <section id="games" aria-labelledby="games-title" className="mx-auto mt-14 max-w-5xl scroll-mt-6">
-      <div className="mb-4 px-1">
-        <h2 id="games-title" className="text-xl font-extrabold text-ivory">
+    <section id="games" aria-labelledby="games-title" className="mt-10 scroll-mt-28 lg:mt-14">
+      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <SectionTitle id="games-title" icon="gamepad">
           الألعاب
-        </h2>
-        <p className="mt-1 text-sm text-muted">
+        </SectionTitle>
+        <p className="text-[15px] text-mist">
           {liveCount} متاحة الآن · {GAMES.length - liveCount} قريبًا
         </p>
       </div>
 
-      <div role="group" aria-label="تصفية الألعاب" className="mb-5 flex gap-2 overflow-x-auto pb-1">
+      <div role="group" aria-label="تصفية الألعاب" className="no-scrollbar mb-5 flex gap-2 overflow-x-auto pb-1">
         {FILTERS.map((item) => {
           const active = filter === item.key;
           return (
@@ -334,8 +381,8 @@ function Games() {
               aria-pressed={active}
               onClick={() => setFilter(item.key)}
               className={cx(
-                "min-h-10 shrink-0 rounded-full border px-4 text-sm font-bold transition",
-                active ? "border-neon bg-neon/10 text-neon" : "border-white/10 text-muted hover:text-ivory",
+                "min-h-11 shrink-0 rounded-full border px-5 text-[15px] font-semibold transition",
+                active ? "btn-gold border-transparent" : "border-line-strong/70 bg-deep-2/50 text-mist hover:border-glow hover:text-ivory",
               )}
             >
               {item.label}
@@ -344,50 +391,59 @@ function Games() {
         })}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {visible.map((game) => (
-          <GameTile key={game.id} game={game} onHowTo={() => setSheetGame(game)} />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {visible.map((game, i) => (
+          <GameTile key={game.id} game={game} index={i} onHowTo={() => setSheetGame(game)} />
         ))}
       </div>
 
       <HowToSheet game={sheetGame} onClose={() => setSheetGame(null)} />
 
-      {visible.length === 0 ? <p className="mt-6 text-center text-sm text-muted">لا توجد ألعاب في هذا التصنيف بعد.</p> : null}
+      {visible.length === 0 ? <p className="mt-6 text-center text-[15px] text-mist">لا توجد ألعاب في هذا التصنيف بعد.</p> : null}
     </section>
   );
 }
 
-function GameTile({ game, onHowTo }: { game: GameCard; onHowTo: () => void }) {
+/** A game card in the game's own colours: icon, players, name, blurb, then the two actions (or «قريبًا»). */
+function GameTile({ game, index, onHowTo }: { game: GameCard; index: number; onHowTo: () => void }) {
+  const dark = gameStyle(game.id).ink === "dark";
+  const ink = dark ? "text-on-gold" : "text-ivory";
+  const soft = dark ? "text-on-gold/80" : "text-ivory/80";
   return (
     <article
-      className={cx(
-        "glass-card flex flex-col gap-3 rounded-3xl p-5 transition",
-        game.live ? "hover:border-neon/60" : "opacity-70",
-      )}
+      style={{ ...gameVars(game.id), animationDelay: `${index * 50}ms` }}
+      className={cx("gcard rise relative flex flex-col gap-3 overflow-hidden rounded-[24px] p-4 sm:p-5", !game.live && "opacity-70 saturate-[.6]")}
     >
-      <div className="flex items-center justify-between">
-        <span className="text-3xl" aria-hidden="true">
-          {game.icon}
+      <span aria-hidden="true" className="pointer-events-none absolute -top-10 -end-10 size-36 rounded-full bg-white/10 blur-2xl" />
+      <div className="flex items-center gap-3">
+        <span className="gcard-icon grid size-[72px] shrink-0 place-items-center rounded-full">
+          <img src={`/brand/games/game-${game.id}.svg`} alt="" className="size-16" />
         </span>
-        <span className="rounded-full bg-white/[0.05] px-3 py-1 text-xs font-bold text-muted">
-          👥 {game.players} لاعب
-        </span>
+        <div className="grid min-w-0 gap-1">
+          <h3 className={cx("text-[21px] leading-8", ink)}>{game.title}</h3>
+          <span className={cx("inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-[13px] font-semibold", dark ? "bg-white/30" : "bg-black/25", ink)}>
+            <Glyph name="users" className="size-[15px]" />
+            {game.players} لاعب
+          </span>
+        </div>
       </div>
-      <h3 className="text-lg font-extrabold text-ivory">{game.title}</h3>
-      <p className="flex-1 text-sm leading-7 text-muted">{game.blurb}</p>
+      <p className={cx("flex-1 text-[14px] leading-[25px]", soft)}>{game.blurb}</p>
       {game.live ? (
         <div className="mt-1 grid grid-cols-2 gap-2">
-          <Button tone="glass" onClick={onHowTo} className="w-full px-3">
+          <Button
+            tone="glass"
+            onClick={onHowTo}
+            className={cx("w-full border-white/30 px-3", dark ? "bg-white/25 text-on-gold hover:bg-white/35" : "bg-black/20 text-ivory hover:bg-black/30")}
+          >
             كيف تُلعب؟
           </Button>
-          <Link to="/play" search={{ game: game.id }}>
-            <Button tone="violet" className="w-full px-3">
-              ابدأ الغرفة
-            </Button>
+          <Link to="/play" search={{ game: game.id }} className={cx(buttonBase, "w-full bg-ivory px-3 font-bold text-ink shadow-[0_8px_20px_-8px_#0008] hover:brightness-95")}>
+            ابدأ الغرفة
+            <Glyph name="forward" className="size-[18px]" />
           </Link>
         </div>
       ) : (
-        <span className="mt-1 inline-flex min-h-11 items-center justify-center rounded-full border border-white/10 text-sm font-bold text-muted">
+        <span className={cx("mt-1 inline-flex min-h-11 items-center justify-center rounded-full border border-dashed border-white/40 text-[15px] font-semibold", soft)}>
           قريبًا
         </span>
       )}
@@ -395,7 +451,7 @@ function GameTile({ game, onHowTo }: { game: GameCard; onHowTo: () => void }) {
   );
 }
 
-/** Bottom sheet with the short rules of one game. Closes on Escape or a tap outside. */
+/** Bottom sheet with the short rules of one game: a sheet on phones, a centred window from 640px. Closes on Escape or a tap outside. */
 function HowToSheet({ game, onClose }: { game: GameCard | null; onClose: () => void }) {
   useEffect(() => {
     if (!game) return;
@@ -410,51 +466,47 @@ function HowToSheet({ game, onClose }: { game: GameCard | null; onClose: () => v
   const rules = game.howTo;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-night/70 sm:items-center sm:p-4"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-night/75 sm:items-center sm:p-6" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="howto-title"
         onClick={(event) => event.stopPropagation()}
-        className="glass-card max-h-[85vh] w-full overflow-y-auto rounded-t-3xl p-6 sm:max-w-lg sm:rounded-3xl"
+        className="surface sheet-up max-h-[88vh] w-full overflow-y-auto rounded-t-[28px] px-6 pt-2.5 pb-[max(24px,env(safe-area-inset-bottom))] shadow-lift sm:max-w-lg sm:rounded-[28px] sm:pt-6"
       >
-        <div className="flex items-start justify-between gap-3">
-          <h3 id="howto-title" className="text-xl font-extrabold text-ivory">
-            <span aria-hidden="true">{game.icon}</span> {game.title}
+        <div aria-hidden="true" className="mx-auto mb-4 h-[5px] w-10 rounded-full bg-line-strong sm:hidden" />
+        <div className="flex items-center gap-3">
+          <GameIcon id={game.id} />
+          <h3 id="howto-title" className="min-w-0 text-2xl leading-9">
+            {game.title}
           </h3>
           <button
             type="button"
             onClick={onClose}
             aria-label="إغلاق"
-            className="grid min-h-11 min-w-11 place-items-center rounded-full border border-white/10 text-ivory hover:border-neon/60"
+            className="ms-auto grid size-12 shrink-0 place-items-center rounded-full border border-line-strong/70 bg-deep-2/60 text-ivory hover:border-glow"
           >
-            ✕
+            <Glyph name="x" />
           </button>
         </div>
 
-        <p className="mt-4 text-base leading-8 text-ivory">{rules.goal}</p>
-        <p className="mt-2 text-sm text-muted">
-          المدة التقريبية: <span className="font-bold text-ivory">{rules.minutes}</span>
+        <p className="mt-4 text-base leading-[29px] text-ivory">{rules.goal}</p>
+        <p className="mt-2 inline-flex items-center gap-1.5 text-[15px] text-mist">
+          <Glyph name="clock" className="size-[18px] text-gold" />
+          المدة التقريبية: <span className="font-semibold text-ivory">{rules.minutes}</span>
         </p>
 
-        <ol className="mt-5 grid gap-3">
+        <ol className="mt-4 grid gap-3">
           {rules.steps.map((step, index) => (
-            <li key={step} className="flex gap-3 text-sm leading-7 text-muted">
-              <span className="grid size-7 shrink-0 place-items-center rounded-full bg-neon/15 text-xs font-extrabold text-neon">
-                {index + 1}
-              </span>
+            <li key={step} className="flex gap-3 text-[15px] leading-[27px] text-mist">
+              <span className="btn-gold grid size-7 shrink-0 place-items-center rounded-full text-[13px] font-bold">{index + 1}</span>
               <span>{step}</span>
             </li>
           ))}
         </ol>
 
-        <Link to="/play" search={{ game: game.id }} className="mt-6 block">
-          <Button tone="violet" className="w-full">
-            ابدأ الغرفة
-          </Button>
+        <Link to="/play" search={{ game: game.id }} className={cx(buttonBase, buttonTone("primary"), "mt-6 min-h-14 w-full text-[17px]")}>
+          ابدأ الغرفة
         </Link>
       </div>
     </div>
@@ -463,14 +515,16 @@ function HowToSheet({ game, onClose }: { game: GameCard | null; onClose: () => v
 
 function CallToAction() {
   return (
-    <section className="mx-auto mt-16 max-w-3xl rounded-3xl border border-white/10 bg-white/[0.03] p-6 text-center sm:p-8">
-      <h2 className="text-xl font-extrabold text-ivory">جاهزون للسهرة؟</h2>
-      <p className="mt-2 text-sm leading-7 text-muted">أنشئوا الغرفة الآن، وشاركوا الرمز مع أصدقائكم.</p>
-      <div className="mt-5 flex flex-wrap justify-center gap-3">
-        <Link to="/play" search={{ game: "" }}>
-          <Button tone="primary">إنشاء غرفة</Button>
+    <section className="surface mt-10 grid justify-items-center gap-3 rounded-[28px] px-4 py-8 text-center lg:mt-14">
+      <Mark height={96} className="bob" />
+      <h2 className="text-[24px] lg:text-[30px]">جاهزون للسهرة؟</h2>
+      <p className="text-[17px] leading-[31px] text-mist">أنشئوا الغرفة الآن، وشاركوا الرمز مع أصدقائكم.</p>
+      <div className="mt-2 flex flex-wrap justify-center gap-3">
+        <Link to="/play" search={{ game: "" }} className={cx(buttonBase, buttonTone("primary"), "min-h-14 px-8 text-[17px]")}>
+          <Glyph name="users" />
+          إنشاء غرفة
         </Link>
-        <ShareSite />
+        <ShareSite className="min-h-14 px-7 text-[17px]" />
       </div>
     </section>
   );

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><linearGradient id="bmFace" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff6ff"/><stop offset="1" stop-color="#d9c2ff"/></linearGradient></defs>
+<path d="M18 30 C18 22 26 18 34 20 C50 24 70 24 86 20 C94 18 102 22 102 30 L102 52 C102 82 82 104 60 104 C38 104 18 82 18 52Z" fill="url(#bmFace)"/>
+<path d="M32 46 C38 38 50 38 54 46 C48 52 38 52 32 46Z" fill="#3a1d5c"/><path d="M66 46 C70 38 82 38 88 46 C82 52 72 52 66 46Z" fill="#3a1d5c"/>
+<path d="M40 70 C50 84 70 84 80 70 C72 74 48 74 40 70Z" fill="#3a1d5c"/>
+<path d="M20 34 C10 30 4 38 8 46" fill="none" stroke="#ff6f91" stroke-width="5" stroke-linecap="round"/><path d="M100 34 C110 30 116 38 112 46" fill="none" stroke="#ff6f91" stroke-width="5" stroke-linecap="round"/>
+<circle cx="34" cy="64" r="6" fill="#ff8fb1" opacity=".6"/><circle cx="86" cy="64" r="6" fill="#ff8fb1" opacity=".6"/>
+<ellipse cx="38" cy="30" rx="14" ry="6" transform="rotate(-10 38 30)" fill="#fff" opacity="0.5"/></svg>

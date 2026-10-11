@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Shell } from "@/components/shell";
 import { Button, cx } from "@/components/ui";
+import { Cradle, Glyph } from "@/components/brand";
 import { supabase } from "@/lib/supabase";
 
 /**
@@ -225,10 +226,10 @@ function PlayerBoard() {
 
   if (error) {
     return (
-      <Shell>
-        <section className="glass-card mx-auto mt-8 max-w-xl rounded-3xl p-6 text-center">
-          <p className="text-sm text-crimson">{error}</p>
-          <Link to="/" className="mt-5 inline-flex min-h-11 items-center rounded-full border border-white/15 px-5 text-sm font-bold text-ivory">
+      <Shell play>
+        <section className="glass-card mx-auto mt-8 max-w-xl rounded-[28px] p-6 text-center">
+          <p className="text-sm text-wrong">{error}</p>
+          <Link to="/" className="mt-5 inline-flex min-h-11 items-center rounded-full border border-line-strong/70 px-5 text-sm font-bold text-ivory">
             الرئيسية
           </Link>
         </section>
@@ -238,18 +239,18 @@ function PlayerBoard() {
 
   if (!room) {
     return (
-      <Shell>
+      <Shell play>
         <p className="mt-8 text-center text-sm text-muted">جارٍ التحميل…</p>
       </Shell>
     );
   }
 
   return (
-    <Shell>
+    <Shell play>
       <section className="mx-auto mt-4 max-w-md">
         <div className="mb-4 flex items-center justify-between">
           <h1 className="text-lg font-extrabold text-ivory">
-            الغرفة <span className="font-mono text-neon">{room.room_code}</span>
+            الغرفة <span className="room-code text-gold">{room.room_code}</span>
           </h1>
           <span className="text-sm text-muted">
             أُجيب {answered.size} من {questions.length}
@@ -257,8 +258,8 @@ function PlayerBoard() {
         </div>
 
         {gameOver ? (
-          <div className="glass-card mb-5 rounded-3xl p-6 text-center">
-            <p className="text-sm font-bold text-violet">انتهت اللعبة</p>
+          <div className="glass-card mb-5 rounded-[28px] p-6 text-center">
+            <p className="text-sm font-bold text-violet-text">انتهت اللعبة</p>
             {winners.length > 0 ? (
               <p className="mt-2 text-2xl font-extrabold text-ivory">
                 {winners.length > 1 ? "تعادل بين: " : "الفائز: "}
@@ -294,8 +295,8 @@ function PlayerBoard() {
         ) : null}
 
         {active && !isHeads && !isMafia ? (
-          <div className="glass-card mb-5 rounded-3xl p-5 text-center">
-            <p className="text-xs font-bold text-violet">
+          <div className="glass-card mb-5 rounded-[28px] p-5 text-center">
+            <p className="text-xs font-bold text-violet-text">
               {active.category_ar} · {active.points} نقطة
             </p>
             <p className="mt-3 text-xl font-extrabold leading-relaxed text-ivory">{active.question_text}</p>
@@ -313,7 +314,7 @@ function PlayerBoard() {
             {!isBluff && active.options.length > 0 ? (
               <ul className="mt-4 grid gap-2">
                 {active.options.map((opt) => (
-                  <li key={opt} className="rounded-xl bg-white/[0.05] px-4 py-3 text-right text-ivory">
+                  <li key={opt} className="rounded-xl bg-deep-2/70 px-4 py-3 text-right text-ivory">
                     {opt}
                   </li>
                 ))}
@@ -323,15 +324,28 @@ function PlayerBoard() {
             {!isBluff ? (
             <div className="mt-5">
               {buzzer ? (
-                <p className="rounded-2xl border border-violet/40 bg-violet/10 p-3 font-bold text-ivory">
+                <p className="rounded-[20px] border border-violet/50 bg-violet/16 p-4 font-display text-xl font-bold text-ivory">
                   الجرس عند {buzzer.player_name}
                 </p>
               ) : stateData.buzzer_open && me && !me.is_host ? (
-                <Button type="button" tone="primary" className="w-full min-h-16 text-lg" onClick={buzz} disabled={!canBuzz}>
-                  {buzzing ? "…" : "اضغط الجرس"}
-                </Button>
+                <div className="grid justify-items-center gap-3 pt-2">
+                  <Cradle hold style={{ padding: "0 18px" }}>
+                    <button
+                      type="button"
+                      onClick={buzz}
+                      disabled={!canBuzz}
+                      className="buzz-ring relative grid aspect-square w-[min(66vw,280px)] place-content-center justify-items-center gap-1 rounded-full bg-[radial-gradient(circle_at_40%_30%,#ffd36b,#ffa53a_55%,#f7832a)] px-6 pb-6 font-display text-[22px] font-bold leading-8 text-on-gold shadow-[0_0_36px_#ffa53a66,inset_0_-10px_0_#e8741a,inset_0_2px_0_#fff8] transition active:scale-[0.96] disabled:opacity-60"
+                    >
+                      <Glyph name="bell" className="size-12" />
+                      {buzzing ? "…" : "اضغط الجرس"}
+                    </button>
+                  </Cradle>
+                </div>
               ) : (
-                <p className="text-sm text-muted">بانتظار فتح الجرس.</p>
+                <p className="inline-flex items-center gap-2 text-[15px] text-mist">
+                  <Glyph name="hourglass" className="size-5" />
+                  بانتظار فتح الجرس.
+                </p>
               )}
               {buzzMessage ? <p className="mt-2 text-sm text-ivory">{buzzMessage}</p> : null}
             </div>
@@ -348,7 +362,7 @@ function PlayerBoard() {
               style={{ gridTemplateColumns: `repeat(${categories.length}, minmax(0, 1fr))` }}
             >
               {categories.map((cat) => (
-                <div key={cat} className="rounded-xl bg-violet/20 p-2 text-center text-xs font-extrabold text-ivory">
+                <div key={cat} className="grid min-h-11 place-items-center rounded-[10px] bg-violet/16 p-1.5 text-center text-[13px] font-semibold leading-[18px] text-ivory">
                   {cat}
                 </div>
               ))}
@@ -361,15 +375,15 @@ function PlayerBoard() {
                     <div
                       key={`${cat}-${points}`}
                       className={cx(
-                        "flex min-h-12 items-center justify-center rounded-xl border text-base font-extrabold",
+                        "flex min-h-11 items-center justify-center rounded-[10px] border text-[17px] font-bold tabular-nums",
                         isActive
-                          ? "border-neon bg-neon/20 text-ivory"
+                          ? "border-gold bg-gold text-on-gold shadow-glow-gold"
                           : q && !done
-                            ? "border-neon/40 bg-white/[0.04] text-neon"
-                            : "border-white/5 bg-white/[0.02] text-muted/30",
+                            ? "border-line bg-deep text-gold"
+                            : "border-dashed border-line bg-transparent text-faint",
                       )}
                     >
-                      {q && !done ? points : ""}
+                      {q && !done ? points : q ? <Glyph name="check" className="size-4" /> : ""}
                     </div>
                   );
                 }),
@@ -387,13 +401,13 @@ function PlayerBoard() {
                   key={p.id}
                   className={cx(
                     "flex items-center justify-between rounded-xl px-3 py-2 text-sm",
-                    me?.id === p.id ? "bg-neon/10 text-ivory" : "bg-white/[0.03] text-ivory/80",
+                    me?.id === p.id ? "bg-gold/10 text-ivory" : "bg-deep-2/50 text-ivory/80",
                   )}
                 >
                   <span>
                     {i + 1}. {p.player_name}
                   </span>
-                  <span className="font-extrabold text-neon">{p.score}</span>
+                  <span className="font-extrabold text-gold">{p.score}</span>
                 </li>
               ))}
             </ul>
@@ -515,7 +529,7 @@ function BluffPlayerPanel({ roomId, activeId, phase, reveal, isPlayer }: BluffPl
               onChange={(e) => setText(e.target.value)}
               maxLength={60}
               placeholder="إجابتك"
-              className="min-h-12 w-full rounded-2xl border border-white/10 bg-night px-4 text-center text-ivory outline-none focus:border-neon"
+              className="min-h-12 w-full rounded-2xl border border-line bg-night px-4 text-center text-ivory outline-none focus:border-gold"
             />
             <Button type="button" tone="primary" className="w-full" onClick={submitFake} disabled={busy || text.trim() === ""}>
               أرسل الإجابة
@@ -555,12 +569,12 @@ function BluffPlayerPanel({ roomId, activeId, phase, reveal, isPlayer }: BluffPl
               key={o.key}
               className={cx(
                 "flex items-center justify-between rounded-xl px-4 py-2 text-sm",
-                o.is_correct ? "border border-emerald/40 bg-emerald/10 text-ivory" : "bg-white/[0.04] text-ivory/80",
+                o.is_correct ? "border border-correct/50 bg-correct-fill/15 text-ivory" : "bg-deep-2/60 text-ivory/80",
               )}
             >
               <span>
                 {o.text}
-                {o.owner ? <span className="mr-2 text-xs text-violet">({o.owner})</span> : null}
+                {o.owner ? <span className="mr-2 text-xs text-violet-text">({o.owner})</span> : null}
               </span>
               <span className="font-extrabold">
                 {o.is_correct ? "✓ " : ""}
@@ -575,7 +589,7 @@ function BluffPlayerPanel({ roomId, activeId, phase, reveal, isPlayer }: BluffPl
         <p className="text-sm text-muted">بانتظار المضيف ليبدأ الجولة.</p>
       ) : null}
 
-      {message ? <p className="mt-3 text-sm text-crimson">{message}</p> : null}
+      {message ? <p className="mt-3 text-sm text-wrong">{message}</p> : null}
     </div>
   );
 }
@@ -682,8 +696,8 @@ function OutsiderPlayerPanel({
   }
 
   return (
-    <section className="glass-card mb-5 rounded-3xl p-5 text-center">
-      <p className="text-xs font-bold text-violet">برة السالفة · الجولة {round}</p>
+    <section className="glass-card mb-5 rounded-[28px] p-5 text-center">
+      <p className="text-xs font-bold text-violet-text">برة السالفة · الجولة {round}</p>
 
       {phase === "discuss" && isPlayer && card ? (
         <div className="mt-3">
@@ -692,7 +706,7 @@ function OutsiderPlayerPanel({
           ) : (
             <>
               <p className="text-sm text-muted">الموضوع: {card.topic}</p>
-              <p className="mt-2 text-2xl font-extrabold text-neon">{card.word}</p>
+              <p className="mt-2 text-2xl font-extrabold text-gold">{card.word}</p>
               <p className="mt-2 text-xs text-muted">ناقشوا الكلمة دون أن تكشفوها بوضوح.</p>
             </>
           )}
@@ -727,7 +741,7 @@ function OutsiderPlayerPanel({
               onChange={(e) => setGuess(e.target.value)}
               maxLength={40}
               placeholder="تخمينك"
-              className="min-h-12 w-full rounded-2xl border border-white/10 bg-night px-4 text-center text-ivory outline-none focus:border-neon"
+              className="min-h-12 w-full rounded-2xl border border-line bg-night px-4 text-center text-ivory outline-none focus:border-gold"
             />
             <Button type="button" tone="primary" className="w-full" onClick={sendGuess} disabled={busy || guess.trim() === ""}>
               أرسل التخمين
@@ -743,7 +757,7 @@ function OutsiderPlayerPanel({
       {(phase === "guess" || phase === "done") && reveal?.votes && reveal.votes.length > 0 ? (
         <ul className="mt-4 grid gap-2 text-right">
           {reveal.votes.map((v) => (
-            <li key={v.name} className="flex items-center justify-between rounded-xl bg-white/[0.04] px-4 py-2 text-sm text-ivory">
+            <li key={v.name} className="flex items-center justify-between rounded-xl bg-deep-2/60 px-4 py-2 text-sm text-ivory">
               <span>{v.name}</span>
               <span className="font-bold">{v.votes} صوت</span>
             </li>
@@ -752,7 +766,7 @@ function OutsiderPlayerPanel({
       ) : null}
 
       {phase === "done" && reveal ? (
-        <div className="mt-4 rounded-2xl border border-emerald/40 bg-emerald/10 p-4 text-ivory">
+        <div className="mt-4 rounded-2xl border border-correct/50 bg-correct-fill/15 p-4 text-ivory">
           <p className="font-bold">البرة: {reveal.outsider}</p>
           <p className="mt-1 text-sm">الموضوع: {reveal.topic} · الكلمة: {reveal.word}</p>
           {reveal.guess !== undefined ? (
@@ -767,7 +781,7 @@ function OutsiderPlayerPanel({
         <p className="mt-3 text-sm text-muted">بانتظار المضيف ليبدأ الجولة.</p>
       ) : null}
 
-      {message ? <p className="mt-3 text-sm text-crimson">{message}</p> : null}
+      {message ? <p className="mt-3 text-sm text-wrong">{message}</p> : null}
     </section>
   );
 }
@@ -855,16 +869,22 @@ function HeadsPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
     scoreRed === scoreBlue ? "تعادل" : `الفائز: ${scoreRed > scoreBlue ? "الفريق الأحمر" : "الفريق الأزرق"}`;
 
   return (
-    <section className="glass-card mb-5 rounded-3xl p-5 text-center">
-      <p className="text-xs font-bold text-violet">هل تعرف</p>
+    <section className="glass-card mb-5 rounded-[28px] p-5 text-center">
+      <p className="text-xs font-bold text-violet-text">هل تعرف</p>
       <div className="mt-3 grid grid-cols-2 gap-3">
-        <div className="rounded-2xl bg-white/[0.04] p-3">
-          <p className="text-xs text-muted">الفريق الأحمر</p>
-          <p className="text-2xl font-extrabold text-ivory">{scoreRed}</p>
+        <div className="rounded-2xl bg-deep-2/60 p-3">
+          <p className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-team-red">
+            <Glyph name="triangle" className="size-3" />
+            الفريق الأحمر
+          </p>
+          <p className="text-2xl font-bold tabular-nums text-ivory">{scoreRed}</p>
         </div>
-        <div className="rounded-2xl bg-white/[0.04] p-3">
-          <p className="text-xs text-muted">الفريق الأزرق</p>
-          <p className="text-2xl font-extrabold text-ivory">{scoreBlue}</p>
+        <div className="rounded-2xl bg-deep-2/60 p-3">
+          <p className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-team-blue">
+            <Glyph name="circle" className="size-3" />
+            الفريق الأزرق
+          </p>
+          <p className="text-2xl font-bold tabular-nums text-ivory">{scoreBlue}</p>
         </div>
       </div>
       {me?.team_color ? <p className="mt-2 text-sm text-muted">أنت في {TEAM_NAMES[me.team_color] ?? ""}</p> : null}
@@ -874,13 +894,13 @@ function HeadsPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
           <p className="text-sm text-muted">
             المخمِّن: <span className="font-bold text-ivory">{guesser?.player_name ?? "—"}</span>
           </p>
-          <p className="mt-1 font-mono text-3xl font-extrabold text-neon">{secondsLeft !== null ? `${secondsLeft}s` : ""}</p>
+          <p dir="ltr" className="mt-1 text-3xl font-bold tabular-nums text-gold">{secondsLeft !== null ? `${secondsLeft}s` : ""}</p>
           {iAmGuesser ? (
             <p className="mt-4 rounded-2xl border border-violet/40 bg-violet/10 p-4 font-bold text-ivory">
               أنت المخمِّن! خمّن الكلمة من تلميحات زملائك.
             </p>
           ) : word ? (
-            <div className="mt-4 rounded-2xl border border-neon/40 bg-neon/10 p-5">
+            <div className="mt-4 rounded-2xl border border-gold/40 bg-gold/10 p-5">
               <p className="text-sm text-muted">صِفها دون أن تقولها</p>
               <p className="mt-2 text-3xl font-extrabold text-ivory">{word}</p>
             </div>
@@ -898,7 +918,7 @@ function HeadsPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
         <p className="mt-4 text-xl font-extrabold text-ivory">انتهت كل الكلمات. {winnerText}</p>
       ) : null}
 
-      {message ? <p className="mt-3 text-sm text-crimson">{message}</p> : null}
+      {message ? <p className="mt-3 text-sm text-wrong">{message}</p> : null}
     </section>
   );
 }
@@ -1000,8 +1020,8 @@ function MafiaPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
   const over = phase === "over";
 
   return (
-    <section className="glass-card mb-5 rounded-3xl p-5 text-center">
-      <p className="text-xs font-bold text-violet">المافيا · الجولة {round || 1}</p>
+    <section className="glass-card mb-5 rounded-[28px] p-5 text-center">
+      <p className="text-xs font-bold text-violet-text">المافيا · الجولة {round || 1}</p>
 
       {!me?.started ? (
         <p className="mt-4 text-sm text-muted">انتظروا المضيف لبدء اللعبة.</p>
@@ -1021,7 +1041,7 @@ function MafiaPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
             </p>
           ) : null}
           {!iAmAlive ? (
-            <p className="mt-3 rounded-2xl bg-white/[0.04] p-3 text-sm text-muted">أنت خارج اللعبة. يمكنك متابعة النقاش.</p>
+            <p className="mt-3 rounded-2xl bg-deep-2/60 p-3 text-sm text-muted">أنت خارج اللعبة. يمكنك متابعة النقاش.</p>
           ) : null}
         </>
       )}
@@ -1046,7 +1066,7 @@ function MafiaPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
                 aria-pressed={chosen === p.player_id}
                 className={cx(
                   "min-h-11 rounded-full border px-4 text-sm font-bold transition",
-                  chosen === p.player_id ? "border-neon bg-neon/10 text-neon" : "border-white/10 text-ivory",
+                  chosen === p.player_id ? "border-gold bg-gold/10 text-gold" : "border-line text-ivory",
                 )}
               >
                 {p.player_name}
@@ -1066,7 +1086,7 @@ function MafiaPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
           <p className="text-xl font-extrabold text-ivory">{winner === "mafia" ? "فازت المافيا" : "فاز المواطنون"}</p>
           <ul className="mt-3 grid gap-2 text-right">
             {rows.map((p) => (
-              <li key={p.player_id} className="flex justify-between rounded-xl bg-white/[0.05] px-4 py-2 text-ivory">
+              <li key={p.player_id} className="flex justify-between rounded-xl bg-deep-2/70 px-4 py-2 text-ivory">
                 <span>{p.player_name}</span>
                 <span className="text-muted">
                   {MAFIA_ROLE_NAMES[p.player_role ?? ""] ?? ""}
@@ -1079,7 +1099,7 @@ function MafiaPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
       ) : null}
 
       {message ? (
-        <p role="alert" className="mt-3 text-sm text-crimson">
+        <p role="alert" className="mt-3 text-sm text-wrong">
           {message}
         </p>
       ) : null}

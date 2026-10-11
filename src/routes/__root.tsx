@@ -8,19 +8,21 @@ export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { title: "العش" },
       { name: "description", content: "العش: ألعاب جماعية عائلية. التلفزيون يعرض، والجوالات تتحكم." },
-      { name: "theme-color", content: "#090d16" },
+      { name: "theme-color", content: "#060b26" },
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
+      { rel: "icon", type: "image/png", sizes: "32x32", href: "/favicon-32.png" },
       { rel: "stylesheet", href: appCss },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
+        // Baloo Bhaijaan 2 for headings and the wordmark, Readex Pro (with the HEXP axis for room codes) for everything else.
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Tajawal:wght@500;700;800&family=Cairo:wght@600;800&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Baloo+Bhaijaan+2:wght@600..800&family=Readex+Pro:wght,HEXP@160..700,0..100&display=swap",
       },
       { rel: "manifest", href: "/__grok/manifest.webmanifest" },
       { rel: "apple-touch-icon", href: "/__grok/icon-180.png" },

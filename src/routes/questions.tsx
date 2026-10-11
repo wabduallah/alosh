@@ -1,5 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Shell } from "@/components/shell";
+import { EmptyState } from "@/components/empty-state";
+import { Glyph } from "@/components/brand";
+import { buttonBase, buttonTone, cx } from "@/components/ui";
 
 export const Route = createFileRoute("/questions")({
   head: () => ({ meta: [{ title: "بنك الأسئلة — العش" }, { name: "description", content: "فئات الأسئلة المرتبطة بكل لعبة." }] }),
@@ -10,13 +13,16 @@ export const Route = createFileRoute("/questions")({
 function QuestionsPage() {
   return (
     <Shell>
-      <section className="glass-card mx-auto mt-8 max-w-xl rounded-3xl p-6 text-center">
-        <h1 className="text-2xl font-extrabold text-ivory">بنك الأسئلة</h1>
-        <p className="mt-2 text-sm text-muted">يعود بنك الأسئلة مع قائمة الألعاب الجديدة.</p>
-        <Link to="/" className="mt-5 inline-flex min-h-11 items-center rounded-full border border-white/15 px-5 text-sm font-bold text-ivory">
-          العودة للرئيسية
-        </Link>
-      </section>
+      <EmptyState
+        title="بنك الأسئلة"
+        text="يعود بنك الأسئلة مع قائمة الألعاب الجديدة."
+        action={
+          <Link to="/" className={cx(buttonBase, buttonTone("quiet"), "min-h-12 px-6")}>
+            <Glyph name="home" className="size-[18px]" />
+            العودة للرئيسية
+          </Link>
+        }
+      />
     </Shell>
   );
 }

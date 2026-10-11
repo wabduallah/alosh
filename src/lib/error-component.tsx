@@ -13,15 +13,16 @@ export function AppErrorComponent({ error }: ErrorComponentProps) {
   return (
     <main
       className={
-        "flex min-h-screen flex-col items-center justify-center gap-3 px-6 text-center " +
-        "bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50"
+        "nest flex min-h-screen flex-col items-center justify-center gap-3 px-6 text-center " +
+        "bg-night text-ivory"
       }
     >
-      <span className="text-red-500" aria-hidden="true">
-        <TriangleAlert className="size-10" strokeWidth={2} />
+      <img src="/brand/al3sh-mark.svg" alt="" className="h-24 w-auto" />
+      <span className="grid size-12 place-items-center rounded-full border border-wrong/50 bg-wrong-fill/15 text-wrong" aria-hidden="true">
+        <TriangleAlert className="size-6" strokeWidth={2} />
       </span>
-      <h1 className="text-lg font-semibold">Something went wrong</h1>
-      <p className="max-w-md text-sm break-words text-zinc-500 dark:text-zinc-400">
+      <h1 className="text-xl font-semibold">Something went wrong</h1>
+      <p className="max-w-md text-sm break-words text-mist">
         {errorMessage(error)}
       </p>
     </main>
