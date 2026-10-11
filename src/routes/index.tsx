@@ -27,10 +27,10 @@ type GameCard = {
 /** Game catalogue for the home grid. Add a game here and set live to true once its room is ready. */
 const GAMES: GameCard[] = [
   {
-    id: "liars",
-    title: "الكذابون",
+    id: "tactical-grid",
+    title: "تحديات العش",
     icon: "🎲",
-    players: "2-14",
+    players: "2-12",
     category: "classic",
     blurb: "لوحة أسئلة على الشاشة الكبيرة. اختاروا التصنيفات وتنافسوا على النقاط.",
     live: true,
