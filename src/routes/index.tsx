@@ -4,6 +4,7 @@ import { Shell } from "@/components/shell";
 import { Logo } from "@/components/logo";
 import { ShareSite } from "@/components/share";
 import { supabase } from "@/lib/supabase";
+import { trackEvent } from "@/lib/analytics";
 import {
   CATEGORY_LABELS,
   GAMES,
@@ -121,7 +122,7 @@ function MobileActionBar() {
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-night/90 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur md:hidden">
       <div className="mx-auto flex max-w-md gap-3">
-        <Link to="/play" search={{ game: "" }} className="flex-1">
+        <Link to="/play" search={{ game: "" }} className="flex-1" onClick={() => trackEvent("create_room", "bar")}>
           <Button tone="primary" className="w-full">
             إنشاء غرفة
           </Button>
@@ -147,6 +148,7 @@ function JoinByCode() {
       return;
     }
     setError(null);
+    trackEvent("join_code");
     navigate({ to: "/join/$code", params: { code: normalized } });
   }
 
@@ -201,7 +203,7 @@ function Hero() {
       </p>
 
       <div className="mt-7 flex flex-col items-center gap-3">
-        <Link to="/play" search={{ game: "" }}>
+        <Link to="/play" search={{ game: "" }} onClick={() => trackEvent("create_room", "hero")}>
           <Button tone="primary">إنشاء غرفة</Button>
         </Link>
         <a href="#games" className="inline-flex min-h-11 items-center text-sm font-bold text-muted underline-offset-4 hover:text-neon hover:underline">
@@ -301,6 +303,16 @@ function Games() {
   ).sort((a, b) => Number(b.live) - Number(a.live));
   const filtersActive = filter !== "all" || players !== "any" || term !== "" || occasion !== null;
 
+  // Search: count a search once the typing pauses, and whether it found anything.
+  const resultCount = visible.length;
+  useEffect(() => {
+    if (term.length < 2) return;
+    const timer = window.setTimeout(() => trackEvent("search", resultCount === 0 ? "none" : "found"), 800);
+    return () => window.clearTimeout(timer);
+    // Only the typed text should restart the timer, not each filter change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [term]);
+
   return (
     <section id="games" aria-labelledby="games-title" className="mx-auto mt-14 max-w-5xl scroll-mt-6">
       <div className="mb-4 px-1">
@@ -347,7 +359,10 @@ function Games() {
               key={item.key}
               type="button"
               aria-pressed={active}
-              onClick={() => setOccasion(active ? null : item.key)}
+              onClick={() => {
+                if (!active) trackEvent("occasion", item.key);
+                setOccasion(active ? null : item.key);
+              }}
               className={cx(
                 "min-h-10 shrink-0 rounded-full border px-4 text-sm font-bold transition",
                 active ? "border-violet bg-violet/10 text-ivory" : "border-white/10 text-muted hover:text-ivory",
@@ -368,7 +383,10 @@ function Games() {
               key={String(item.key)}
               type="button"
               aria-pressed={active}
-              onClick={() => setPlayers(item.key)}
+              onClick={() => {
+                trackEvent("players", String(item.key));
+                setPlayers(item.key);
+              }}
               className={cx(
                 "min-h-10 shrink-0 rounded-full border px-4 text-sm font-bold transition",
                 active ? "border-neon bg-neon/10 text-neon" : "border-white/10 text-muted hover:text-ivory",
@@ -388,7 +406,10 @@ function Games() {
               key={item.key}
               type="button"
               aria-pressed={active}
-              onClick={() => setFilter(item.key)}
+              onClick={() => {
+                trackEvent("category", item.key);
+                setFilter(item.key);
+              }}
               className={cx(
                 "min-h-10 shrink-0 rounded-full border px-4 text-sm font-bold transition",
                 active ? "border-neon bg-neon/10 text-neon" : "border-white/10 text-muted hover:text-ivory",
@@ -455,10 +476,17 @@ function GameTile({ game, onHowTo }: { game: GameCard; onHowTo: () => void }) {
       <p className="flex-1 text-sm leading-7 text-muted">{game.blurb}</p>
       {game.live ? (
         <div className="mt-1 grid grid-cols-2 gap-2">
-          <Button tone="glass" onClick={onHowTo} className="w-full px-3">
+          <Button
+            tone="glass"
+            onClick={() => {
+              trackEvent("rules_open", game.id);
+              onHowTo();
+            }}
+            className="w-full px-3"
+          >
             كيف تُلعب؟
           </Button>
-          <Link to="/play" search={{ game: game.id }}>
+          <Link to="/play" search={{ game: game.id }} onClick={() => trackEvent("start_room", game.id)}>
             <Button tone="violet" className="w-full px-3">
               ابدأ الغرفة
             </Button>
@@ -566,7 +594,7 @@ function HowToSheet({ game, onClose }: { game: GameCard | null; onClose: () => v
           ))}
         </ol>
 
-        <Link to="/play" search={{ game: game.id }} className="mt-6 block">
+        <Link to="/play" search={{ game: game.id }} className="mt-6 block" onClick={() => trackEvent("start_room", game.id)}>
           <Button tone="violet" className="w-full">
             ابدأ الغرفة
           </Button>
