@@ -187,31 +187,38 @@ function HostBoard() {
     setRevealed(typeof data === "string" ? data : null);
   }
 
-  /** Host judged the buzzer's answer. Correct: award points and close. Wrong: reopen the buzzer. */
+  /**
+   * Host judged the buzzer's answer. The judge_answer() function on the server
+   * awards points (or reopens the buzzer) in one locked transaction, so two
+   * judgments can't overwrite each other.
+   */
   async function judge(correct: boolean) {
     if (!supabase || !room || !roomState || !active || !buzzer) return;
     setBusy(true);
     setError(null);
     try {
-      if (correct) {
-        const winner = players.find((p) => p.id === buzzer.player_id);
-        if (winner) {
-          const { error: scoreError } = await supabase
-            .from("room_players")
-            .update({ score: winner.score + active.points })
-            .eq("id", winner.id);
-          if (scoreError) throw scoreError;
-        }
-        await closeQuestion(true);
-      } else {
-        const nextData: StateData = { ...roomState.state_data, buzzer_open: true, buzzer: null };
-        const { error: updateError } = await supabase
-          .from("room_game_state")
-          .update({ state_data: nextData })
-          .eq("room_id", room.id);
-        if (updateError) throw updateError;
-        setRoomState({ active_question_id: roomState.active_question_id, state_data: nextData });
+      const { data, error: rpcError } = await supabase.rpc("judge_answer", {
+        p_room_id: room.id,
+        p_correct: correct,
+      });
+      if (rpcError) throw rpcError;
+      const result = data as { ok: boolean; reason?: string };
+      if (!result.ok) {
+        setError(result.reason === "NO_BUZZER" ? "لا يوجد لاعب ضغط الجرس الآن." : "تعذّر حفظ الحكم.");
+        return;
       }
+      // Realtime also refreshes this, but reflect the change right away.
+      const { data: fresh } = await supabase
+        .from("room_game_state")
+        .select("active_question_id, state_data")
+        .eq("room_id", room.id)
+        .maybeSingle();
+      if (fresh) setRoomState(fresh as RoomState);
+      const { data: ps } = await supabase
+        .from("room_players")
+        .select("id, player_name, score, is_host")
+        .eq("room_id", room.id);
+      if (ps) setPlayers(ps as PlayerRow[]);
     } catch {
       setError("تعذّر حفظ الحكم.");
     } finally {
