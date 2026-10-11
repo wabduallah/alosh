@@ -1,8 +1,11 @@
-import { useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState, type FormEvent } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Shell } from "@/components/shell";
 import { Logo } from "@/components/logo";
-import { Button, cx } from "@/components/ui";
+import { Button, cx, inputClass } from "@/components/ui";
+
+/** Room codes use this alphabet only (no I, O, 0, 1), matching the join page. */
+const CODE_PATTERN = /^[A-HJ-NP-Z2-9]{5}$/;
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -137,6 +140,62 @@ function Home() {
   );
 }
 
+function JoinByCode() {
+  const navigate = useNavigate();
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalized = code.trim().toUpperCase();
+    if (!CODE_PATTERN.test(normalized)) {
+      setError("الرمز يتكون من 5 حروف أو أرقام، مثل ABC23.");
+      return;
+    }
+    setError(null);
+    navigate({ to: "/join/$code", params: { code: normalized } });
+  }
+
+  return (
+    <form onSubmit={submit} noValidate className="glass-card mx-auto mt-8 max-w-md rounded-3xl p-4 text-right">
+      <label htmlFor="join-code" className="block text-sm font-bold text-ivory">
+        عندكم رمز غرفة؟
+      </label>
+      <div className="mt-3 flex gap-2">
+        <input
+          id="join-code"
+          value={code}
+          onChange={(e) => {
+            setCode(e.target.value.toUpperCase());
+            if (error) setError(null);
+          }}
+          maxLength={5}
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+          placeholder="ABC23"
+          inputMode="text"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? "join-code-error" : "join-code-hint"}
+          className={cx(inputClass, "font-mono text-lg tracking-[0.3em] uppercase")}
+        />
+        <Button type="submit" tone="violet" className="shrink-0">
+          انضم
+        </Button>
+      </div>
+      {error ? (
+        <p id="join-code-error" role="alert" className="mt-2 text-sm text-crimson">
+          {error}
+        </p>
+      ) : (
+        <p id="join-code-hint" className="mt-2 text-xs text-muted">
+          الرمز يظهر على شاشة المضيف، أو امسحوا رمز QR.
+        </p>
+      )}
+    </form>
+  );
+}
+
 function Hero() {
   return (
     <section className="mx-auto max-w-3xl pt-8 text-center sm:pt-14">
@@ -158,6 +217,8 @@ function Hero() {
           استعرض الألعاب
         </a>
       </div>
+
+      <JoinByCode />
 
       <ul className="mt-7 flex flex-wrap justify-center gap-2 text-xs text-muted">
         <li className="rounded-full border border-white/10 px-3 py-1">بدون تسجيل</li>
