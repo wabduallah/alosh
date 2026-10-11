@@ -46,6 +46,7 @@ function PlayerBoard() {
   const [buzzing, setBuzzing] = useState(false);
   const [gameSlug, setGameSlug] = useState<string | null>(null);
   const isBluff = gameSlug === "bluff-master";
+  const isOutsider = gameSlug === "outsider";
   const [error, setError] = useState<string | null>(null);
 
   // Load the room, its public questions, its state, and its players.
@@ -267,6 +268,18 @@ function PlayerBoard() {
           <p className="glass-card mb-4 rounded-2xl p-4 text-center text-sm text-muted">بانتظار المضيف ليبدأ اللعبة.</p>
         ) : null}
 
+        {isOutsider ? (
+          <OutsiderPlayerPanel
+            roomId={room.id}
+            players={players}
+            meId={me?.id ?? null}
+            isPlayer={!!me && !me.is_host}
+            phase={String(stateData.phase ?? "")}
+            round={Number(stateData.round ?? 0)}
+            reveal={(stateData.reveal as OutsiderRevealView | undefined) ?? null}
+          />
+        ) : null}
+
         {active ? (
           <div className="glass-card mb-5 rounded-3xl p-5 text-center">
             <p className="text-xs font-bold text-violet">
@@ -311,7 +324,7 @@ function PlayerBoard() {
             </div>
             ) : null}
           </div>
-        ) : room.status === "playing" ? (
+        ) : room.status === "playing" && !isOutsider ? (
           <p className="glass-card mb-5 rounded-2xl p-4 text-center text-sm text-muted">اختر المضيف سؤالاً من اللوحة.</p>
         ) : null}
 
@@ -551,5 +564,197 @@ function BluffPlayerPanel({ roomId, activeId, phase, reveal, isPlayer }: BluffPl
 
       {message ? <p className="mt-3 text-sm text-crimson">{message}</p> : null}
     </div>
+  );
+}
+
+
+type OutsiderRevealView = {
+  outsider?: string;
+  caught?: boolean;
+  topic?: string;
+  word?: string;
+  guess?: string;
+  guess_ok?: boolean;
+  votes?: { name: string; votes: number }[];
+};
+type OutsiderCard = { is_outsider: boolean; topic?: string; word?: string } | null;
+
+const OUTSIDER_PLAYER_ERRORS: Record<string, string> = {
+  SELF_VOTE: "لا يمكنك التصويت لنفسك.",
+  BAD_TARGET: "هذا اللاعب غير متاح للتصويت.",
+  WRONG_PHASE: "هذه المرحلة انتهت.",
+  EMPTY: "اكتب تخمينك أولًا.",
+  NOT_OUTSIDER: "هذه المرحلة للبرة فقط.",
+  HOST_CANNOT_PLAY: "المضيف لا يشارك في التصويت.",
+  NOT_IN_ROOM: "انضم إلى الغرفة أولًا.",
+};
+
+/** Player side of برة السالفة: their card, voting, the guess, and the reveal. */
+function OutsiderPlayerPanel({
+  roomId,
+  players,
+  meId,
+  isPlayer,
+  phase,
+  round,
+  reveal,
+}: {
+  roomId: string;
+  players: PlayerRow[];
+  meId: string | null;
+  isPlayer: boolean;
+  phase: string;
+  round: number;
+  reveal: OutsiderRevealView | null;
+}) {
+  const [card, setCard] = useState<OutsiderCard>(null);
+  const [votedFor, setVotedFor] = useState<string | null>(null);
+  const [guess, setGuess] = useState("");
+  const [guessSent, setGuessSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  // A new round starts with no vote, no guess, and a fresh card.
+  useEffect(() => {
+    setVotedFor(null);
+    setGuess("");
+    setGuessSent(false);
+    setMessage(null);
+    setCard(null);
+    if (!supabase || !isPlayer) return;
+    let cancelled = false;
+    supabase.rpc("outsider_my_card", { p_room_id: roomId }).then(({ data }) => {
+      if (!cancelled && data) setCard(data as OutsiderCard);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [roomId, round, isPlayer]);
+
+  const voters = players.filter((p) => !p.is_host && p.id !== meId);
+  const isOutsider = !!card?.is_outsider;
+
+  async function vote(target: string) {
+    if (!supabase || busy) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const { data, error } = await supabase.rpc("outsider_vote", { p_room_id: roomId, p_target: target });
+      if (error) throw error;
+      const result = data as { ok: boolean; reason?: string };
+      if (result.ok) setVotedFor(target);
+      else setMessage(OUTSIDER_PLAYER_ERRORS[result.reason ?? ""] ?? "تعذّر حفظ التصويت.");
+    } catch {
+      setMessage("تعذّر حفظ التصويت، حاول مرة أخرى.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendGuess() {
+    if (!supabase || busy) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const { data, error } = await supabase.rpc("outsider_guess", { p_room_id: roomId, p_text: guess });
+      if (error) throw error;
+      const result = data as { ok: boolean; reason?: string };
+      if (result.ok) setGuessSent(true);
+      else setMessage(OUTSIDER_PLAYER_ERRORS[result.reason ?? ""] ?? "تعذّر إرسال التخمين.");
+    } catch {
+      setMessage("تعذّر إرسال التخمين، حاول مرة أخرى.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="glass-card mb-5 rounded-3xl p-5 text-center">
+      <p className="text-xs font-bold text-violet">برة السالفة · الجولة {round}</p>
+
+      {phase === "discuss" && isPlayer && card ? (
+        <div className="mt-3">
+          {isOutsider ? (
+            <p className="text-xl font-extrabold text-ivory">أنت برة السالفة! اكتشف الموضوع من نقاشهم.</p>
+          ) : (
+            <>
+              <p className="text-sm text-muted">الموضوع: {card.topic}</p>
+              <p className="mt-2 text-2xl font-extrabold text-neon">{card.word}</p>
+              <p className="mt-2 text-xs text-muted">ناقشوا الكلمة دون أن تكشفوها بوضوح.</p>
+            </>
+          )}
+        </div>
+      ) : null}
+
+      {phase === "discuss" && !isPlayer ? <p className="mt-3 text-sm text-muted">ناقشوا الآن بالصوت.</p> : null}
+
+      {phase === "vote" ? (
+        !isPlayer ? (
+          <p className="mt-3 text-sm text-muted">اللاعبون يصوّتون الآن…</p>
+        ) : votedFor ? (
+          <p className="mt-3 font-bold text-ivory">صوّتّ. بانتظار الباقين.</p>
+        ) : (
+          <div className="mt-3 grid gap-2">
+            <p className="text-sm text-muted">من تظنه برة السالفة؟</p>
+            {voters.map((p) => (
+              <Button key={p.id} type="button" tone="glass" className="w-full" onClick={() => vote(p.id)} disabled={busy}>
+                {p.player_name}
+              </Button>
+            ))}
+          </div>
+        )
+      ) : null}
+
+      {phase === "guess" ? (
+        isOutsider && !guessSent ? (
+          <div className="mt-3 grid gap-3">
+            <p className="text-sm text-muted">لقد كُشفت! خمّن الكلمة لتفوز وحدك.</p>
+            <input
+              value={guess}
+              onChange={(e) => setGuess(e.target.value)}
+              maxLength={40}
+              placeholder="تخمينك"
+              className="min-h-12 w-full rounded-2xl border border-white/10 bg-night px-4 text-center text-ivory outline-none focus:border-neon"
+            />
+            <Button type="button" tone="primary" className="w-full" onClick={sendGuess} disabled={busy || guess.trim() === ""}>
+              أرسل التخمين
+            </Button>
+          </div>
+        ) : isOutsider ? (
+          <p className="mt-3 font-bold text-ivory">أرسلت تخمينك. بانتظار النتيجة.</p>
+        ) : (
+          <p className="mt-3 text-sm text-muted">{reveal?.outsider ?? "البرة"} يخمّن الكلمة الآن…</p>
+        )
+      ) : null}
+
+      {(phase === "guess" || phase === "done") && reveal?.votes && reveal.votes.length > 0 ? (
+        <ul className="mt-4 grid gap-2 text-right">
+          {reveal.votes.map((v) => (
+            <li key={v.name} className="flex items-center justify-between rounded-xl bg-white/[0.04] px-4 py-2 text-sm text-ivory">
+              <span>{v.name}</span>
+              <span className="font-bold">{v.votes} صوت</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {phase === "done" && reveal ? (
+        <div className="mt-4 rounded-2xl border border-emerald/40 bg-emerald/10 p-4 text-ivory">
+          <p className="font-bold">البرة: {reveal.outsider}</p>
+          <p className="mt-1 text-sm">الموضوع: {reveal.topic} · الكلمة: {reveal.word}</p>
+          {reveal.guess !== undefined ? (
+            <p className="mt-1 text-sm">
+              تخمينه: {reveal.guess} {reveal.guess_ok ? "✓" : "✗"}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {phase !== "discuss" && phase !== "vote" && phase !== "guess" && phase !== "done" ? (
+        <p className="mt-3 text-sm text-muted">بانتظار المضيف ليبدأ الجولة.</p>
+      ) : null}
+
+      {message ? <p className="mt-3 text-sm text-crimson">{message}</p> : null}
+    </section>
   );
 }
