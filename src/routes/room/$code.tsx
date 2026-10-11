@@ -31,6 +31,8 @@ type StateData = {
   buzzer?: Buzzer;
 } & Record<string, unknown>;
 type PlayerRow = { id: string; user_id: string | null; player_name: string; score: number; is_host: boolean };
+/** Bluff game (سيد الخداع): one option as revealed after the vote. */
+type RevealOption = { key: string; text: string; is_correct: boolean; owner: string | null; votes: number };
 
 function PlayerBoard() {
   const { code } = Route.useParams();
@@ -42,6 +44,8 @@ function PlayerBoard() {
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [buzzMessage, setBuzzMessage] = useState<string | null>(null);
   const [buzzing, setBuzzing] = useState(false);
+  const [gameSlug, setGameSlug] = useState<string | null>(null);
+  const isBluff = gameSlug === "bluff-master";
   const [error, setError] = useState<string | null>(null);
 
   // Load the room, its public questions, its state, and its players.
@@ -87,6 +91,7 @@ function PlayerBoard() {
       setStateData(((state?.state_data as StateData) ?? {}) as StateData);
       setPlayers((ps ?? []) as PlayerRow[]);
       setMyUserId(sessionData.session?.user.id ?? null);
+      setGameSlug(game?.slug ?? null);
     }
 
     load();
@@ -269,7 +274,17 @@ function PlayerBoard() {
             </p>
             <p className="mt-3 text-xl font-extrabold leading-relaxed text-ivory">{active.question_text}</p>
 
-            {active.options.length > 0 ? (
+            {isBluff ? (
+              <BluffPlayerPanel
+                roomId={room.id}
+                activeId={active.id}
+                phase={String(stateData.phase ?? "")}
+                reveal={(stateData.reveal as RevealOption[] | undefined) ?? []}
+                isPlayer={!!me && !me.is_host}
+              />
+            ) : null}
+
+            {!isBluff && active.options.length > 0 ? (
               <ul className="mt-4 grid gap-2">
                 {active.options.map((opt) => (
                   <li key={opt} className="rounded-xl bg-white/[0.05] px-4 py-3 text-right text-ivory">
@@ -279,6 +294,7 @@ function PlayerBoard() {
               </ul>
             ) : null}
 
+            {!isBluff ? (
             <div className="mt-5">
               {buzzer ? (
                 <p className="rounded-2xl border border-violet/40 bg-violet/10 p-3 font-bold text-ivory">
@@ -293,6 +309,7 @@ function PlayerBoard() {
               )}
               {buzzMessage ? <p className="mt-2 text-sm text-ivory">{buzzMessage}</p> : null}
             </div>
+            ) : null}
           </div>
         ) : room.status === "playing" ? (
           <p className="glass-card mb-5 rounded-2xl p-4 text-center text-sm text-muted">اختر المضيف سؤالاً من اللوحة.</p>
@@ -364,5 +381,175 @@ function PlayerBoard() {
         </p>
       </section>
     </Shell>
+  );
+}
+
+type BluffPlayerPanelProps = {
+  roomId: string;
+  activeId: string;
+  phase: string;
+  reveal: RevealOption[];
+  isPlayer: boolean;
+};
+type BluffOption = { opt_key: string; opt_text: string; is_mine: boolean };
+
+const BLUFF_ERRORS: Record<string, string> = {
+  EMPTY: "اكتب إجابة أولًا.",
+  SAME_AS_CORRECT: "هذه هي الإجابة الصحيحة، اكتب إجابة مزيفة مختلفة.",
+  WRONG_PHASE: "انتهت مرحلة الكتابة.",
+  ALREADY_VOTED: "لقد صوّتّ بالفعل.",
+  OWN_ANSWER: "لا يمكنك التصويت لإجابتك.",
+  HOST_CANNOT_PLAY: "المضيف لا يشارك في الإجابات.",
+  NOT_IN_ROOM: "انضم إلى الغرفة أولًا.",
+};
+
+/** Player side of one bluff round: write a fake answer, then vote, then see the reveal. */
+function BluffPlayerPanel({ roomId, activeId, phase, reveal, isPlayer }: BluffPlayerPanelProps) {
+  const [text, setText] = useState("");
+  const [sent, setSent] = useState(false);
+  const [options, setOptions] = useState<BluffOption[]>([]);
+  const [votedKey, setVotedKey] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  // A new question or a new phase starts with a clean slate for this player.
+  useEffect(() => {
+    setText("");
+    setSent(false);
+    setVotedKey(null);
+    setMessage(null);
+    setOptions([]);
+  }, [activeId, phase === "fakes" ? "fakes" : phase === "question" || phase === "" ? "start" : "other"]);
+
+  // Load the voting options once voting opens (the server hides owners and the correct flag).
+  useEffect(() => {
+    if (!supabase || phase !== "vote") return;
+    const client = supabase;
+    let cancelled = false;
+    client.rpc("bluff_options", { p_room_id: roomId }).then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) return setMessage("تعذّر تحميل الخيارات.");
+      setOptions((data ?? []) as BluffOption[]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [roomId, phase, activeId]);
+
+  async function submitFake() {
+    if (!supabase || busy) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const { data, error } = await supabase.rpc("bluff_submit_fake", { p_room_id: roomId, p_text: text });
+      if (error) throw error;
+      const result = data as { ok: boolean; reason?: string };
+      if (result.ok) {
+        setSent(true);
+      } else {
+        setMessage(BLUFF_ERRORS[result.reason ?? ""] ?? "تعذّر إرسال الإجابة.");
+      }
+    } catch {
+      setMessage("تعذّر إرسال الإجابة، حاول مرة أخرى.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function vote(key: string) {
+    if (!supabase || busy) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const { data, error } = await supabase.rpc("bluff_vote", { p_room_id: roomId, p_key: key });
+      if (error) throw error;
+      const result = data as { ok: boolean; reason?: string };
+      if (result.ok) setVotedKey(key);
+      else if (result.reason === "ALREADY_VOTED") setVotedKey(key);
+      else setMessage(BLUFF_ERRORS[result.reason ?? ""] ?? "تعذّر حفظ التصويت.");
+    } catch {
+      setMessage("تعذّر حفظ التصويت، حاول مرة أخرى.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-5 rounded-2xl border border-violet/40 bg-violet/10 p-4 text-center">
+      {phase === "fakes" ? (
+        !isPlayer ? (
+          <p className="text-sm text-muted">بانتظار الإجابات المزيفة…</p>
+        ) : sent ? (
+          <p className="font-bold text-ivory">أرسلت إجابتك. بانتظار الباقين.</p>
+        ) : (
+          <div className="grid gap-3">
+            <p className="text-sm text-muted">اكتب إجابة مزيفة تبدو صحيحة.</p>
+            <input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              maxLength={60}
+              placeholder="إجابتك"
+              className="min-h-12 w-full rounded-2xl border border-white/10 bg-night px-4 text-center text-ivory outline-none focus:border-neon"
+            />
+            <Button type="button" tone="primary" className="w-full" onClick={submitFake} disabled={busy || text.trim() === ""}>
+              أرسل الإجابة
+            </Button>
+          </div>
+        )
+      ) : null}
+
+      {phase === "vote" ? (
+        !isPlayer ? (
+          <p className="text-sm text-muted">اللاعبون يصوّتون الآن…</p>
+        ) : votedKey ? (
+          <p className="font-bold text-ivory">صوّتّ. بانتظار الباقين.</p>
+        ) : (
+          <div className="grid gap-2">
+            <p className="text-sm text-muted">أي إجابة تظنها صحيحة؟</p>
+            {options.map((o) => (
+              <Button
+                key={o.opt_key}
+                type="button"
+                tone="glass"
+                className="w-full"
+                onClick={() => vote(o.opt_key)}
+                disabled={busy || o.is_mine}
+              >
+                {o.is_mine ? `${o.opt_text} (إجابتك)` : o.opt_text}
+              </Button>
+            ))}
+          </div>
+        )
+      ) : null}
+
+      {phase === "reveal" ? (
+        <ul className="grid gap-2 text-right">
+          {reveal.map((o) => (
+            <li
+              key={o.key}
+              className={cx(
+                "flex items-center justify-between rounded-xl px-4 py-2 text-sm",
+                o.is_correct ? "border border-emerald/40 bg-emerald/10 text-ivory" : "bg-white/[0.04] text-ivory/80",
+              )}
+            >
+              <span>
+                {o.text}
+                {o.owner ? <span className="mr-2 text-xs text-violet">({o.owner})</span> : null}
+              </span>
+              <span className="font-extrabold">
+                {o.is_correct ? "✓ " : ""}
+                {o.votes} صوت
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {phase !== "fakes" && phase !== "vote" && phase !== "reveal" ? (
+        <p className="text-sm text-muted">بانتظار المضيف ليبدأ الجولة.</p>
+      ) : null}
+
+      {message ? <p className="mt-3 text-sm text-crimson">{message}</p> : null}
+    </div>
   );
 }

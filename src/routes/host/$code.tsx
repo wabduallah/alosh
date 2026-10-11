@@ -32,6 +32,9 @@ type StateData = {
 } & Record<string, unknown>;
 type RoomState = { active_question_id: string | null; state_data: StateData };
 type PlayerRow = { id: string; player_name: string; score: number; is_host: boolean };
+/** Bluff game (سيد الخداع): counts from bluff_status() and the revealed options. */
+type BluffStatus = { phase: string; submitted: number; voted: number; players: number };
+type RevealOption = { key: string; text: string; is_correct: boolean; owner: string | null; votes: number };
 
 function HostBoard() {
   const { code } = Route.useParams();
@@ -40,9 +43,12 @@ function HostBoard() {
   const [roomState, setRoomState] = useState<RoomState | null>(null);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [isHost, setIsHost] = useState<boolean | null>(null);
+  const [gameSlug, setGameSlug] = useState<string | null>(null);
+  const [bluffStatus, setBluffStatus] = useState<BluffStatus | null>(null);
   const [revealed, setRevealed] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const isBluff = gameSlug === "bluff-master";
 
   // Load the room, its questions, its live state, and its players.
   useEffect(() => {
@@ -69,6 +75,7 @@ function HostBoard() {
         setIsHost(r.host_id === session.user.id);
 
         const { data: game } = await client.from("games").select("slug").eq("id", r.game_id).single();
+        if (!cancelled) setGameSlug(game?.slug ?? null);
         const { data: qs } = await client
           .from("questions_public")
           .select("id, category_ar, question_text, options, points, difficulty")
@@ -196,9 +203,11 @@ function HostBoard() {
       const nextData: StateData = {
         ...roomState.state_data,
         phase: "question",
-        buzzer_open: true,
+        // The bluff game has no buzzer: players write answers instead.
+        buzzer_open: !isBluff,
         buzzer: null,
         voting_open: false,
+        reveal: null,
       };
       const { error: updateError } = await supabase
         .from("room_game_state")
@@ -212,6 +221,64 @@ function HostBoard() {
       setBusy(false);
     }
   }
+
+  /** Runs one step of the bluff round on the server (start, open vote, reveal, finish). */
+  async function bluffStep(fn: "bluff_start_fakes" | "bluff_open_vote" | "bluff_reveal" | "bluff_finish_round") {
+    if (!supabase || !room) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { data, error: rpcError } = await supabase.rpc(fn, { p_room_id: room.id });
+      if (rpcError) throw rpcError;
+      const result = data as { ok: boolean; reason?: string };
+      if (!result.ok) {
+        const messages: Record<string, string> = {
+          NO_ACTIVE_QUESTION: "اختر سؤالًا من اللوحة أولًا.",
+          WRONG_PHASE: "هذه الخطوة غير متاحة الآن.",
+        };
+        setError(messages[result.reason ?? ""] ?? "تعذّر تنفيذ الخطوة.");
+        return;
+      }
+      if (fn === "bluff_finish_round") {
+        // Same bookkeeping as closing a question: mark it answered and return to the board.
+        const done = new Set(roomState?.state_data?.answered ?? []);
+        if (active) done.add(active.id);
+        setRoomState({ active_question_id: null, state_data: { ...(roomState?.state_data ?? {}), phase: "board", answered: [...done], reveal: null } });
+        setBluffStatus(null);
+        setRevealed(null);
+      }
+      const { data: fresh } = await supabase
+        .from("room_game_state")
+        .select("active_question_id, state_data")
+        .eq("room_id", room.id)
+        .maybeSingle();
+      if (fresh) setRoomState(fresh as RoomState);
+      const { data: ps } = await supabase.from("room_players").select("id, player_name, score, is_host").eq("room_id", room.id);
+      if (ps) setPlayers(ps as PlayerRow[]);
+    } catch {
+      setError("تعذّر تنفيذ الخطوة.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // While a bluff question is active, keep the answer and vote counts fresh.
+  useEffect(() => {
+    if (!supabase || !room || !isBluff || !roomState?.active_question_id) return;
+    const client = supabase;
+    const roomId = room.id;
+    let cancelled = false;
+    async function loadStatus() {
+      const { data } = await client.rpc("bluff_status", { p_room_id: roomId });
+      if (!cancelled && data) setBluffStatus(data as BluffStatus);
+    }
+    loadStatus();
+    const timer = window.setInterval(loadStatus, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [room?.id, isBluff, roomState?.active_question_id, roomState?.state_data?.phase]);
 
   async function reveal() {
     if (!supabase || !room) return;
@@ -361,6 +428,20 @@ function HostBoard() {
               </ul>
             ) : null}
 
+            {isBluff ? (
+              <BluffHostPanel
+                phase={String(roomState?.state_data?.phase ?? "")}
+                status={bluffStatus}
+                reveal={(roomState?.state_data?.reveal as RevealOption[] | undefined) ?? []}
+                busy={busy}
+                onStart={() => bluffStep("bluff_start_fakes")}
+                onOpenVote={() => bluffStep("bluff_open_vote")}
+                onReveal={() => bluffStep("bluff_reveal")}
+                onFinish={() => bluffStep("bluff_finish_round")}
+              />
+            ) : null}
+
+            {!isBluff ? (
             <div className="mt-5">
               {buzzer ? (
                 <div className="rounded-2xl border border-violet/40 bg-violet/10 p-4">
@@ -388,13 +469,15 @@ function HostBoard() {
                 <p className="text-sm text-muted">{roomState?.state_data?.buzzer_open ? "بانتظار الجرس…" : "الجرس مغلق."}</p>
               )}
             </div>
+            ) : null}
 
-            {revealed ? (
+            {!isBluff && revealed ? (
               <p className="mt-4 rounded-xl border border-emerald/40 bg-emerald/10 p-3 font-bold text-ivory">
                 الإجابة: {revealed}
               </p>
             ) : null}
 
+            {!isBluff ? (
             <div className="mt-5 flex flex-wrap justify-center gap-3">
               <Button type="button" tone="glass" onClick={reveal} disabled={busy}>
                 كشف الإجابة
@@ -406,6 +489,13 @@ function HostBoard() {
                 تخطّي
               </Button>
             </div>
+            ) : (
+            <div className="mt-5 flex flex-wrap justify-center gap-3">
+              <Button type="button" tone="ghost" onClick={() => closeQuestion(false)} disabled={busy}>
+                تخطّي
+              </Button>
+            </div>
+            )}
           </div>
         ) : null}
 
@@ -465,5 +555,80 @@ function HostBoard() {
         ) : null}
       </section>
     </Shell>
+  );
+}
+
+type BluffPanelProps = {
+  phase: string;
+  status: BluffStatus | null;
+  reveal: RevealOption[];
+  busy: boolean;
+  onStart: () => void;
+  onOpenVote: () => void;
+  onReveal: () => void;
+  onFinish: () => void;
+};
+
+/** Host controls for one bluff round, step by step. */
+function BluffHostPanel({ phase, status, reveal, busy, onStart, onOpenVote, onReveal, onFinish }: BluffPanelProps) {
+  const total = status?.players ?? 0;
+  return (
+    <div className="mt-5 rounded-2xl border border-violet/40 bg-violet/10 p-4 text-center">
+      {phase === "question" || phase === "" ? (
+        <>
+          <p className="text-sm text-muted">اكتب الجميع إجابة مزيفة مقنعة للسؤال.</p>
+          <Button type="button" tone="primary" className="mt-3" onClick={onStart} disabled={busy}>
+            ابدأ كتابة الإجابات
+          </Button>
+        </>
+      ) : null}
+
+      {phase === "fakes" ? (
+        <>
+          <p className="text-sm text-muted">
+            أرسل الإجابة {status?.submitted ?? 0} من {total}
+          </p>
+          <Button type="button" tone="primary" className="mt-3" onClick={onOpenVote} disabled={busy || (status?.submitted ?? 0) === 0}>
+            افتح التصويت
+          </Button>
+        </>
+      ) : null}
+
+      {phase === "vote" ? (
+        <>
+          <p className="text-sm text-muted">
+            صوّت {status?.voted ?? 0} من {total}
+          </p>
+          <Button type="button" tone="primary" className="mt-3" onClick={onReveal} disabled={busy}>
+            اكشف النتائج وأضف النقاط
+          </Button>
+        </>
+      ) : null}
+
+      {phase === "reveal" ? (
+        <>
+          <ul className="mt-2 grid gap-2 text-right">
+            {reveal.map((o) => (
+              <li
+                key={o.key}
+                className={cx(
+                  "flex items-center justify-between rounded-xl px-4 py-2 text-sm",
+                  o.is_correct ? "border border-emerald/40 bg-emerald/10 text-ivory" : "bg-white/[0.04] text-ivory/80",
+                )}
+              >
+                <span>
+                  {o.text}
+                  {o.owner ? <span className="mr-2 text-xs text-violet">({o.owner})</span> : null}
+                </span>
+                <span className="font-extrabold">{o.is_correct ? "✓ " : ""}{o.votes} صوت</span>
+              </li>
+            ))}
+          </ul>
+          <Button type="button" tone="primary" className="mt-4" onClick={onFinish} disabled={busy}>
+            التالي
+          </Button>
+        </>
+      ) : null}
+    </div>
   );
 }

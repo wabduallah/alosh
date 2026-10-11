@@ -36,6 +36,15 @@ const GAMES: GameCard[] = [
     live: true,
   },
   {
+    id: "bluff-master",
+    title: "سيد الخداع",
+    icon: "🎭",
+    players: "3-8",
+    category: "strategy",
+    blurb: "اكتبوا إجابات مزيفة مقنعة، وصوّتوا على الإجابة الحقيقية. من يخدع أكثر يكسب.",
+    live: true,
+  },
+  {
     id: "word-guess",
     title: "خمّن الكلمة",
     icon: "🔠",
