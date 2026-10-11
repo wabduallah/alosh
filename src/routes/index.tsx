@@ -216,11 +216,41 @@ const STEPS = [
 function Home() {
   return (
     <Shell>
-      <Hero />
-      <HowItWorks />
-      <Games />
-      <CallToAction />
+      <div className="pb-24 md:pb-0">
+        <Hero />
+        <HowItWorks />
+        <Games />
+        <CallToAction />
+      </div>
+      <MobileActionBar />
     </Shell>
+  );
+}
+
+/**
+ * Fixed bar at the bottom of phones: create a room, or jump to the join-by-code
+ * field. Hidden on wider screens, where the hero already shows both actions.
+ */
+function MobileActionBar() {
+  function focusJoinField() {
+    const input = document.getElementById("join-code");
+    input?.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => (input as HTMLInputElement | null)?.focus(), 300);
+  }
+
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-night/90 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur md:hidden">
+      <div className="mx-auto flex max-w-md gap-3">
+        <Link to="/play" search={{ game: "" }} className="flex-1">
+          <Button tone="primary" className="w-full">
+            إنشاء غرفة
+          </Button>
+        </Link>
+        <Button tone="glass" className="flex-1" onClick={focusJoinField}>
+          انضم برمز
+        </Button>
+      </div>
+    </div>
   );
 }
 
