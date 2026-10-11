@@ -90,13 +90,13 @@ const GAMES: GameCard[] = [
     live: false,
   },
   {
-    id: "mafia",
+    id: "social-mafia",
     title: "المافيا",
     icon: "🔪",
-    players: "4-15",
+    players: "5-14",
     category: "strategy",
     blurb: "المواطنون ضد المافيا. من يكذب ومن يصدق؟",
-    live: false,
+    live: true,
   },
 ];
 

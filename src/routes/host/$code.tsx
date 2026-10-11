@@ -51,6 +51,7 @@ function HostBoard() {
   const isBluff = gameSlug === "bluff-master";
   const isOutsider = gameSlug === "outsider";
   const isHeads = gameSlug === "heads-up";
+  const isMafia = gameSlug === "social-mafia";
 
   // Load the room, its questions, its live state, and its players.
   useEffect(() => {
@@ -386,6 +387,14 @@ function HostBoard() {
     return (
       <Shell>
         <OutsiderHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
+      </Shell>
+    );
+  }
+
+  if (isMafia) {
+    return (
+      <Shell>
+        <MafiaHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
       </Shell>
     );
   }
@@ -1091,6 +1100,165 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
               {scores.red === scores.blue ? "تعادل" : `الفائز: ${winner} بـ ${Math.max(scores.red, scores.blue)} نقطة`}
             </p>
           </>
+        ) : null}
+      </div>
+
+      {!ended ? (
+        <div className="mt-6 text-center">
+          <Button type="button" tone="violet" onClick={endGame} disabled={busy}>
+            إنهاء الغرفة للجميع
+          </Button>
+        </div>
+      ) : (
+        <p className="mt-6 text-center text-sm text-muted">انتهت الغرفة.</p>
+      )}
+    </section>
+  );
+}
+
+type MafiaState = { phase?: string; round?: number; winner?: string | null; last_result?: string | null };
+
+const MAFIA_HOST_ERRORS: Record<string, string> = {
+  ROOM_NOT_PLAYING: "ابدأ الغرفة أولًا.",
+  ALREADY_STARTED: "اللعبة بدأت بالفعل.",
+  NOT_ENOUGH_PLAYERS: "تحتاج المافيا إلى 5 لاعبين على الأقل.",
+  TOO_MANY_PLAYERS: "الحد الأقصى 14 لاعبًا.",
+  WRONG_PHASE: "هذه الخطوة غير متاحة الآن.",
+  NO_STATE: "تعذّر تحميل اللعبة.",
+};
+
+const MAFIA_ROLE_LABELS: Record<string, string> = { mafia: "مافيا", citizen: "مواطن", doctor: "طبيب", detective: "محقق" };
+
+function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; roomCode: string; roomStatus: string }) {
+  const [state, setState] = useState<MafiaState>({});
+  const [rows, setRows] = useState<{ player_id: string; player_name: string; alive: boolean; player_role: string | null }[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ended, setEnded] = useState(roomStatus === "finished");
+
+  useEffect(() => {
+    if (!supabase) return;
+    const client = supabase;
+    let cancelled = false;
+    async function load() {
+      const [{ data: gs }, { data: list }] = await Promise.all([
+        client.from("room_game_state").select("state_data").eq("room_id", roomId).maybeSingle(),
+        client.rpc("mafia_players", { p_room_id: roomId }),
+      ]);
+      if (cancelled) return;
+      if (gs) setState((gs.state_data ?? {}) as MafiaState);
+      if (list) setRows(list as typeof rows);
+    }
+    load();
+    const poll = window.setInterval(load, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(poll);
+    };
+    // rows is set inside load; the effect only depends on the room.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId]);
+
+  async function step(fn: "mafia_start" | "mafia_resolve_night" | "mafia_open_vote" | "mafia_close_vote") {
+    if (!supabase || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { data, error: rpcError } = await supabase.rpc(fn, { p_room_id: roomId });
+      if (rpcError) throw rpcError;
+      const result = data as { ok: boolean; reason?: string };
+      if (!result.ok) setError(MAFIA_HOST_ERRORS[result.reason ?? ""] ?? "تعذّر تنفيذ الخطوة.");
+    } catch {
+      setError("تعذّر تنفيذ الخطوة.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function endGame() {
+    if (!supabase) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { error: updateError } = await supabase.from("game_rooms").update({ status: "finished" }).eq("id", roomId);
+      if (updateError) throw updateError;
+      setEnded(true);
+    } catch {
+      setError("تعذّر إنهاء الغرفة.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const phase = state.phase ?? "";
+  const round = state.round ?? 1;
+  const over = phase === "over";
+  const alive = rows.filter((p) => p.alive).length;
+  const headline =
+    phase === "" ? "جاهزون للبدء؟"
+    : phase === "night" ? `ليل الجولة ${round}`
+    : phase === "day" ? `نهار الجولة ${round}`
+    : phase === "vote" ? "التصويت"
+    : "انتهت اللعبة";
+
+  return (
+    <section className="mx-auto mt-4 max-w-2xl">
+      <div className="glass-card rounded-3xl p-6 text-center">
+        <p className="text-xs font-bold text-violet">رمز الغرفة</p>
+        <p className="mt-1 font-mono text-3xl font-extrabold text-neon">{roomCode}</p>
+        <p className="mt-4 text-xl font-extrabold text-ivory">{headline}</p>
+        {state.last_result ? <p className="mt-3 text-sm font-bold text-ivory">{state.last_result}</p> : null}
+
+        <div className="mt-6 grid grid-cols-2 gap-2 text-right sm:grid-cols-3">
+          {rows.map((p) => (
+            <div
+              key={p.player_id}
+              className={cx(
+                "rounded-xl px-3 py-2 text-sm font-bold",
+                p.alive ? "bg-white/[0.05] text-ivory" : "bg-white/[0.02] text-muted line-through",
+              )}
+            >
+              {p.player_name}
+              {over && p.player_role ? (
+                <span className="block text-xs font-normal text-muted no-underline">{MAFIA_ROLE_LABELS[p.player_role] ?? ""}</span>
+              ) : null}
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-xs text-muted">الأحياء: {alive}</p>
+
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          {phase === "" ? (
+            <Button type="button" tone="primary" onClick={() => step("mafia_start")} disabled={busy}>
+              ابدأ اللعبة
+            </Button>
+          ) : null}
+          {phase === "night" ? (
+            <Button type="button" tone="primary" onClick={() => step("mafia_resolve_night")} disabled={busy}>
+              الفجر: احسم الليل
+            </Button>
+          ) : null}
+          {phase === "day" ? (
+            <Button type="button" tone="primary" onClick={() => step("mafia_open_vote")} disabled={busy}>
+              افتح التصويت
+            </Button>
+          ) : null}
+          {phase === "vote" ? (
+            <Button type="button" tone="primary" onClick={() => step("mafia_close_vote")} disabled={busy}>
+              أغلق التصويت
+            </Button>
+          ) : null}
+        </div>
+
+        {over ? (
+          <p className="mt-4 text-xl font-extrabold text-ivory">
+            {state.winner === "mafia" ? "فازت المافيا" : "فاز المواطنون"}
+          </p>
+        ) : null}
+        {error ? (
+          <p role="alert" className="mt-3 text-sm text-crimson">
+            {error}
+          </p>
         ) : null}
       </div>
 
