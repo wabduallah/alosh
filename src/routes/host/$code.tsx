@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Shell } from "@/components/shell";
-import { Button, cx } from "@/components/ui";
+import { Button, buttonBase, buttonTone, cx } from "@/components/ui";
 import { Glyph } from "@/components/brand";
 import { ShareRoom } from "@/components/share";
 import { ensureSession, supabase } from "@/lib/supabase";
@@ -389,6 +389,7 @@ function HostBoard() {
     return (
       <Shell play>
         <ShareRoom code={room.room_code} />
+        <TvLink code={room.room_code} />
         <OutsiderHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
       </Shell>
     );
@@ -398,6 +399,7 @@ function HostBoard() {
     return (
       <Shell play>
         <ShareRoom code={room.room_code} />
+        <TvLink code={room.room_code} />
         <MafiaHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
       </Shell>
     );
@@ -407,6 +409,7 @@ function HostBoard() {
     return (
       <Shell play>
         <ShareRoom code={room.room_code} />
+        <TvLink code={room.room_code} />
         <HeadsHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
       </Shell>
     );
@@ -425,6 +428,7 @@ function HostBoard() {
         </div>
 
         <ShareRoom code={room.room_code} />
+        <TvLink code={room.room_code} />
 
         {error ? <p className="mb-4 text-sm text-wrong">{error}</p> : null}
 
@@ -599,6 +603,18 @@ function HostBoard() {
         ) : null}
       </section>
     </Shell>
+  );
+}
+
+/** Opens the display-only TV screen for this room in a new tab (cast it or open it on the TV). */
+function TvLink({ code }: { code: string }) {
+  return (
+    <div className="-mt-1 mb-4 flex justify-center">
+      <Link to="/tv/$code" params={{ code }} target="_blank" className={cx(buttonBase, buttonTone("outline"))}>
+        <Glyph name="tv" />
+        افتح شاشة التلفزيون
+      </Link>
+    </div>
   );
 }
 
