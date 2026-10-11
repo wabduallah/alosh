@@ -3,7 +3,7 @@
 -- before anyone repeats) -> everyone except the guesser sees the current word on
 -- their phone and describes it aloud -> host marks correct (the guesser's TEAM
 -- gets 1 point) or passes (word goes to the back) -> host ends the turn when the
--- timer runs out. Two teams: players are split into team_color 'A' and 'B' on the
+-- timer runs out. Two teams: players are split into team_color 'red' and 'blue' on the
 -- first turn. The game ends when every word is answered.
 
 -- 0) Words live in their own table, locked to clients. questions_bank is readable
@@ -57,14 +57,14 @@ begin
   if v_state.state_data->'teams' is null then
     update public.room_players p set team_color = t.team
       from (
-        select x.id, case when x.rn % 2 = 1 then 'A' else 'B' end as team
+        select x.id, case when x.rn % 2 = 1 then 'red' else 'blue' end as team
         from (select rp.id, row_number() over (order by random()) as rn
               from public.room_players rp where rp.room_id = p_room_id and not rp.is_host) x
       ) t
       where p.id = t.id;
     v_state.state_data := v_state.state_data || jsonb_build_object(
-      'teams', jsonb_build_array('A', 'B'),
-      'team_scores', jsonb_build_object('A', 0, 'B', 0));
+      'teams', jsonb_build_array('red', 'blue'),
+      'team_scores', jsonb_build_object('red', 0, 'blue', 0));
   end if;
 
   -- Build the queue once: every word of this game, shuffled.
@@ -148,7 +148,7 @@ begin
   update public.room_game_state
     set state_data = state_data || jsonb_build_object(
       'team_scores', jsonb_set(
-        coalesce(state_data->'team_scores', '{"A":0,"B":0}'::jsonb),
+        coalesce(state_data->'team_scores', '{"red":0,"blue":0}'::jsonb),
         array[v_team],
         to_jsonb(coalesce((state_data->'team_scores'->>v_team)::int, 0) + v_points)))
     where room_id = p_room_id;

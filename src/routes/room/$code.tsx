@@ -780,6 +780,8 @@ function parseTime(value: string | null | undefined): number | null {
 }
 
 /** Player side of هل تعرف: the timer, the teams, and the word for describers only. */
+const TEAM_NAMES: Record<string, string> = { red: "الفريق الأحمر", blue: "الفريق الأزرق" };
+
 function HeadsPlayerPanel({ roomId, meId, state }: { roomId: string; meId: string | null; state: StateData }) {
   const [players, setPlayers] = useState<{ id: string; player_name: string; team_color: string | null; is_host: boolean }[]>([]);
   const [word, setWord] = useState<string | null>(null);
@@ -791,8 +793,8 @@ function HeadsPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
   const iAmGuesser = !!meId && meId === guesserId;
   const me = players.find((p) => p.id === meId) ?? null;
   const scores = state.team_scores ?? {};
-  const scoreA = Number(scores.A ?? 0);
-  const scoreB = Number(scores.B ?? 0);
+  const scoreRed = Number(scores.red ?? 0);
+  const scoreBlue = Number(scores.blue ?? 0);
   const guesser = players.find((p) => p.id === guesserId) ?? null;
 
   useEffect(() => {
@@ -845,22 +847,22 @@ function HeadsPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
   const secondsLeft = phase === "turn" && endsAt ? Math.max(0, Math.ceil((endsAt - now) / 1000)) : null;
 
   const winnerText =
-    scoreA === scoreB ? "تعادل" : `الفائز: ${scoreA > scoreB ? "الفريق A" : "الفريق B"}`;
+    scoreRed === scoreBlue ? "تعادل" : `الفائز: ${scoreRed > scoreBlue ? "الفريق الأحمر" : "الفريق الأزرق"}`;
 
   return (
     <section className="glass-card mb-5 rounded-3xl p-5 text-center">
       <p className="text-xs font-bold text-violet">هل تعرف</p>
       <div className="mt-3 grid grid-cols-2 gap-3">
         <div className="rounded-2xl bg-white/[0.04] p-3">
-          <p className="text-xs text-muted">الفريق A</p>
-          <p className="text-2xl font-extrabold text-ivory">{scoreA}</p>
+          <p className="text-xs text-muted">الفريق الأحمر</p>
+          <p className="text-2xl font-extrabold text-ivory">{scoreRed}</p>
         </div>
         <div className="rounded-2xl bg-white/[0.04] p-3">
-          <p className="text-xs text-muted">الفريق B</p>
-          <p className="text-2xl font-extrabold text-ivory">{scoreB}</p>
+          <p className="text-xs text-muted">الفريق الأزرق</p>
+          <p className="text-2xl font-extrabold text-ivory">{scoreBlue}</p>
         </div>
       </div>
-      {me?.team_color ? <p className="mt-2 text-sm text-muted">أنت في الفريق {me.team_color}</p> : null}
+      {me?.team_color ? <p className="mt-2 text-sm text-muted">أنت في {TEAM_NAMES[me.team_color] ?? ""}</p> : null}
 
       {phase === "turn" ? (
         <div className="mt-4">

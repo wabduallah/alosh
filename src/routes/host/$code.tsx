@@ -864,6 +864,8 @@ type HeadsState = {
   queue?: string[];
 };
 
+const TEAM_NAMES: Record<string, string> = { red: "الفريق الأحمر", blue: "الفريق الأزرق" };
+
 const HEADS_HOST_ERRORS: Record<string, string> = {
   GAME_OVER: "انتهت كل الكلمات.",
   ROOM_NOT_PLAYING: "ابدأ الغرفة أولًا.",
@@ -913,7 +915,7 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
   }, [roomId]);
 
   const phase = state.phase ?? "";
-  const scores = { A: state.team_scores?.A ?? 0, B: state.team_scores?.B ?? 0 };
+  const scores = { red: state.team_scores?.red ?? 0, blue: state.team_scores?.blue ?? 0 };
   const guesser = players.find((p) => p.id === state.guesser_id) ?? null;
   const endsAt = parseTime(state.turn_ends_at);
   const secondsLeft = phase === "turn" && endsAt ? Math.max(0, Math.ceil((endsAt - now) / 1000)) : null;
@@ -969,7 +971,7 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
   }
 
   const winner =
-    scores.A === scores.B ? "تعادل" : scores.A > scores.B ? "الفريق A" : "الفريق B";
+    scores.red === scores.blue ? "تعادل" : scores.red > scores.blue ? "الفريق الأحمر" : "الفريق الأزرق";
 
   return (
     <section className="mx-auto mt-4 max-w-2xl">
@@ -985,12 +987,12 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
       <div className="glass-card rounded-3xl p-6 text-center">
         <div className="grid grid-cols-2 gap-4">
           <div className="rounded-2xl bg-white/[0.04] p-4">
-            <p className="text-sm text-muted">الفريق A</p>
-            <p className="text-4xl font-extrabold text-ivory">{scores.A}</p>
+            <p className="text-sm text-muted">الفريق الأحمر</p>
+            <p className="text-4xl font-extrabold text-ivory">{scores.red}</p>
           </div>
           <div className="rounded-2xl bg-white/[0.04] p-4">
-            <p className="text-sm text-muted">الفريق B</p>
-            <p className="text-4xl font-extrabold text-ivory">{scores.B}</p>
+            <p className="text-sm text-muted">الفريق الأزرق</p>
+            <p className="text-4xl font-extrabold text-ivory">{scores.blue}</p>
           </div>
         </div>
 
@@ -998,7 +1000,7 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
           <>
             <p className="mt-6 text-sm text-muted">
               المخمِّن: <span className="font-bold text-ivory">{guesser?.player_name ?? "—"}</span>
-              {guesser?.team_color ? ` (الفريق ${guesser.team_color})` : ""}
+              {guesser?.team_color ? ` (${TEAM_NAMES[guesser.team_color ?? ""] ?? ""})` : ""}
             </p>
             <p className={cx("mt-2 font-mono text-5xl font-extrabold", timeUp ? "text-crimson" : "text-neon")}>
               {timeUp ? "انتهى الوقت" : `${secondsLeft ?? 0}s`}
@@ -1031,7 +1033,7 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
           <>
             <p className="mt-6 text-xl font-extrabold text-ivory">انتهت كل الكلمات</p>
             <p className="mt-2 text-sm text-muted">
-              {scores.A === scores.B ? "تعادل" : `الفائز: ${winner} بـ ${Math.max(scores.A, scores.B)} نقطة`}
+              {scores.red === scores.blue ? "تعادل" : `الفائز: ${winner} بـ ${Math.max(scores.red, scores.blue)} نقطة`}
             </p>
           </>
         ) : null}
