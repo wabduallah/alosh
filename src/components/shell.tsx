@@ -36,6 +36,9 @@ export function Shell({ children, paper = false }: { children: ReactNode; paper?
             <nav className="text-sm text-ivory/70">
               <Link to="/questions" className="block py-1 hover:text-neon">بنك الأسئلة</Link>
               <Link to="/rank" className="block py-1 hover:text-neon">{t("nav.rank")}</Link>
+              <Link to="/feedback" className="block py-1 hover:text-neon">أرسل ملاحظة</Link>
+              <Link to="/privacy" className="block py-1 hover:text-neon">الخصوصية</Link>
+              <Link to="/terms" className="block py-1 hover:text-neon">الشروط</Link>
             </nav>
             <p className="text-sm text-muted">الحالة: متصل بالخادم عند فتح غرفة.</p>
           </div>
