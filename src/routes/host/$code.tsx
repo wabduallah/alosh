@@ -5,7 +5,7 @@ import { Button, cx } from "@/components/ui";
 import { ensureSession, supabase } from "@/lib/supabase";
 
 /**
- * Host screen for a room: the question board for the game (categories × points).
+ * Host screen for a room: the question board, the buzzer, and the scoreboard.
  * Only the room's host can use it. The correct answer comes from the
  * room_correct_answer() database function, never from the questions list.
  */
@@ -23,22 +23,28 @@ type Question = {
   points: number;
   difficulty: string;
 };
-type RoomState = {
-  active_question_id: string | null;
-  state_data: { answered?: string[]; phase?: string } & Record<string, unknown>;
-};
+type Buzzer = { player_id: string; player_name: string } | null;
+type StateData = {
+  answered?: string[];
+  phase?: string;
+  buzzer_open?: boolean;
+  buzzer?: Buzzer;
+} & Record<string, unknown>;
+type RoomState = { active_question_id: string | null; state_data: StateData };
+type PlayerRow = { id: string; player_name: string; score: number; is_host: boolean };
 
 function HostBoard() {
   const { code } = Route.useParams();
   const [room, setRoom] = useState<Room | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [roomState, setRoomState] = useState<RoomState | null>(null);
+  const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [isHost, setIsHost] = useState<boolean | null>(null);
   const [revealed, setRevealed] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Load the room, its questions and its live state.
+  // Load the room, its questions, its live state, and its players.
   useEffect(() => {
     if (!supabase) {
       setError("الاتصال بقاعدة البيانات غير مضبوط بعد.");
@@ -76,8 +82,15 @@ function HostBoard() {
           .eq("room_id", r.id)
           .maybeSingle();
         if (!cancelled) setRoomState((state ?? null) as RoomState | null);
+
+        const { data: ps } = await client
+          .from("room_players")
+          .select("id, player_name, score, is_host")
+          .eq("room_id", r.id);
+        if (!cancelled) setPlayers((ps ?? []) as PlayerRow[]);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error && err.message === "ROOM_NOT_FOUND" ? "لم نجد هذه الغرفة." : "تعذّر تحميل الشاشة، حاول مرة أخرى.");
+        if (!cancelled)
+          setError(err instanceof Error && err.message === "ROOM_NOT_FOUND" ? "لم نجد هذه الغرفة." : "تعذّر تحميل الشاشة، حاول مرة أخرى.");
       }
     }
 
@@ -87,7 +100,40 @@ function HostBoard() {
     };
   }, [code]);
 
-  // Categories as columns, point values as rows.
+  // Follow the buzzer, answers, and the scoreboard live.
+  useEffect(() => {
+    if (!supabase || !room) return;
+    const client = supabase;
+    const roomId = room.id;
+
+    const channel = client
+      .channel(`host-board-${roomId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "room_game_state", filter: `room_id=eq.${roomId}` },
+        (payload) => {
+          const next = payload.new as RoomState;
+          setRoomState({ active_question_id: next.active_question_id ?? null, state_data: next.state_data ?? {} });
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "room_players", filter: `room_id=eq.${roomId}` },
+        async () => {
+          const { data } = await client
+            .from("room_players")
+            .select("id, player_name, score, is_host")
+            .eq("room_id", roomId);
+          setPlayers((data ?? []) as PlayerRow[]);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      client.removeChannel(channel);
+    };
+  }, [room?.id]);
+
   const { categories, pointRows } = useMemo(() => {
     const cats: string[] = [];
     const pts = new Set<number>();
@@ -100,6 +146,8 @@ function HostBoard() {
 
   const answered = new Set(roomState?.state_data?.answered ?? []);
   const active = questions.find((q) => q.id === roomState?.active_question_id) ?? null;
+  const buzzer = roomState?.state_data?.buzzer ?? null;
+  const ranking = [...players].filter((p) => !p.is_host).sort((a, b) => b.score - a.score);
 
   function questionAt(category: string, points: number) {
     return questions.find((q) => q.category_ar === category && q.points === points) ?? null;
@@ -111,7 +159,13 @@ function HostBoard() {
     setRevealed(null);
     setError(null);
     try {
-      const nextData = { ...roomState.state_data, phase: "question", buzzer_open: true, buzzer: null, voting_open: false };
+      const nextData: StateData = {
+        ...roomState.state_data,
+        phase: "question",
+        buzzer_open: true,
+        buzzer: null,
+        voting_open: false,
+      };
       const { error: updateError } = await supabase
         .from("room_game_state")
         .update({ active_question_id: q.id, state_data: nextData })
@@ -133,13 +187,45 @@ function HostBoard() {
     setRevealed(typeof data === "string" ? data : null);
   }
 
+  /** Host judged the buzzer's answer. Correct: award points and close. Wrong: reopen the buzzer. */
+  async function judge(correct: boolean) {
+    if (!supabase || !room || !roomState || !active || !buzzer) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (correct) {
+        const winner = players.find((p) => p.id === buzzer.player_id);
+        if (winner) {
+          const { error: scoreError } = await supabase
+            .from("room_players")
+            .update({ score: winner.score + active.points })
+            .eq("id", winner.id);
+          if (scoreError) throw scoreError;
+        }
+        await closeQuestion(true);
+      } else {
+        const nextData: StateData = { ...roomState.state_data, buzzer_open: true, buzzer: null };
+        const { error: updateError } = await supabase
+          .from("room_game_state")
+          .update({ state_data: nextData })
+          .eq("room_id", room.id);
+        if (updateError) throw updateError;
+        setRoomState({ active_question_id: roomState.active_question_id, state_data: nextData });
+      }
+    } catch {
+      setError("تعذّر حفظ الحكم.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function closeQuestion(markAnswered: boolean) {
     if (!supabase || !room || !roomState) return;
     setBusy(true);
     try {
       const done = new Set(roomState.state_data.answered ?? []);
       if (markAnswered && active) done.add(active.id);
-      const nextData = { ...roomState.state_data, phase: "board", buzzer_open: false, answered: [...done] };
+      const nextData: StateData = { ...roomState.state_data, phase: "board", buzzer_open: false, buzzer: null, answered: [...done] };
       const { error: updateError } = await supabase
         .from("room_game_state")
         .update({ active_question_id: null, state_data: nextData })
@@ -154,7 +240,7 @@ function HostBoard() {
     }
   }
 
-  if (error) {
+  if (error && !room) {
     return (
       <Shell>
         <section className="glass-card mx-auto mt-8 max-w-xl rounded-3xl p-6 text-center">
@@ -197,6 +283,8 @@ function HostBoard() {
           </span>
         </div>
 
+        {error ? <p className="mb-4 text-sm text-crimson">{error}</p> : null}
+
         {active ? (
           <div className="glass-card mb-6 rounded-3xl p-6 text-center">
             <p className="text-sm font-bold text-violet">
@@ -212,19 +300,40 @@ function HostBoard() {
                 ))}
               </ul>
             ) : null}
+
+            <div className="mt-5">
+              {buzzer ? (
+                <div className="rounded-2xl border border-violet/40 bg-violet/10 p-4">
+                  <p className="text-sm text-muted">ضغط الجرس</p>
+                  <p className="mt-1 text-xl font-extrabold text-ivory">{buzzer.player_name}</p>
+                  <div className="mt-3 flex flex-wrap justify-center gap-3">
+                    <Button type="button" tone="primary" onClick={() => judge(true)} disabled={busy}>
+                      إجابة صحيحة (+{active.points})
+                    </Button>
+                    <Button type="button" tone="danger" onClick={() => judge(false)} disabled={busy}>
+                      إجابة خاطئة
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted">{roomState?.state_data?.buzzer_open ? "بانتظار الجرس…" : "الجرس مغلق."}</p>
+              )}
+            </div>
+
             {revealed ? (
               <p className="mt-4 rounded-xl border border-emerald/40 bg-emerald/10 p-3 font-bold text-ivory">
                 الإجابة: {revealed}
               </p>
             ) : null}
+
             <div className="mt-5 flex flex-wrap justify-center gap-3">
               <Button type="button" tone="glass" onClick={reveal} disabled={busy}>
                 كشف الإجابة
               </Button>
-              <Button type="button" tone="primary" onClick={() => closeQuestion(true)} disabled={busy}>
+              <Button type="button" tone="ghost" onClick={() => closeQuestion(true)} disabled={busy}>
                 انتهى السؤال
               </Button>
-              <Button type="button" tone="danger" onClick={() => closeQuestion(false)} disabled={busy}>
+              <Button type="button" tone="ghost" onClick={() => closeQuestion(false)} disabled={busy}>
                 تخطّي
               </Button>
             </div>
@@ -269,6 +378,22 @@ function HostBoard() {
             </div>
           </div>
         )}
+
+        {ranking.length > 0 ? (
+          <div className="glass-card mt-6 rounded-2xl p-4">
+            <h2 className="mb-2 text-sm font-extrabold text-ivory">النتائج</h2>
+            <ul className="grid gap-2 sm:grid-cols-2">
+              {ranking.map((p, i) => (
+                <li key={p.id} className="flex items-center justify-between rounded-xl bg-white/[0.03] px-3 py-2 text-sm text-ivory/80">
+                  <span>
+                    {i + 1}. {p.player_name}
+                  </span>
+                  <span className="font-extrabold text-neon">{p.score}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </section>
     </Shell>
   );

@@ -1,14 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Shell } from "@/components/shell";
-import { cx } from "@/components/ui";
+import { Button, cx } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 
 /**
- * Player screen for a room (phones). Shows the game board and the active
- * question, live, through Realtime. It never shows the correct answer: the
- * board reads from questions_public, and the answer only comes from the host
- * screen via room_correct_answer().
+ * Player screen for a room (phones). Shows the game board, the active question,
+ * the buzzer, and the scoreboard, live through Realtime. It never shows the
+ * correct answer: the board reads from questions_public, and the answer only
+ * comes from the host screen via room_correct_answer().
  */
 export const Route = createFileRoute("/room/$code")({
   head: () => ({ meta: [{ title: "اللعب — العش" }] }),
@@ -23,7 +23,14 @@ type Question = {
   options: string[];
   points: number;
 };
-type StateData = { answered?: string[]; phase?: string } & Record<string, unknown>;
+type Buzzer = { player_id: string; player_name: string } | null;
+type StateData = {
+  answered?: string[];
+  phase?: string;
+  buzzer_open?: boolean;
+  buzzer?: Buzzer;
+} & Record<string, unknown>;
+type PlayerRow = { id: string; user_id: string | null; player_name: string; score: number; is_host: boolean };
 
 function PlayerBoard() {
   const { code } = Route.useParams();
@@ -31,9 +38,13 @@ function PlayerBoard() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [stateData, setStateData] = useState<StateData>({});
+  const [players, setPlayers] = useState<PlayerRow[]>([]);
+  const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [buzzMessage, setBuzzMessage] = useState<string | null>(null);
+  const [buzzing, setBuzzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load the room, its public questions and its current state.
+  // Load the room, its public questions, its state, and its players.
   useEffect(() => {
     if (!supabase) {
       setError("الاتصال بقاعدة البيانات غير مضبوط بعد.");
@@ -58,18 +69,24 @@ function PlayerBoard() {
         .select("id, category_ar, question_text, options, points")
         .eq("game_slug", game?.slug ?? "")
         .order("points");
-
       const { data: state } = await client
         .from("room_game_state")
         .select("active_question_id, state_data")
         .eq("room_id", r.id)
         .maybeSingle();
+      const { data: ps } = await client
+        .from("room_players")
+        .select("id, user_id, player_name, score, is_host")
+        .eq("room_id", r.id);
+      const { data: sessionData } = await client.auth.getSession();
 
       if (cancelled) return;
       setRoom(r);
       setQuestions((qs ?? []) as Question[]);
       setActiveId((state?.active_question_id as string | null) ?? null);
       setStateData(((state?.state_data as StateData) ?? {}) as StateData);
+      setPlayers((ps ?? []) as PlayerRow[]);
+      setMyUserId(sessionData.session?.user.id ?? null);
     }
 
     load();
@@ -78,7 +95,7 @@ function PlayerBoard() {
     };
   }, [code]);
 
-  // Follow room state changes (question opened, closed, answered) and game status.
+  // Follow room state, room status, and the scoreboard live.
   useEffect(() => {
     if (!supabase || !room) return;
     const client = supabase;
@@ -93,6 +110,7 @@ function PlayerBoard() {
           const next = payload.new as { active_question_id: string | null; state_data: StateData };
           setActiveId(next.active_question_id ?? null);
           setStateData(next.state_data ?? {});
+          if (!next.state_data?.buzzer) setBuzzMessage(null);
         },
       )
       .on(
@@ -101,6 +119,17 @@ function PlayerBoard() {
         (payload) => {
           const next = payload.new as { status?: string };
           if (next.status) setRoom((current) => (current ? { ...current, status: next.status! } : current));
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "room_players", filter: `room_id=eq.${roomId}` },
+        async () => {
+          const { data } = await client
+            .from("room_players")
+            .select("id, user_id, player_name, score, is_host")
+            .eq("room_id", roomId);
+          setPlayers((data ?? []) as PlayerRow[]);
         },
       )
       .subscribe();
@@ -122,6 +151,28 @@ function PlayerBoard() {
 
   const answered = new Set(stateData.answered ?? []);
   const active = questions.find((q) => q.id === activeId) ?? null;
+  const me = players.find((p) => p.user_id && p.user_id === myUserId) ?? null;
+  const buzzer = stateData.buzzer ?? null;
+  const canBuzz = !!active && !!stateData.buzzer_open && !buzzer && !!me && !me.is_host && !buzzing;
+  const ranking = [...players].filter((p) => !p.is_host).sort((a, b) => b.score - a.score);
+
+  async function buzz() {
+    if (!supabase || !room) return;
+    setBuzzing(true);
+    setBuzzMessage(null);
+    try {
+      const { data, error: rpcError } = await supabase.rpc("press_buzzer", { p_room_id: room.id });
+      if (rpcError) throw rpcError;
+      const result = data as { ok: boolean; reason?: string };
+      if (result.ok) setBuzzMessage("ضغطت الجرس! انتظر المضيف.");
+      else if (result.reason === "LOCKED") setBuzzMessage("سبقك لاعب آخر.");
+      else setBuzzMessage("لا يمكن الضغط الآن.");
+    } catch {
+      setBuzzMessage("تعذّر الضغط على الجرس، حاول مرة أخرى.");
+    } finally {
+      setBuzzing(false);
+    }
+  }
 
   if (error) {
     return (
@@ -166,6 +217,7 @@ function PlayerBoard() {
               {active.category_ar} · {active.points} نقطة
             </p>
             <p className="mt-3 text-xl font-extrabold leading-relaxed text-ivory">{active.question_text}</p>
+
             {active.options.length > 0 ? (
               <ul className="mt-4 grid gap-2">
                 {active.options.map((opt) => (
@@ -175,6 +227,21 @@ function PlayerBoard() {
                 ))}
               </ul>
             ) : null}
+
+            <div className="mt-5">
+              {buzzer ? (
+                <p className="rounded-2xl border border-violet/40 bg-violet/10 p-3 font-bold text-ivory">
+                  الجرس عند {buzzer.player_name}
+                </p>
+              ) : stateData.buzzer_open && me && !me.is_host ? (
+                <Button type="button" tone="primary" className="w-full min-h-16 text-lg" onClick={buzz} disabled={!canBuzz}>
+                  {buzzing ? "…" : "اضغط الجرس"}
+                </Button>
+              ) : (
+                <p className="text-sm text-muted">بانتظار فتح الجرس.</p>
+              )}
+              {buzzMessage ? <p className="mt-2 text-sm text-ivory">{buzzMessage}</p> : null}
+            </div>
           </div>
         ) : room.status === "playing" ? (
           <p className="glass-card mb-5 rounded-2xl p-4 text-center text-sm text-muted">اختر المضيف سؤالاً من اللوحة.</p>
@@ -214,6 +281,28 @@ function PlayerBoard() {
                 }),
               )}
             </div>
+          </div>
+        ) : null}
+
+        {ranking.length > 0 ? (
+          <div className="glass-card mt-6 rounded-2xl p-4">
+            <h2 className="mb-2 text-sm font-extrabold text-ivory">النتائج</h2>
+            <ul className="space-y-2">
+              {ranking.map((p, i) => (
+                <li
+                  key={p.id}
+                  className={cx(
+                    "flex items-center justify-between rounded-xl px-3 py-2 text-sm",
+                    me?.id === p.id ? "bg-neon/10 text-ivory" : "bg-white/[0.03] text-ivory/80",
+                  )}
+                >
+                  <span>
+                    {i + 1}. {p.player_name}
+                  </span>
+                  <span className="font-extrabold text-neon">{p.score}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         ) : null}
 
