@@ -168,6 +168,35 @@ const FILTERS: Array<{ key: "all" | Category; label: string }> = [
   { key: "classic", label: "كلاسيكية" },
 ];
 
+/** Player-count choices. The "8" choice means the game supports 8 players or more. */
+const PLAYER_FILTERS: Array<{ key: "any" | 2 | 4 | 6 | 8; label: string }> = [
+  { key: "any", label: "أي عدد" },
+  { key: 2, label: "2 لاعبين" },
+  { key: 4, label: "4 لاعبين" },
+  { key: 6, label: "6 لاعبين" },
+  { key: 8, label: "8 لاعبين أو أكثر" },
+];
+
+/** Reads a range such as "3-8" as min 3 and max 8. */
+function playerRange(players: string) {
+  const [min, max] = players.split("-").map(Number);
+  return { min, max: max ?? min };
+}
+
+function fitsPlayers(game: GameCard, key: "any" | 2 | 4 | 6 | 8) {
+  if (key === "any") return true;
+  const { min, max } = playerRange(game.players);
+  if (key === 8) return max >= 8;
+  return min <= key && key <= max;
+}
+
+const CATEGORY_LABELS: Record<Category, string> = {
+  words: "كلمات",
+  talk: "حوار وتخمين",
+  strategy: "استراتيجية",
+  classic: "كلاسيكية",
+};
+
 const STEPS = [
   {
     title: "أنشئوا غرفة",
@@ -307,11 +336,21 @@ function HowItWorks() {
 
 function Games() {
   const [filter, setFilter] = useState<"all" | Category>("all");
+  const [players, setPlayers] = useState<"any" | 2 | 4 | 6 | 8>("any");
+  const [query, setQuery] = useState("");
   const [sheetGame, setSheetGame] = useState<GameCard | null>(null);
   const liveCount = GAMES.filter((game) => game.live).length;
-  const visible = GAMES.filter((game) => filter === "all" || game.category === filter).sort(
-    (a, b) => Number(b.live) - Number(a.live),
-  );
+  const term = query.trim();
+  const visible = GAMES.filter(
+    (game) =>
+      (filter === "all" || game.category === filter) &&
+      fitsPlayers(game, players) &&
+      (term === "" ||
+        game.title.includes(term) ||
+        game.blurb.includes(term) ||
+        CATEGORY_LABELS[game.category].includes(term)),
+  ).sort((a, b) => Number(b.live) - Number(a.live));
+  const filtersActive = filter !== "all" || players !== "any" || term !== "";
 
   return (
     <section id="games" aria-labelledby="games-title" className="mx-auto mt-14 max-w-5xl scroll-mt-6">
@@ -320,8 +359,44 @@ function Games() {
           الألعاب
         </h2>
         <p className="mt-1 text-sm text-muted">
-          {liveCount} متاحة الآن · {GAMES.length - liveCount} قريبًا
+          {filtersActive
+            ? `${visible.length} من ${GAMES.length} لعبة`
+            : `${liveCount} متاحة الآن · ${GAMES.length - liveCount} قريبًا`}
         </p>
+      </div>
+
+      <div className="mb-3">
+        <label htmlFor="game-search" className="sr-only">
+          ابحث عن لعبة
+        </label>
+        <input
+          id="game-search"
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="ابحث باسم اللعبة أو التصنيف"
+          className={inputClass}
+        />
+      </div>
+
+      <div role="group" aria-label="عدد اللاعبين" className="mb-3 flex gap-2 overflow-x-auto pb-1">
+        {PLAYER_FILTERS.map((item) => {
+          const active = players === item.key;
+          return (
+            <button
+              key={String(item.key)}
+              type="button"
+              aria-pressed={active}
+              onClick={() => setPlayers(item.key)}
+              className={cx(
+                "min-h-10 shrink-0 rounded-full border px-4 text-sm font-bold transition",
+                active ? "border-neon bg-neon/10 text-neon" : "border-white/10 text-muted hover:text-ivory",
+              )}
+            >
+              {item.label}
+            </button>
+          );
+        })}
       </div>
 
       <div role="group" aria-label="تصفية الألعاب" className="mb-5 flex gap-2 overflow-x-auto pb-1">
@@ -352,7 +427,24 @@ function Games() {
 
       <HowToSheet game={sheetGame} onClose={() => setSheetGame(null)} />
 
-      {visible.length === 0 ? <p className="mt-6 text-center text-sm text-muted">لا توجد ألعاب في هذا التصنيف بعد.</p> : null}
+      {visible.length === 0 ? (
+        <div className="mt-6 text-center text-sm text-muted">
+          <p>لا توجد ألعاب تطابق اختياراتك.</p>
+          {filtersActive ? (
+            <button
+              type="button"
+              onClick={() => {
+                setFilter("all");
+                setPlayers("any");
+                setQuery("");
+              }}
+              className="mt-3 min-h-11 rounded-full border border-white/10 px-5 font-bold text-ivory hover:border-neon/60"
+            >
+              مسح الفلاتر
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }
