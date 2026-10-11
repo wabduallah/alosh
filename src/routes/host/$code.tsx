@@ -148,6 +148,26 @@ function HostBoard() {
   const active = questions.find((q) => q.id === roomState?.active_question_id) ?? null;
   const buzzer = roomState?.state_data?.buzzer ?? null;
   const ranking = [...players].filter((p) => !p.is_host).sort((a, b) => b.score - a.score);
+  const allDone = questions.length > 0 && answered.size >= questions.length;
+  const gameOver = allDone || room?.status === "finished";
+  const topScore = ranking.length ? ranking[0].score : 0;
+  const winners = ranking.filter((p) => p.score === topScore);
+
+  /** Ends the game for everyone: the room becomes "finished" and can't take new players. */
+  async function endGame() {
+    if (!supabase || !room) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { error: updateError } = await supabase.from("game_rooms").update({ status: "finished" }).eq("id", room.id);
+      if (updateError) throw updateError;
+      setRoom({ ...room, status: "finished" });
+    } catch {
+      setError("تعذّر إنهاء الغرفة.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function questionAt(category: string, points: number) {
     return questions.find((q) => q.category_ar === category && q.points === points) ?? null;
@@ -292,6 +312,24 @@ function HostBoard() {
         </div>
 
         {error ? <p className="mb-4 text-sm text-crimson">{error}</p> : null}
+
+        {gameOver ? (
+          <div className="glass-card mb-6 rounded-3xl p-6 text-center">
+            <p className="text-sm font-bold text-violet">انتهت اللعبة</p>
+            {winners.length > 0 ? (
+              <p className="mt-2 text-3xl font-extrabold text-ivory">
+                {winners.length > 1 ? "التعادل بين: " : "الفائز: "}
+                {winners.map((w) => w.player_name).join("، ")}
+              </p>
+            ) : null}
+            <p className="mt-1 text-sm text-muted">بنقاط {topScore}</p>
+            {room.status !== "finished" ? (
+              <Button type="button" tone="violet" className="mt-5" onClick={endGame} disabled={busy}>
+                إنهاء الغرفة للجميع
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
 
         {active ? (
           <div className="glass-card mb-6 rounded-3xl p-6 text-center">

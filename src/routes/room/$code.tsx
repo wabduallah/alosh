@@ -155,6 +155,10 @@ function PlayerBoard() {
   const buzzer = stateData.buzzer ?? null;
   const canBuzz = !!active && !!stateData.buzzer_open && !buzzer && !!me && !me.is_host && !buzzing;
   const ranking = [...players].filter((p) => !p.is_host).sort((a, b) => b.score - a.score);
+  const allDone = questions.length > 0 && answered.size >= questions.length;
+  const gameOver = allDone || room?.status === "finished";
+  const topScore = ranking.length ? ranking[0].score : 0;
+  const winners = ranking.filter((p) => p.score === topScore);
 
   async function buzz() {
     if (!supabase || !room) return;
@@ -207,7 +211,20 @@ function PlayerBoard() {
           </span>
         </div>
 
-        {room.status !== "playing" ? (
+        {gameOver ? (
+          <div className="glass-card mb-5 rounded-3xl p-6 text-center">
+            <p className="text-sm font-bold text-violet">انتهت اللعبة</p>
+            {winners.length > 0 ? (
+              <p className="mt-2 text-2xl font-extrabold text-ivory">
+                {winners.length > 1 ? "تعادل بين: " : "الفائز: "}
+                {winners.map((w) => w.player_name).join("، ")}
+              </p>
+            ) : null}
+            <p className="mt-1 text-sm text-muted">بنقاط {topScore}</p>
+          </div>
+        ) : null}
+
+        {room.status !== "playing" && !gameOver ? (
           <p className="glass-card mb-4 rounded-2xl p-4 text-center text-sm text-muted">بانتظار المضيف ليبدأ اللعبة.</p>
         ) : null}
 
