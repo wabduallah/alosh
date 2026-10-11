@@ -107,7 +107,7 @@ function SiteHeader({
           </button>
         ) : null}
       </div>
-      <nav className="mx-auto flex max-w-6xl items-center gap-2 overflow-x-auto px-4 pb-3" aria-label="Main">
+      <nav className="mx-auto flex max-w-6xl items-center gap-2 overflow-x-auto px-4 pb-3" aria-label="القائمة الرئيسية">
         <Link to="/" className={navLink}>{t("nav.home")}</Link>
         <Link to="/settings" className={navLink}>{t("nav.settings")}</Link>
       </nav>
