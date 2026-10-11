@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Shell } from "@/components/shell";
 import { Logo } from "@/components/logo";
@@ -474,15 +474,50 @@ function GameTile({ game, onHowTo }: { game: GameCard; onHowTo: () => void }) {
 }
 
 /** Bottom sheet with the short rules of one game. Closes on Escape or a tap outside. */
+const FOCUSABLE = 'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
 function HowToSheet({ game, onClose }: { game: GameCard | null; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const open = Boolean(game?.howTo);
+
+  // While open: focus moves into the dialog, Tab stays inside it, Escape closes it.
+  // When it closes: focus returns to the element that opened it.
   useEffect(() => {
-    if (!game) return;
+    if (!open) return;
+    const returnTo = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        onCloseRef.current();
+        return;
+      }
+      const dialog = dialogRef.current;
+      if (event.key !== "Tab" || !dialog) return;
+      const items = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE));
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      const outside = !active || !dialog.contains(active);
+      if (event.shiftKey && (active === first || outside)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || outside)) {
+        event.preventDefault();
+        first.focus();
+      }
     }
+
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [game, onClose]);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      returnTo?.focus();
+    };
+  }, [open]);
 
   if (!game?.howTo) return null;
   const rules = game.howTo;
@@ -493,6 +528,7 @@ function HowToSheet({ game, onClose }: { game: GameCard | null; onClose: () => v
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="howto-title"
@@ -504,6 +540,7 @@ function HowToSheet({ game, onClose }: { game: GameCard | null; onClose: () => v
             <span aria-hidden="true">{game.icon}</span> {game.title}
           </h3>
           <button
+            ref={closeRef}
             type="button"
             onClick={onClose}
             aria-label="إغلاق"
