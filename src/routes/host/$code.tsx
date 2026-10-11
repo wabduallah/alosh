@@ -192,7 +192,7 @@ function HostBoard() {
    * awards points (or reopens the buzzer) in one locked transaction, so two
    * judgments can't overwrite each other.
    */
-  async function judge(correct: boolean) {
+  async function judge(correct: boolean, penalty: "none" | "half" | "full" = "none") {
     if (!supabase || !room || !roomState || !active || !buzzer) return;
     setBusy(true);
     setError(null);
@@ -200,6 +200,7 @@ function HostBoard() {
       const { data, error: rpcError } = await supabase.rpc("judge_answer", {
         p_room_id: room.id,
         p_correct: correct,
+        p_penalty: penalty,
       });
       if (rpcError) throw rpcError;
       const result = data as { ok: boolean; reason?: string };
@@ -317,8 +318,17 @@ function HostBoard() {
                     <Button type="button" tone="primary" onClick={() => judge(true)} disabled={busy}>
                       إجابة صحيحة (+{active.points})
                     </Button>
-                    <Button type="button" tone="danger" onClick={() => judge(false)} disabled={busy}>
-                      إجابة خاطئة
+                  </div>
+                  <p className="mt-4 text-sm text-muted">إجابة خاطئة:</p>
+                  <div className="mt-2 flex flex-wrap justify-center gap-3">
+                    <Button type="button" tone="ghost" onClick={() => judge(false, "none")} disabled={busy}>
+                      بدون خصم
+                    </Button>
+                    <Button type="button" tone="danger" onClick={() => judge(false, "half")} disabled={busy}>
+                      خصم نصف النقاط (-{Math.floor(active.points / 2)})
+                    </Button>
+                    <Button type="button" tone="danger" onClick={() => judge(false, "full")} disabled={busy}>
+                      خصم كامل النقاط (-{active.points})
                     </Button>
                   </div>
                 </div>
