@@ -200,15 +200,12 @@ function Hero() {
         تلفزيون واحد في الوسط، وجوالاتكم حواليه. بدون تسجيل وبدون تحميل، افتحوا الغرفة وابدأوا السهرة.
       </p>
 
-      <div className="mt-7 flex flex-wrap justify-center gap-3">
+      <div className="mt-7 flex flex-col items-center gap-3">
         <Link to="/play" search={{ game: "" }}>
           <Button tone="primary">إنشاء غرفة</Button>
         </Link>
-        <a
-          href="#games"
-          className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] px-5 text-sm font-bold text-ivory transition hover:border-neon/60"
-        >
-          استعرض الألعاب
+        <a href="#games" className="inline-flex min-h-11 items-center text-sm font-bold text-muted underline-offset-4 hover:text-neon hover:underline">
+          أو استعرض الألعاب ↓
         </a>
       </div>
 
@@ -546,11 +543,8 @@ function CallToAction() {
   return (
     <section className="mx-auto mt-16 max-w-3xl rounded-3xl border border-white/10 bg-white/[0.03] p-6 text-center sm:p-8">
       <h2 className="text-xl font-extrabold text-ivory">جاهزون للسهرة؟</h2>
-      <p className="mt-2 text-sm leading-7 text-muted">أنشئوا الغرفة الآن، وشاركوا الرمز مع أصدقائكم.</p>
+      <p className="mt-2 text-sm leading-7 text-muted">شاركوا العش مع من سيلعب معكم.</p>
       <div className="mt-5 flex flex-wrap justify-center gap-3">
-        <Link to="/play" search={{ game: "" }}>
-          <Button tone="primary">إنشاء غرفة</Button>
-        </Link>
         <ShareSite />
       </div>
     </section>
