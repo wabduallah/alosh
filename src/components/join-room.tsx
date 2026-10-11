@@ -56,6 +56,28 @@ export function JoinRoom({ initialCode = "" }: { initialCode?: string }) {
     };
   }, [room]);
 
+  // Follow the room status, so players see when the host starts the game.
+  useEffect(() => {
+    if (!supabase || !room) return;
+    const client = supabase;
+    const roomId = room.id;
+    const channel = client
+      .channel(`join-status-${roomId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "game_rooms", filter: `id=eq.${roomId}` },
+        (payload) => {
+          const next = (payload.new as { status?: string }).status;
+          if (next) setRoom((current) => (current ? { ...current, status: next } : current));
+        },
+      )
+      .subscribe();
+
+    return () => {
+      client.removeChannel(channel);
+    };
+  }, [room?.id]);
+
   async function join(event: FormEvent) {
     event.preventDefault();
     setError(null);
@@ -119,7 +141,13 @@ export function JoinRoom({ initialCode = "" }: { initialCode?: string }) {
         <p className="text-sm text-muted">أنت في الغرفة</p>
         <p className="mt-2 font-mono text-3xl font-extrabold tracking-[0.3em] text-neon">{room.room_code}</p>
         <p className="mt-3 text-base font-bold text-ivory">مرحبًا {me.player_name}</p>
-        <p className="mt-1 text-sm text-muted">بانتظار المضيف ليبدأ اللعبة.</p>
+        {room.status === "playing" ? (
+          <p className="mt-3 rounded-2xl border border-emerald/40 bg-emerald/10 p-3 text-sm font-bold text-ivory">
+            بدأت اللعبة! تابع الشاشة الكبيرة.
+          </p>
+        ) : (
+          <p className="mt-1 text-sm text-muted">بانتظار المضيف ليبدأ اللعبة.</p>
+        )}
 
         <h2 className="mt-6 text-right text-base font-extrabold text-ivory">اللاعبون ({players.length})</h2>
         <ul className="mt-2 space-y-2 text-right">
