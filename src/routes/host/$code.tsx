@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Shell } from "@/components/shell";
 import { Button, cx } from "@/components/ui";
+import { ShareRoom } from "@/components/share";
 import { ensureSession, supabase } from "@/lib/supabase";
 
 /**
@@ -386,6 +387,7 @@ function HostBoard() {
   if (isOutsider) {
     return (
       <Shell>
+        <ShareRoom code={room.room_code} />
         <OutsiderHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
       </Shell>
     );
@@ -394,6 +396,7 @@ function HostBoard() {
   if (isMafia) {
     return (
       <Shell>
+        <ShareRoom code={room.room_code} />
         <MafiaHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
       </Shell>
     );
@@ -402,6 +405,7 @@ function HostBoard() {
   if (isHeads) {
     return (
       <Shell>
+        <ShareRoom code={room.room_code} />
         <HeadsHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
       </Shell>
     );
@@ -418,6 +422,8 @@ function HostBoard() {
             أُجيب {answered.size} من {questions.length}
           </span>
         </div>
+
+        <ShareRoom code={room.room_code} />
 
         {error ? <p className="mb-4 text-sm text-crimson">{error}</p> : null}
 

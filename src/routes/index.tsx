@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Shell } from "@/components/shell";
 import { Logo } from "@/components/logo";
+import { ShareSite } from "@/components/share";
 import { Button, cx, inputClass } from "@/components/ui";
 
 /** Room codes use this alphabet only (no I, O, 0, 1), matching the join page. */
@@ -338,9 +339,12 @@ function CallToAction() {
     <section className="mx-auto mt-16 max-w-3xl rounded-3xl border border-white/10 bg-white/[0.03] p-6 text-center sm:p-8">
       <h2 className="text-xl font-extrabold text-ivory">جاهزون للسهرة؟</h2>
       <p className="mt-2 text-sm leading-7 text-muted">أنشئوا الغرفة الآن، وشاركوا الرمز مع أصدقائكم.</p>
-      <Link to="/play" search={{ game: "" }} className="mt-5 inline-block">
-        <Button tone="primary">إنشاء غرفة</Button>
-      </Link>
+      <div className="mt-5 flex flex-wrap justify-center gap-3">
+        <Link to="/play" search={{ game: "" }}>
+          <Button tone="primary">إنشاء غرفة</Button>
+        </Link>
+        <ShareSite />
+      </div>
     </section>
   );
 }
