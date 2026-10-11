@@ -44,7 +44,8 @@ function CreatePage() {
   const { game: preselected } = Route.useSearch();
   const [games, setGames] = useState<GameRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string>(preselected);
+  // The URL carries a game slug (e.g. tactical-grid). Selection uses the row id.
+  const [selected, setSelected] = useState<string>("");
   const [hostName, setHostName] = useState("");
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -52,6 +53,13 @@ function CreatePage() {
   const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+
+  // When the page opens with ?game=<slug>, select that game once the list is loaded.
+  useEffect(() => {
+    if (!games || !preselected) return;
+    const match = games.find((g) => g.slug === preselected);
+    if (match) setSelected(match.id);
+  }, [games, preselected]);
 
   // Load the active games (public read per RLS).
   useEffect(() => {
