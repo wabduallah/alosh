@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Shell } from "@/components/shell";
 import { Logo } from "@/components/logo";
@@ -29,6 +29,8 @@ type GameCard = {
   blurb: string;
   /** Only published games link to a room. The rest show as "قريبًا". */
   live: boolean;
+  /** Short rules shown in the "كيف تُلعب؟" sheet. Only live games have them. */
+  howTo?: { goal: string; minutes: string; steps: string[] };
 };
 
 /** Game catalogue for the home grid. Add a game here and set live to true once its room is ready. */
@@ -41,6 +43,16 @@ const GAMES: GameCard[] = [
     category: "classic",
     blurb: "لوحة أسئلة على الشاشة الكبيرة. اختاروا التصنيفات وتنافسوا على النقاط.",
     live: true,
+    howTo: {
+      goal: "اجمعوا أكبر عدد من النقاط بالإجابة على أسئلة التصنيفات.",
+      minutes: "20 إلى 40 دقيقة",
+      steps: [
+        "اختاروا التصنيفات التي تريدون اللعب بها.",
+        "يختار المضيف سؤالًا من اللوحة، ويظهر على الشاشة الكبيرة.",
+        "أول من يضغط الجرس يجيب، والمضيف يحكم على الإجابة.",
+        "تنتهي اللعبة عند انتهاء الأسئلة، ويفوز صاحب أعلى نقاط.",
+      ],
+    },
   },
   {
     id: "bluff-master",
@@ -50,6 +62,16 @@ const GAMES: GameCard[] = [
     category: "strategy",
     blurb: "اكتبوا إجابات مزيفة مقنعة، وصوّتوا على الإجابة الحقيقية. من يخدع أكثر يكسب.",
     live: true,
+    howTo: {
+      goal: "اكتبوا إجابات مزيفة مقنعة، وصوّتوا على الإجابة الحقيقية.",
+      minutes: "15 إلى 25 دقيقة",
+      steps: [
+        "يظهر سؤال على الشاشة، وكل لاعب يكتب إجابة مزيفة من جواله.",
+        "تظهر الإجابات كلها مختلطة مع الإجابة الحقيقية، فصوّتوا على ما تظنونه صحيحًا.",
+        "تكسبون نقاطًا عندما تختارون الإجابة الصحيحة، وتكسبون أيضًا عندما يصوّت غيركم لإجابتكم المزيفة.",
+        "يتكرر الدور بأسئلة جديدة، ويفوز من يجمع أكثر النقاط.",
+      ],
+    },
   },
   {
     id: "heads-up",
@@ -59,6 +81,17 @@ const GAMES: GameCard[] = [
     category: "words",
     blurb: "اختاروا فريقين. مخمِّن يتوسط الفريق، وزملاؤه يصفون الكلمة دون أن يقولوها.",
     live: true,
+    howTo: {
+      goal: "مخمِّن يتوسط فريقه، وزملاؤه يصفون الكلمة دون أن يقولوها.",
+      minutes: "15 إلى 30 دقيقة",
+      steps: [
+        "تُقسَم الغرفة إلى فريقين، ويختار المضيف التصنيفات قبل البداية.",
+        "يمسك المخمِّن الجوال على جبهته، أو يمسكه زميله، فلا يرى الكلمة.",
+        "يصف زملاؤه الكلمة الظاهرة على جوالاتهم دون أن يقولوها.",
+        "عند الإجابة الصحيحة يكسب فريق المخمِّن نقطة، ويمكن تخطي الكلمة. لكل دور 60 ثانية.",
+        "يفوز الفريق الأعلى نقاطًا قبل انتهاء الكلمات.",
+      ],
+    },
   },
   {
     id: "word-guess",
@@ -77,6 +110,16 @@ const GAMES: GameCard[] = [
     category: "talk",
     blurb: "لاعب واحد لا يعرف الموضوع. هل تكشفه قبل أن يكشف نفسه؟",
     live: true,
+    howTo: {
+      goal: "لاعب واحد لا يعرف الموضوع. هل تكشفونه قبل أن يكشف نفسه؟",
+      minutes: "10 إلى 20 دقيقة",
+      steps: [
+        "يحصل كل لاعب على الموضوع والكلمة، إلا لاعبًا واحدًا هو برة السالفة.",
+        "يصف الجميع الكلمة بتلميحات، وبرة السالفة يحاول أن يتظاهر بأنه يعرفها.",
+        "صوّتوا على من تظنونه برة السالفة.",
+        "إن انكشف، يحاول أن يخمّن الكلمة ليفوز. وإن لم ينكشف، يكسب نقاطه.",
+      ],
+    },
   },
   {
     id: "secret-code",
@@ -104,6 +147,16 @@ const GAMES: GameCard[] = [
     category: "strategy",
     blurb: "المواطنون ضد المافيا. من يكذب ومن يصدق؟",
     live: true,
+    howTo: {
+      goal: "المواطنون ضد المافيا. من يكذب ومن يصدق؟",
+      minutes: "20 إلى 35 دقيقة",
+      steps: [
+        "يحصل كل لاعب على دور سري يظهر على جواله فقط، وتحتاجون 5 لاعبين على الأقل.",
+        "في الليل: المافيا تختار ضحية، والطبيب يحمي لاعبًا، والمحقق يكشف لاعبًا. اغمضوا أعينكم.",
+        "في النهار: يناقش الجميع ويتهم بعضهم بعضًا، ثم يصوّتون لإقصاء لاعب.",
+        "يفوز المواطنون إذا أُقصيت كل المافيا، وتفوز المافيا إذا تساوى عددها مع الباقين.",
+      ],
+    },
   },
 ];
 
@@ -254,6 +307,7 @@ function HowItWorks() {
 
 function Games() {
   const [filter, setFilter] = useState<"all" | Category>("all");
+  const [sheetGame, setSheetGame] = useState<GameCard | null>(null);
   const liveCount = GAMES.filter((game) => game.live).length;
   const visible = GAMES.filter((game) => filter === "all" || game.category === filter).sort(
     (a, b) => Number(b.live) - Number(a.live),
@@ -292,16 +346,18 @@ function Games() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {visible.map((game) => (
-          <GameTile key={game.id} game={game} />
+          <GameTile key={game.id} game={game} onHowTo={() => setSheetGame(game)} />
         ))}
       </div>
+
+      <HowToSheet game={sheetGame} onClose={() => setSheetGame(null)} />
 
       {visible.length === 0 ? <p className="mt-6 text-center text-sm text-muted">لا توجد ألعاب في هذا التصنيف بعد.</p> : null}
     </section>
   );
 }
 
-function GameTile({ game }: { game: GameCard }) {
+function GameTile({ game, onHowTo }: { game: GameCard; onHowTo: () => void }) {
   return (
     <article
       className={cx(
@@ -320,17 +376,88 @@ function GameTile({ game }: { game: GameCard }) {
       <h3 className="text-lg font-extrabold text-ivory">{game.title}</h3>
       <p className="flex-1 text-sm leading-7 text-muted">{game.blurb}</p>
       {game.live ? (
-        <Link to="/play" search={{ game: game.id }} className="mt-1">
-          <Button tone="violet" className="w-full">
-            ابدأ الغرفة
+        <div className="mt-1 grid grid-cols-2 gap-2">
+          <Button tone="glass" onClick={onHowTo} className="w-full px-3">
+            كيف تُلعب؟
           </Button>
-        </Link>
+          <Link to="/play" search={{ game: game.id }}>
+            <Button tone="violet" className="w-full px-3">
+              ابدأ الغرفة
+            </Button>
+          </Link>
+        </div>
       ) : (
         <span className="mt-1 inline-flex min-h-11 items-center justify-center rounded-full border border-white/10 text-sm font-bold text-muted">
           قريبًا
         </span>
       )}
     </article>
+  );
+}
+
+/** Bottom sheet with the short rules of one game. Closes on Escape or a tap outside. */
+function HowToSheet({ game, onClose }: { game: GameCard | null; onClose: () => void }) {
+  useEffect(() => {
+    if (!game) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [game, onClose]);
+
+  if (!game?.howTo) return null;
+  const rules = game.howTo;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-night/70 sm:items-center sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="howto-title"
+        onClick={(event) => event.stopPropagation()}
+        className="glass-card max-h-[85vh] w-full overflow-y-auto rounded-t-3xl p-6 sm:max-w-lg sm:rounded-3xl"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <h3 id="howto-title" className="text-xl font-extrabold text-ivory">
+            <span aria-hidden="true">{game.icon}</span> {game.title}
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="إغلاق"
+            className="grid min-h-11 min-w-11 place-items-center rounded-full border border-white/10 text-ivory hover:border-neon/60"
+          >
+            ✕
+          </button>
+        </div>
+
+        <p className="mt-4 text-base leading-8 text-ivory">{rules.goal}</p>
+        <p className="mt-2 text-sm text-muted">
+          المدة التقريبية: <span className="font-bold text-ivory">{rules.minutes}</span>
+        </p>
+
+        <ol className="mt-5 grid gap-3">
+          {rules.steps.map((step, index) => (
+            <li key={step} className="flex gap-3 text-sm leading-7 text-muted">
+              <span className="grid size-7 shrink-0 place-items-center rounded-full bg-neon/15 text-xs font-extrabold text-neon">
+                {index + 1}
+              </span>
+              <span>{step}</span>
+            </li>
+          ))}
+        </ol>
+
+        <Link to="/play" search={{ game: game.id }} className="mt-6 block">
+          <Button tone="violet" className="w-full">
+            ابدأ الغرفة
+          </Button>
+        </Link>
+      </div>
+    </div>
   );
 }
 
