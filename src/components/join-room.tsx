@@ -142,9 +142,18 @@ export function JoinRoom({ initialCode = "" }: { initialCode?: string }) {
         <p className="mt-2 font-mono text-3xl font-extrabold tracking-[0.3em] text-neon">{room.room_code}</p>
         <p className="mt-3 text-base font-bold text-ivory">مرحبًا {me.player_name}</p>
         {room.status === "playing" ? (
-          <p className="mt-3 rounded-2xl border border-emerald/40 bg-emerald/10 p-3 text-sm font-bold text-ivory">
-            بدأت اللعبة! تابع الشاشة الكبيرة.
-          </p>
+          <div className="mt-3 space-y-3">
+            <p className="rounded-2xl border border-emerald/40 bg-emerald/10 p-3 text-sm font-bold text-ivory">
+              بدأت اللعبة! تابع الشاشة الكبيرة.
+            </p>
+            <Link
+              to="/room/$code"
+              params={{ code: room.room_code }}
+              className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-neon px-5 text-sm font-bold text-night"
+            >
+              افتح لوحة اللعب
+            </Link>
+          </div>
         ) : (
           <p className="mt-1 text-sm text-muted">بانتظار المضيف ليبدأ اللعبة.</p>
         )}
