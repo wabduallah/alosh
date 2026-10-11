@@ -50,8 +50,12 @@ export function JoinRoom({ initialCode = "" }: { initialCode?: string }) {
       )
       .subscribe();
 
+    // Fallback: re-read the list every few seconds in case realtime drops.
+    const timer = window.setInterval(loadPlayers, 3000);
+
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
       client.removeChannel(channel);
     };
   }, [room]);
