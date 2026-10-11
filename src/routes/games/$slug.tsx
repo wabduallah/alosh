@@ -3,6 +3,7 @@ import { Shell } from "@/components/shell";
 import { Button, cx } from "@/components/ui";
 import { CATEGORY_LABELS, SITE_URL, getGame, playerRange } from "@/lib/games";
 import { trackEvent } from "@/lib/analytics";
+import { NotifyForm } from "@/components/notify-form";
 
 export const Route = createFileRoute("/games/$slug")({
   head: ({ params }) => {
@@ -120,6 +121,12 @@ function GamePage() {
               ))}
             </ol>
           </section>
+        ) : null}
+
+        {!game.live ? (
+          <div className="glass-card mt-8 max-w-md rounded-3xl p-5">
+            <NotifyForm gameId={game.id} gameTitle={game.title} />
+          </div>
         ) : null}
 
         <div className={cx("mt-8 flex flex-wrap gap-3", !game.live && "items-center")}>

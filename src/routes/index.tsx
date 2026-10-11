@@ -5,6 +5,7 @@ import { Logo } from "@/components/logo";
 import { ShareSite } from "@/components/share";
 import { supabase } from "@/lib/supabase";
 import { trackEvent } from "@/lib/analytics";
+import { NotifyForm } from "@/components/notify-form";
 import {
   CATEGORY_LABELS,
   GAMES,
@@ -493,9 +494,12 @@ function GameTile({ game, onHowTo }: { game: GameCard; onHowTo: () => void }) {
           </Link>
         </div>
       ) : (
-        <span className="mt-1 inline-flex min-h-11 items-center justify-center rounded-full border border-white/10 text-sm font-bold text-muted">
-          قريبًا
-        </span>
+        <div className="mt-1 space-y-3">
+          <span className="inline-flex min-h-9 items-center rounded-full border border-white/10 px-3 text-xs font-bold text-muted">
+            قريبًا
+          </span>
+          <NotifyForm gameId={game.id} gameTitle={game.title} />
+        </div>
       )}
     </article>
   );
