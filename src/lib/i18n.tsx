@@ -47,6 +47,12 @@ function lookup(obj: Dict, path: string): string | null {
   return typeof value === "string" ? value : null;
 }
 
+/**
+ * English is hidden until the full site is translated. Set to true to show the
+ * language button again and honour a saved "en" choice.
+ */
+export const ENGLISH_ENABLED = false;
+
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>("ar");
   // Site config used to come from the old engine's settings table, which no longer exists.
@@ -55,7 +61,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const saved = localStorage.getItem("lamma-lang");
-    setLangState(saved === "en" ? "en" : "ar");
+    setLangState(ENGLISH_ENABLED && saved === "en" ? "en" : "ar");
   }, []);
 
   useEffect(() => {

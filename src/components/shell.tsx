@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { useI18n, type Lang } from "@/lib/i18n";
+import { ENGLISH_ENABLED, useI18n, type Lang } from "@/lib/i18n";
 import { cx } from "@/components/ui";
 import type { ReactNode } from "react";
 
@@ -96,14 +96,16 @@ function SiteHeader({
             <span className="mt-0.5 block text-[10px] font-bold tracking-wide text-neon">حيث تلتقي التحديات بالمتعة الجماعية</span>
           </span>
         </Link>
-        <button
-          type="button"
-          className="ms-auto min-h-10 rounded-full border border-white/15 px-3 text-sm font-bold text-ivory transition hover:border-neon/50"
-          onClick={() => setLang(lang === "ar" ? "en" : "ar")}
-          aria-label={lang === "ar" ? "Switch to English" : "التبديل إلى العربية"}
-        >
-          {lang === "ar" ? "EN" : "ع"}
-        </button>
+        {ENGLISH_ENABLED ? (
+          <button
+            type="button"
+            className="ms-auto min-h-10 rounded-full border border-white/15 px-3 text-sm font-bold text-ivory transition hover:border-neon/50"
+            onClick={() => setLang(lang === "ar" ? "en" : "ar")}
+            aria-label={lang === "ar" ? "Switch to English" : "التبديل إلى العربية"}
+          >
+            {lang === "ar" ? "EN" : "ع"}
+          </button>
+        ) : null}
       </div>
       <nav className="mx-auto flex max-w-6xl items-center gap-2 overflow-x-auto px-4 pb-3" aria-label="Main">
         <Link to="/" className={navLink}>{t("nav.home")}</Link>
