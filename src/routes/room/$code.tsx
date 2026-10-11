@@ -48,6 +48,7 @@ function PlayerBoard() {
   const isBluff = gameSlug === "bluff-master";
   const isOutsider = gameSlug === "outsider";
   const isHeads = gameSlug === "heads-up";
+  const isMafia = gameSlug === "social-mafia";
   const [error, setError] = useState<string | null>(null);
 
   // Load the room, its public questions, its state, and its players.
@@ -71,7 +72,7 @@ function PlayerBoard() {
 
       const { data: game } = await client.from("games").select("slug").eq("id", r.game_id).single();
       // Heads-up words are never loaded on phones: describers get the current word from the server.
-      const { data: qs } = game?.slug === "heads-up"
+      const { data: qs } = game?.slug === "heads-up" || game?.slug === "social-mafia"
         ? { data: [] }
         : await client
             .from("questions_public")
@@ -284,11 +285,15 @@ function PlayerBoard() {
           />
         ) : null}
 
+        {isMafia ? (
+          <MafiaPlayerPanel roomId={room.id} meId={me?.id ?? null} state={stateData} />
+        ) : null}
+
         {isHeads ? (
           <HeadsPlayerPanel roomId={room.id} meId={me?.id ?? null} state={stateData} />
         ) : null}
 
-        {active && !isHeads ? (
+        {active && !isHeads && !isMafia ? (
           <div className="glass-card mb-5 rounded-3xl p-5 text-center">
             <p className="text-xs font-bold text-violet">
               {active.category_ar} · {active.points} نقطة
@@ -332,11 +337,11 @@ function PlayerBoard() {
             </div>
             ) : null}
           </div>
-        ) : room.status === "playing" && !isOutsider && !isHeads ? (
+        ) : room.status === "playing" && !isOutsider && !isHeads && !isMafia ? (
           <p className="glass-card mb-5 rounded-2xl p-4 text-center text-sm text-muted">اختر المضيف سؤالاً من اللوحة.</p>
         ) : null}
 
-        {categories.length > 0 && !isHeads ? (
+        {categories.length > 0 && !isHeads && !isMafia ? (
           <div className="overflow-x-auto">
             <div
               className="grid min-w-[360px] gap-1.5"
@@ -894,6 +899,190 @@ function HeadsPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
       ) : null}
 
       {message ? <p className="mt-3 text-sm text-crimson">{message}</p> : null}
+    </section>
+  );
+}
+
+type MafiaMe = { started: boolean; role?: string; alive?: boolean; teammates?: string[]; inspect?: string | null };
+type MafiaRow = { player_id: string; player_name: string; alive: boolean; player_role: string | null };
+
+const MAFIA_ROLE_NAMES: Record<string, string> = { mafia: "مافيا", citizen: "مواطن", doctor: "طبيب", detective: "محقق" };
+const MAFIA_ROLE_HINTS: Record<string, string> = {
+  mafia: "كل ليلة اتفقوا مع زملائكم على ضحية. نهارًا لا تكشفوا أنفسكم.",
+  citizen: "استمعوا للنقاش وصوّتوا لإقصاء المافيا.",
+  doctor: "كل ليلة احموا لاعبًا. يمكنكم حماية أنفسكم.",
+  detective: "كل ليلة اكشفوا إن كان اللاعب مافيا أم لا.",
+};
+const MAFIA_PLAYER_ERRORS: Record<string, string> = {
+  WRONG_PHASE: "هذه الخطوة غير متاحة الآن.",
+  NOT_ACTIVE: "لا يمكنك التصرف الآن.",
+  BAD_TARGET: "هذا الاختيار غير صالح.",
+  NOT_IN_ROOM: "تعذّر التعرف عليك في الغرفة.",
+};
+
+function MafiaPlayerPanel({ roomId, meId, state }: { roomId: string; meId: string | null; state: StateData }) {
+  const [me, setMe] = useState<MafiaMe | null>(null);
+  const [rows, setRows] = useState<MafiaRow[]>([]);
+  const [chosen, setChosen] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const phase = String(state.phase ?? "");
+  const round = Number(state.round ?? 1);
+  const winner = typeof state.winner === "string" ? state.winner : null;
+  const lastResult = typeof state.last_result === "string" ? state.last_result : null;
+
+  useEffect(() => {
+    if (!supabase) return;
+    const client = supabase;
+    let cancelled = false;
+    async function load() {
+      const [{ data: mine, error: e1 }, { data: list, error: e2 }] = await Promise.all([
+        client.rpc("mafia_my_role", { p_room_id: roomId }),
+        client.rpc("mafia_players", { p_room_id: roomId }),
+      ]);
+      if (cancelled) return;
+      if (e1 || e2) return setMessage("تعذّر تحميل اللعبة.");
+      setMe((mine ?? null) as MafiaMe | null);
+      setRows((list ?? []) as MafiaRow[]);
+    }
+    load();
+    const poll = window.setInterval(load, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(poll);
+    };
+  }, [roomId]);
+
+  // A new phase or round starts with no choice made yet.
+  useEffect(() => {
+    setChosen(null);
+    setMessage(null);
+  }, [phase, round]);
+
+  const iAmAlive = me?.started === true && me?.alive !== false;
+  const role = me?.role ?? "";
+  const teammates = me?.teammates ?? [];
+  const canAct =
+    iAmAlive && ((phase === "night" && ["mafia", "doctor", "detective"].includes(role)) || phase === "vote");
+
+  const targets = rows.filter((p) => {
+    if (!p.alive) return false;
+    if (phase === "vote") return p.player_id !== meId;
+    if (phase === "night") {
+      if (role === "doctor") return true;
+      if (p.player_id === meId) return false;
+      if (role === "mafia") return !teammates.includes(p.player_name);
+      return true;
+    }
+    return false;
+  });
+
+  async function pick(target: string) {
+    if (!supabase || busy) return;
+    const fn = phase === "vote" ? "mafia_vote" : "mafia_night_action";
+    setBusy(true);
+    setMessage(null);
+    try {
+      const { data, error } = await supabase.rpc(fn, { p_room_id: roomId, p_target_id: target });
+      if (error) throw error;
+      const result = data as { ok: boolean; reason?: string };
+      if (!result.ok) setMessage(MAFIA_PLAYER_ERRORS[result.reason ?? ""] ?? "تعذّر تنفيذ الاختيار.");
+      else setChosen(target);
+    } catch {
+      setMessage("تعذّر تنفيذ الاختيار.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const chosenName = rows.find((p) => p.player_id === chosen)?.player_name ?? null;
+  const over = phase === "over";
+
+  return (
+    <section className="glass-card mb-5 rounded-3xl p-5 text-center">
+      <p className="text-xs font-bold text-violet">المافيا · الجولة {round || 1}</p>
+
+      {!me?.started ? (
+        <p className="mt-4 text-sm text-muted">انتظروا المضيف لبدء اللعبة.</p>
+      ) : (
+        <>
+          <p className="mt-3 text-sm text-muted">دورك</p>
+          <p className="text-2xl font-extrabold text-ivory">{MAFIA_ROLE_NAMES[role] ?? ""}</p>
+          <p className="mt-2 text-sm leading-7 text-muted">{MAFIA_ROLE_HINTS[role] ?? ""}</p>
+          {role === "mafia" && teammates.length > 0 ? (
+            <p className="mt-2 text-sm text-muted">
+              زملاؤك المافيا: <span className="font-bold text-ivory">{teammates.join("، ")}</span>
+            </p>
+          ) : null}
+          {role === "detective" && me?.inspect ? (
+            <p className="mt-2 text-sm text-muted">
+              نتيجة آخر تحقيق: <span className="font-bold text-ivory">{me?.inspect === "mafia" ? "مافيا" : "ليس مافيا"}</span>
+            </p>
+          ) : null}
+          {!iAmAlive ? (
+            <p className="mt-3 rounded-2xl bg-white/[0.04] p-3 text-sm text-muted">أنت خارج اللعبة. يمكنك متابعة النقاش.</p>
+          ) : null}
+        </>
+      )}
+
+      {lastResult ? <p className="mt-4 text-sm font-bold text-ivory">{lastResult}</p> : null}
+
+      {phase === "night" && me?.started === true && iAmAlive && !canAct ? (
+        <p className="mt-4 text-sm text-muted">اغمضوا أعينكم. الليل للمافيا والطبيب والمحقق.</p>
+      ) : null}
+      {phase === "day" ? <p className="mt-4 text-sm text-muted">النهار: ناقشوا من تظنون أنه مافيا.</p> : null}
+
+      {canAct ? (
+        <div className="mt-5">
+          <p className="text-sm text-muted">{phase === "vote" ? "صوّتوا لإقصاء لاعب:" : "اختاروا:"}</p>
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            {targets.map((p) => (
+              <button
+                key={p.player_id}
+                type="button"
+                disabled={busy}
+                onClick={() => pick(p.player_id)}
+                aria-pressed={chosen === p.player_id}
+                className={cx(
+                  "min-h-11 rounded-full border px-4 text-sm font-bold transition",
+                  chosen === p.player_id ? "border-neon bg-neon/10 text-neon" : "border-white/10 text-ivory",
+                )}
+              >
+                {p.player_name}
+              </button>
+            ))}
+          </div>
+          {chosenName ? (
+            <p className="mt-3 text-sm text-muted">
+              اخترتم: <span className="font-bold text-ivory">{chosenName}</span>
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {over ? (
+        <div className="mt-5">
+          <p className="text-xl font-extrabold text-ivory">{winner === "mafia" ? "فازت المافيا" : "فاز المواطنون"}</p>
+          <ul className="mt-3 grid gap-2 text-right">
+            {rows.map((p) => (
+              <li key={p.player_id} className="flex justify-between rounded-xl bg-white/[0.05] px-4 py-2 text-ivory">
+                <span>{p.player_name}</span>
+                <span className="text-muted">
+                  {MAFIA_ROLE_NAMES[p.player_role ?? ""] ?? ""}
+                  {p.alive ? "" : " · خرج"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {message ? (
+        <p role="alert" className="mt-3 text-sm text-crimson">
+          {message}
+        </p>
+      ) : null}
     </section>
   );
 }
