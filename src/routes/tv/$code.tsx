@@ -4,7 +4,28 @@ import { Egg, GameIcon, Glyph, Lockup, Mark } from "@/components/brand";
 import { QrCode } from "@/components/qr-code";
 import { buttonBase, buttonTone, cx, joinLink } from "@/components/ui";
 import { ensureSession, supabase } from "@/lib/supabase";
-import { AnswersList, Hearts, canFight, halbaWinner, nameOf, participants, useHalbaCues, useSecondsLeft, type HalbaState } from "@/components/halba";
+import {
+  AnswersList,
+  Hearts,
+  MatchSummary,
+  RoundBadges,
+  TEAMS,
+  TeamsRing,
+  canFight,
+  goalOf,
+  halbaWinner,
+  isAnswering,
+  nameOf,
+  participants,
+  performerLabel,
+  phaseAnswers,
+  predictionTally,
+  sideName,
+  useHalbaCues,
+  useSecondsLeft,
+  useTicks,
+  type HalbaState,
+} from "@/components/halba";
 
 /**
  * TV screen for a room (/tv/CODE): display only, for the big screen in the room.
@@ -735,11 +756,15 @@ function Mafia({ state, rows }: { state: StateData; rows: MafiaRow[] }) {
 
 function Results({ slug, ranking, state, mafia }: { slug: string; ranking: Player[]; state: StateData; mafia: MafiaRow[] }) {
   if (slug === "alhalba") {
-    const w = halbaWinner(state as unknown as HalbaState, ranking);
+    const hs = state as unknown as HalbaState;
+    const w = halbaWinner(hs, ranking);
     return (
       <div className="grid flex-1 content-center gap-[3vh] lg:grid-cols-[1.2fr_1fr] lg:items-center">
-        <Winner text={w ? `الفائز: ${w.name}` : "انتهت الغرفة"} sub={w?.why} />
-        {ranking.length > 0 ? <Scoreboard ranking={ranking} /> : null}
+        <div className="grid gap-[2vh]">
+          <Winner text={w ? `الفائز: ${w.name}` : "انتهت الغرفة"} sub={w?.why} />
+          <MatchSummary state={hs} players={ranking} big />
+        </div>
+        {hs.mode === "teams" ? <TeamsRing state={hs} players={ranking} big /> : ranking.length > 0 ? <Scoreboard ranking={ranking} /> : null}
       </div>
     );
   }
@@ -811,7 +836,8 @@ function Winner({ text, sub }: { text: string; sub?: string }) {
 function Halba({ state, players }: { state: HalbaState; players: Player[] }) {
   const phase = state.phase ?? "";
   const bidLeft = useSecondsLeft(phase === "bid" ? state.bid_ends_at : null);
-  const proveLeft = useSecondsLeft(phase === "prove" ? state.prove_ends_at : null);
+  const proveLeft = useSecondsLeft(isAnswering(state) ? state.prove_ends_at : null);
+  const offerLeft = useSecondsLeft(phase === "steal_offer" ? state.offer_ends_at : null);
   const guests = participants(state, players);
   const knocked = state.knocked ?? [];
   const maxLives = state.max_lives ?? 1;
@@ -819,6 +845,9 @@ function Halba({ state, players }: { state: HalbaState; players: Player[] }) {
   useHalbaCues(state, { sound: true });
   const duel = Array.isArray(state.duel) && state.duel.length === 2 ? state.duel : null;
   const result = state.result;
+  const teams = state.mode === "teams";
+  const tally = predictionTally(state);
+  const who = result ? (teams ? sideName(state, players, result.side) : result.bidder_name) : "";
 
   return (
     <div className="grid flex-1 gap-[2vw] lg:grid-cols-[1fr_minmax(260px,24vw)]">
@@ -827,10 +856,11 @@ function Halba({ state, players }: { state: HalbaState; players: Player[] }) {
         {phase === "" || phase === "idle" ? (
           <p className="relative font-display text-[clamp(32px,4vw,80px)] font-extrabold">استعدوا للحلبة 🥊</p>
         ) : phase === "over" ? (
-          <div className="relative">
+          <div className="relative grid gap-[2vh]">
             <Glyph name="trophy" className="mx-auto size-[clamp(56px,6vw,120px)] text-gold" />
-            <p className="mt-[1vh] font-display text-[clamp(36px,4.8vw,96px)] leading-tight font-extrabold">{winner ? `الفائز: ${winner.name}` : "انتهت المباراة"}</p>
-            {winner ? <p className="mt-[1vh] text-[clamp(18px,1.8vw,34px)] text-mist">{winner.why}</p> : null}
+            <p className="font-display text-[clamp(36px,4.8vw,96px)] leading-tight font-extrabold">{winner ? `الفائز: ${winner.name}` : "انتهت المباراة"}</p>
+            {winner ? <p className="text-[clamp(18px,1.8vw,34px)] text-mist">{winner.why}</p> : null}
+            <MatchSummary state={state} players={players} big />
           </div>
         ) : (
           <div className="relative grid gap-[2.5vh]">
@@ -844,6 +874,7 @@ function Halba({ state, players }: { state: HalbaState; players: Player[] }) {
                 <p className="font-display text-[clamp(34px,4.4vw,92px)] leading-[1.35] font-extrabold">{state.topic.text}</p>
               </>
             ) : null}
+            <RoundBadges state={state} className="text-[clamp(16px,1.5vw,30px)]" />
             {duel ? (
               <p className="font-display text-[clamp(24px,2.8vw,56px)] font-extrabold">
                 {nameOf(players, duel[0])} <span className="text-[#ff5a7a]">ضد</span> {nameOf(players, duel[1])}
@@ -855,37 +886,70 @@ function Halba({ state, players }: { state: HalbaState; players: Player[] }) {
                 <p className="text-[clamp(18px,1.9vw,36px)] text-mist">{state.bidder_name ? "أعلى مزايدة" : `زايدوا من جوالاتكم · تبدأ من ${state.topic?.min ?? 1}`}</p>
                 {state.bidder_name ? (
                   <p className="font-display text-[clamp(40px,5vw,100px)] leading-none font-extrabold">
-                    <span className="text-gold tabular-nums">{state.bid}</span> <span className="text-[0.6em]">عند {state.bidder_name}</span>
+                    <span className="text-gold tabular-nums">{state.bid}</span>{" "}
+                    <span className="text-[0.6em]">
+                      عند {state.bidder_name}
+                      {teams ? <span style={{ color: TEAMS[state.bidder_side ?? ""]?.color }}> ({sideName(state, players, state.bidder_side)})</span> : null}
+                    </span>
                   </p>
                 ) : null}
                 <Clock seconds={bidLeft} label="وقت المزايدة" />
               </div>
             ) : null}
 
-            {phase === "prove" ? (
+            {isAnswering(state) ? (
               <div className="grid justify-items-center gap-[1.5vh]">
                 <p className="text-[clamp(20px,2.2vw,42px)]">
-                  <b>{state.bidder_name}</b> يذكر {state.bid} إجابات
-                  {state.challenger_name ? <span className="text-mist"> · تحدّاه {state.challenger_name}</span> : null}
+                  {phase === "steal" ? "🦹 " : ""}
+                  <b>{performerLabel(state, players)}</b> {phase === "steal" ? "يسرق ويذكر" : "يذكر"} {goalOf(state)} إجابات
+                  {phase === "prove" && state.challenger_name ? <span className="text-mist"> · تحدّاه {state.challenger_name}</span> : null}
                 </p>
-                <p className="font-display text-[clamp(80px,12vw,240px)] leading-none font-extrabold tabular-nums">
+                <p key={state.count ?? 0} className="rise font-display text-[clamp(80px,12vw,240px)] leading-none font-extrabold tabular-nums">
                   {state.count ?? 0}
-                  <span className="text-[0.4em] text-mist">/{state.bid}</span>
+                  <span className="text-[0.4em] text-mist">/{goalOf(state)}</span>
                 </p>
-                <AnswersList answers={state.answers ?? []} big />
+                <AnswersList answers={phaseAnswers(state)} big />
                 <Clock seconds={proveLeft} label={proveLeft === 0 ? "انتهى الوقت" : "الوقت"} />
               </div>
             ) : null}
 
-            {phase === "result" && result ? (
+            {(phase === "bid" || phase === "prove") && tally.yes + tally.no > 0 ? (
+              <p className="text-[clamp(16px,1.5vw,30px)] text-mist">
+                توقعات الجمهور: <span className="text-correct">ينجح {tally.yes}</span> · <span className="text-wrong">يفشل {tally.no}</span>
+              </p>
+            ) : null}
+
+            {(phase === "result" || phase === "steal_offer") && result ? (
               <div className={cx("mx-auto rounded-[clamp(18px,1.8vw,32px)] border px-[3vw] py-[2vh]", result.success ? "border-correct/60 bg-correct-fill/20" : "border-wrong/60 bg-wrong-fill/20")}>
                 <p className="font-display text-[clamp(32px,4vw,80px)] font-extrabold">
-                  {result.success ? `${result.bidder_name} نجح!` : result.knocked_out ? `${result.bidder_name} خرج من الحلبة` : `${result.bidder_name} خسر محاولة`}
+                  {result.success ? `${who} نجح!` : result.knocked_out ? `${who} خرج من الحلبة` : `${who} خسر محاولة`}
                 </p>
                 <p className="mt-[1vh] text-[clamp(18px,1.8vw,34px)] text-mist">
-                  ذكر {result.count} من {result.bid} · {result.success ? "+" : "−"}
-                  {result.points} نقطة
+                  ذكر {result.count} من {result.bid} ·{" "}
+                  <span dir="ltr" className="inline-block">
+                    {result.success ? "+" : "−"}
+                    {result.points}
+                  </span>{" "}
+                  نقطة{result.doubled ? " (مضاعفة)" : ""}
                 </p>
+                {phase === "result" && state.steal_result ? (
+                  <p className={cx("mt-[1.5vh] text-[clamp(20px,2vw,40px)] font-bold", state.steal_result.success ? "text-correct" : "text-ivory")}>
+                    🦹 {state.steal_result.success ? (
+                      <>
+                        {state.steal_result.name} سرق الجولة! <span dir="ltr" className="inline-block">+{state.steal_result.points}</span>
+                      </>
+                    ) : (
+                      `فشلت سرقة ${state.steal_result.name}`
+                    )}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {phase === "steal_offer" ? (
+              <div className="grid justify-items-center gap-[1vh]">
+                <p className="font-display text-[clamp(26px,3vw,60px)] font-extrabold text-gold">🦹 {state.challenger_name} يقدر يسرق الجولة!</p>
+                <Clock seconds={offerLeft} label="القرار خلال" />
               </div>
             ) : null}
           </div>
@@ -894,39 +958,45 @@ function Halba({ state, players }: { state: HalbaState; players: Player[] }) {
 
       <Panel className="flex flex-col">
         <h2 className="mb-[1.5vh] flex items-center gap-2 text-[clamp(20px,1.9vw,36px)]">🥊 الحلبة</h2>
-        <ol className="grid gap-[1vh]">
-          {[...guests]
-            .sort((a, b) => Number(knocked.includes(a.id)) - Number(knocked.includes(b.id)) || b.score - a.score)
-            .map((p) => {
-              const out = knocked.includes(p.id);
-              const now = canFight(state, p.id) && (phase === "bid" || phase === "prove");
-              return (
-                <li
-                  key={p.id}
-                  className={cx(
-                    "flex items-center gap-3 rounded-[clamp(12px,1vw,20px)] border px-[1vw] py-[1vh] text-[clamp(16px,1.5vw,30px)]",
-                    out ? "border-line/50 text-faint line-through" : now && duel ? "border-[#ff5a7a88] bg-[#83184340]" : "border-line bg-deep-2/50",
-                  )}
-                >
-                  <span className="min-w-0 flex-1 truncate font-semibold">{p.player_name}</span>
-                  {!out ? <Hearts left={state.lives?.[p.id] ?? maxLives} max={maxLives} className="text-[0.8em]" /> : null}
-                  <span className="font-bold tabular-nums text-gold">{p.score}</span>
-                </li>
-              );
-            })}
-        </ol>
+        {teams ? (
+          <TeamsRing state={state} players={players} big />
+        ) : (
+          <ol className="grid gap-[1vh]">
+            {[...guests]
+              .sort((a, b) => Number(knocked.includes(a.id)) - Number(knocked.includes(b.id)) || b.score - a.score)
+              .map((p) => {
+                const out = knocked.includes(p.id);
+                const now = canFight(state, p.id) && (phase === "bid" || phase === "prove");
+                return (
+                  <li
+                    key={p.id}
+                    className={cx(
+                      "flex items-center gap-3 rounded-[clamp(12px,1vw,20px)] border px-[1vw] py-[1vh] text-[clamp(16px,1.5vw,30px)]",
+                      out ? "border-line/50 text-faint line-through" : now && duel ? "border-[#ff5a7a88] bg-[#83184340]" : "border-line bg-deep-2/50",
+                    )}
+                  >
+                    <span className="min-w-0 flex-1 truncate font-semibold">{p.player_name}</span>
+                    {!out ? <Hearts left={state.lives?.[p.id] ?? maxLives} max={maxLives} className="text-[0.8em]" /> : null}
+                    <span className="font-bold tabular-nums text-gold">{p.score}</span>
+                  </li>
+                );
+              })}
+          </ol>
+        )}
       </Panel>
     </div>
   );
 }
 
 function Clock({ seconds, label }: { seconds: number | null; label: string }) {
+  useTicks(seconds, true);
   if (seconds === null) return null;
+  const hot = seconds > 0 && seconds <= 5;
   return (
     <p className="inline-flex items-center gap-3 text-[clamp(18px,1.9vw,36px)] text-mist">
       <Glyph name="clock" className="size-[1.1em] text-gold" />
       {label}
-      <span dir="ltr" className={cx("font-display text-[1.6em] font-extrabold tabular-nums", seconds <= 5 ? "text-wrong" : "text-gold")}>
+      <span dir="ltr" key={hot ? seconds : "calm"} className={cx("font-display text-[1.6em] font-extrabold tabular-nums", seconds <= 5 ? "text-wrong" : "text-gold", hot && "beat")}>
         {seconds}s
       </span>
     </p>

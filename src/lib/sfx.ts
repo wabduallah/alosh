@@ -1,6 +1,8 @@
 const tones: Record<string, number[]> = {
   click: [520],
   countdown: [440],
+  tick: [880],
+  steal: [330, 440, 660, 330],
   correct: [523, 659, 784],
   wrong: [220, 180],
   winner: [523, 659, 784, 1046],
