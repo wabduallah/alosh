@@ -1,4 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
+import { AnnouncementBar } from "@/components/announcement";
 import { useEffect, useState, type ReactNode } from "react";
 import { useI18n, type Lang } from "@/lib/i18n";
 import { buttonBase, buttonTone, cx } from "@/components/ui";
@@ -22,6 +23,7 @@ export function Shell({ children, paper = false, play = false, wide = false }: {
     <div className={cx(paper ? "min-h-screen bg-ivory text-ink" : "nest game-shell min-h-screen", !paper && !play && "pb-tabbar lg:pb-0")}>
       {play ? <PlayBar /> : <SiteHeader t={t} lang={lang} setLang={setLang} paper={paper} onMenu={() => setMenuOpen(true)} />}
       <div className={cx("mx-auto max-w-[1240px] px-4 sm:px-6 lg:px-8", play ? "pt-4 pb-[max(24px,env(safe-area-inset-bottom))]" : "py-5 lg:py-6", (play || wide) && "tv:max-w-[1520px]")}>
+        {play || paper ? null : <AnnouncementBar />}
         {play ? null : <PageBack />}
         {children}
       </div>
