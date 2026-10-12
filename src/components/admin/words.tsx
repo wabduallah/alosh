@@ -6,11 +6,13 @@ import { Loading, Notice, SetupNotice, Sheet, dbMessage, needsSetup, textareaCla
 
 type HeadsWord = { id: string; word: string; category_ar: string | null };
 type Topic = { id: string; title_ar: string; words: string[] };
+type HalbaTopic = { id: string; topic_ar: string; min_answers: number; time_limit_sec: number; category: string | null };
 
 /** Words for «على راسك» and topics for «برة السالفة». Both need supabase/admin_panel.sql. */
 export function WordsTab() {
   return (
     <div className="grid grid-cols-1 gap-8">
+      <HalbaTopics />
       <HeadsWords />
       <OutsiderTopics />
     </div>
@@ -303,6 +305,170 @@ function TopicEditor({ topic, onClose, onSaved }: { topic: Topic | null; onClose
         <Field label="الكلمات" hint="كلمة في كل سطر. تُختار منها كلمة الجولة عشوائيًا.">
           <textarea className={textareaClass} value={text} onChange={(e) => setText(e.target.value)} rows={7} />
         </Field>
+        {error ? <Notice tone="error">{error}</Notice> : null}
+        <Button type="submit" tone="primary" className="min-h-14 text-[17px]" disabled={busy}>
+          {busy ? "جارٍ الحفظ…" : topic ? "حفظ التعديل" : "أضف الموضوع"}
+        </Button>
+      </form>
+    </Sheet>
+  );
+}
+
+/* ---------------- الحلبة ---------------- */
+
+function HalbaTopics() {
+  const [topics, setTopics] = useState<HalbaTopic[] | null>(null);
+  const [setup, setSetup] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<HalbaTopic | "new" | null>(null);
+
+  async function refresh() {
+    if (!supabase) return;
+    const { data, error: loadError } = await supabase
+      .from("alhalba_topics")
+      .select("id, topic_ar, min_answers, time_limit_sec, category")
+      .order("category")
+      .order("topic_ar");
+    if (loadError) {
+      const missing = needsSetup(loadError) || loadError.code === "42P01" || loadError.code === "PGRST205";
+      setSetup(missing);
+      if (!missing) setError(dbMessage(loadError, "تعذّر تحميل المواضيع."));
+      setTopics([]);
+      return;
+    }
+    setSetup(false);
+    setTopics((data ?? []) as HalbaTopic[]);
+  }
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  async function remove(t: HalbaTopic) {
+    if (!supabase) return;
+    setError(null);
+    const { error: deleteError } = await supabase.from("alhalba_topics").delete().eq("id", t.id);
+    if (deleteError) return setError(dbMessage(deleteError, "تعذّر حذف الموضوع."));
+    setTopics((current) => (current ?? []).filter((x) => x.id !== t.id));
+  }
+
+  return (
+    <section aria-labelledby="halba-title" className="grid grid-cols-1 gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="halba-title" className="flex items-center gap-2 text-[22px]">
+          <img src="/brand/games/game-alhalba.svg" alt="" className="size-8" />
+          مواضيع «الحلبة»
+          {topics && !setup ? <span className="text-[14px] font-normal text-mist">{topics.length} موضوع</span> : null}
+        </h2>
+        {!setup ? (
+          <Button tone="primary" onClick={() => setEditing("new")}>
+            <Glyph name="plus" className="size-[18px]" />
+            موضوع جديد
+          </Button>
+        ) : null}
+      </div>
+      {setup ? (
+        <Notice tone="info">
+          هذا القسم يحتاج جدول الحلبة. شغّل الملف <code dir="ltr" className="rounded bg-night/60 px-1.5 py-0.5 text-[13px]">supabase/schema_alhalba.sql</code> مرة واحدة من SQL Editor في
+          Supabase، ثم حدّث الصفحة.
+        </Notice>
+      ) : null}
+      {error ? <Notice tone="error">{error}</Notice> : null}
+      {topics === null ? (
+        <Loading />
+      ) : topics.length > 0 ? (
+        <ul className="surface grid gap-2 rounded-[22px] p-3 sm:p-4">
+          {topics.map((t) => (
+            <li key={t.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[14px] border border-line bg-deep-2/50 px-3 py-2">
+              <span className="min-w-0 flex-1 text-[15px] text-ivory">{t.topic_ar}</span>
+              {t.category ? <span className="rounded-full bg-violet/25 px-2.5 py-0.5 text-[12px] text-violet-text">{t.category}</span> : null}
+              <span className="text-[13px] text-mist">
+                يبدأ من {t.min_answers} · {t.time_limit_sec} ث
+              </span>
+              <span className="flex gap-1">
+                <Button tone="quiet" className="min-h-10 px-3" onClick={() => setEditing(t)} aria-label={`تعديل ${t.topic_ar}`}>
+                  <Glyph name="edit" className="size-[18px]" />
+                </Button>
+                <Button tone="quiet" className="min-h-10 px-3" onClick={() => remove(t)} aria-label={`حذف ${t.topic_ar}`}>
+                  <Glyph name="trash" className="size-[18px]" />
+                </Button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {editing ? (
+        <HalbaTopicEditor
+          topic={editing === "new" ? null : editing}
+          categories={[...new Set((topics ?? []).map((t) => t.category).filter((c): c is string => !!c))]}
+          onClose={() => setEditing(null)}
+          onSaved={async () => {
+            setEditing(null);
+            await refresh();
+          }}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function HalbaTopicEditor({
+  topic,
+  categories,
+  onClose,
+  onSaved,
+}: {
+  topic: HalbaTopic | null;
+  categories: string[];
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [text, setText] = useState(topic?.topic_ar ?? "");
+  const [min, setMin] = useState(topic?.min_answers ?? 3);
+  const [seconds, setSeconds] = useState(topic?.time_limit_sec ?? 30);
+  const [category, setCategory] = useState(topic?.category ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase) return;
+    const row = { topic_ar: text.trim(), min_answers: Math.round(min), time_limit_sec: Math.round(seconds), category: category.trim() || null };
+    if (row.topic_ar.length < 3) return setError("اكتب الموضوع.");
+    if (!(row.min_answers >= 1 && row.min_answers <= 30)) return setError("أقل مزايدة بين 1 و30.");
+    if (!(row.time_limit_sec >= 10 && row.time_limit_sec <= 180)) return setError("الوقت بين 10 و180 ثانية.");
+    setBusy(true);
+    setError(null);
+    const { error: saveError } = topic
+      ? await supabase.from("alhalba_topics").update(row).eq("id", topic.id)
+      : await supabase.from("alhalba_topics").insert(row);
+    setBusy(false);
+    if (saveError) return setError(dbMessage(saveError));
+    await onSaved();
+  }
+
+  return (
+    <Sheet title={topic ? "تعديل موضوع الحلبة" : "موضوع جديد للحلبة"} onClose={onClose}>
+      <form onSubmit={save} className="grid gap-4">
+        <Field label="الموضوع" hint="مثل: دول تبدأ بحرف الميم. اللاعبون يزايدون على عدد إجاباته.">
+          <input className={inputClass} value={text} maxLength={160} onChange={(e) => setText(e.target.value)} />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="المزايدة تبدأ من">
+            <input type="number" inputMode="numeric" min={1} max={30} className={inputClass} value={min} onChange={(e) => setMin(Number(e.target.value))} />
+          </Field>
+          <Field label="وقت الإثبات (ثانية)">
+            <input type="number" inputMode="numeric" min={10} max={180} step={5} className={inputClass} value={seconds} onChange={(e) => setSeconds(Number(e.target.value))} />
+          </Field>
+        </div>
+        <Field label="الفئة (اختياري)">
+          <input className={inputClass} list="halba-categories" value={category} onChange={(e) => setCategory(e.target.value)} />
+        </Field>
+        <datalist id="halba-categories">
+          {categories.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
         {error ? <Notice tone="error">{error}</Notice> : null}
         <Button type="submit" tone="primary" className="min-h-14 text-[17px]" disabled={busy}>
           {busy ? "جارٍ الحفظ…" : topic ? "حفظ التعديل" : "أضف الموضوع"}

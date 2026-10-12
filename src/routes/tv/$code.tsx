@@ -4,6 +4,7 @@ import { Egg, GameIcon, Glyph, Lockup, Mark } from "@/components/brand";
 import { QrCode } from "@/components/qr-code";
 import { buttonBase, buttonTone, cx, joinLink } from "@/components/ui";
 import { ensureSession, supabase } from "@/lib/supabase";
+import { canFight, halbaWinner, nameOf, useSecondsLeft, type HalbaState } from "@/components/halba";
 
 /**
  * TV screen for a room (/tv/CODE): display only, for the big screen in the room.
@@ -75,7 +76,8 @@ function TvScreen() {
   const isOutsider = slug === "outsider";
   const isHeads = slug === "heads-up";
   const isMafia = slug === "social-mafia";
-  const isBoard = !isOutsider && !isHeads && !isMafia;
+  const isHalba = slug === "alhalba";
+  const isBoard = !isOutsider && !isHeads && !isMafia && !isHalba;
 
   // Load the room once, then its game and its public questions (no answers).
   useEffect(() => {
@@ -101,7 +103,7 @@ function TvScreen() {
         const r = found as Room;
         const { data: g } = await client.from("games").select("slug, title_ar").eq("id", r.game_id).maybeSingle();
         const gameRow = (g ?? null) as Game | null;
-        const noQuestions = gameRow?.slug === "heads-up" || gameRow?.slug === "social-mafia" || gameRow?.slug === "outsider";
+        const noQuestions = gameRow?.slug === "heads-up" || gameRow?.slug === "social-mafia" || gameRow?.slug === "outsider" || gameRow?.slug === "alhalba";
         const { data: qs } = noQuestions
           ? { data: [] }
           : await client
@@ -259,6 +261,8 @@ function TvScreen() {
         <Outsider state={state} counts={counts} />
       ) : isMafia ? (
         <Mafia state={state} rows={mafia} />
+      ) : isHalba ? (
+        <Halba state={state as unknown as HalbaState} players={players} />
       ) : (
         <Board
           active={active}
@@ -730,6 +734,15 @@ function Mafia({ state, rows }: { state: StateData; rows: MafiaRow[] }) {
 /* ---------------- Results ---------------- */
 
 function Results({ slug, ranking, state, mafia }: { slug: string; ranking: Player[]; state: StateData; mafia: MafiaRow[] }) {
+  if (slug === "alhalba") {
+    const w = halbaWinner(state as unknown as HalbaState, ranking);
+    return (
+      <div className="grid flex-1 content-center gap-[3vh] lg:grid-cols-[1.2fr_1fr] lg:items-center">
+        <Winner text={w ? `الفائز: ${w.name}` : "انتهت الغرفة"} sub={w?.why} />
+        {ranking.length > 0 ? <Scoreboard ranking={ranking} /> : null}
+      </div>
+    );
+  }
   if (slug === "heads-up") {
     const red = state.team_scores?.red ?? 0;
     const blue = state.team_scores?.blue ?? 0;
@@ -790,5 +803,128 @@ function Winner({ text, sub }: { text: string; sub?: string }) {
       <p className="relative mt-[1vh] font-display text-[clamp(36px,4.8vw,96px)] leading-tight font-extrabold">{text}</p>
       {sub ? <p className="relative mt-[1vh] text-[clamp(18px,1.8vw,34px)] text-mist">{sub}</p> : null}
     </Panel>
+  );
+}
+
+/* ---------------- الحلبة ---------------- */
+
+function Halba({ state, players }: { state: HalbaState; players: Player[] }) {
+  const phase = state.phase ?? "";
+  const bidLeft = useSecondsLeft(phase === "bid" ? state.bid_ends_at : null);
+  const proveLeft = useSecondsLeft(phase === "prove" ? state.prove_ends_at : null);
+  const guests = players.filter((p) => !p.is_host);
+  const knocked = state.knocked ?? [];
+  const winner = phase === "over" ? halbaWinner(state, players) : null;
+  const duel = Array.isArray(state.duel) && state.duel.length === 2 ? state.duel : null;
+  const result = state.result;
+
+  return (
+    <div className="grid flex-1 gap-[2vw] lg:grid-cols-[1fr_minmax(260px,24vw)]">
+      <Panel className="relative flex flex-col justify-center overflow-hidden text-center">
+        <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 -top-1/3 mx-auto size-[36vw] rounded-full bg-[#ff5a7a26] blur-3xl" />
+        {phase === "" || phase === "idle" ? (
+          <p className="relative font-display text-[clamp(32px,4vw,80px)] font-extrabold">استعدوا للحلبة 🥊</p>
+        ) : phase === "over" ? (
+          <div className="relative">
+            <Glyph name="trophy" className="mx-auto size-[clamp(56px,6vw,120px)] text-gold" />
+            <p className="mt-[1vh] font-display text-[clamp(36px,4.8vw,96px)] leading-tight font-extrabold">{winner ? `الفائز: ${winner.name}` : "انتهت المباراة"}</p>
+            {winner ? <p className="mt-[1vh] text-[clamp(18px,1.8vw,34px)] text-mist">{winner.why}</p> : null}
+          </div>
+        ) : (
+          <div className="relative grid gap-[2.5vh]">
+            {state.topic ? (
+              <>
+                <p className="mx-auto inline-flex rounded-full bg-[#83184366] px-[1.4vw] py-[0.6vh] text-[clamp(16px,1.5vw,30px)] font-bold text-[#ffb3c4]">
+                  الجولة {state.round}
+                  {state.max_rounds ? ` من ${state.max_rounds}` : ""}
+                  {state.topic.category ? ` · ${state.topic.category}` : ""}
+                </p>
+                <p className="font-display text-[clamp(34px,4.4vw,92px)] leading-[1.35] font-extrabold">{state.topic.text}</p>
+              </>
+            ) : null}
+            {duel ? (
+              <p className="font-display text-[clamp(24px,2.8vw,56px)] font-extrabold">
+                {nameOf(players, duel[0])} <span className="text-[#ff5a7a]">ضد</span> {nameOf(players, duel[1])}
+              </p>
+            ) : null}
+
+            {phase === "bid" ? (
+              <div className="grid justify-items-center gap-[1.5vh]">
+                <p className="text-[clamp(18px,1.9vw,36px)] text-mist">{state.bidder_name ? "أعلى مزايدة" : `زايدوا من جوالاتكم · تبدأ من ${state.topic?.min ?? 1}`}</p>
+                {state.bidder_name ? (
+                  <p className="font-display text-[clamp(40px,5vw,100px)] leading-none font-extrabold">
+                    <span className="text-gold tabular-nums">{state.bid}</span> <span className="text-[0.6em]">عند {state.bidder_name}</span>
+                  </p>
+                ) : null}
+                <Clock seconds={bidLeft} label="وقت المزايدة" />
+              </div>
+            ) : null}
+
+            {phase === "prove" ? (
+              <div className="grid justify-items-center gap-[1.5vh]">
+                <p className="text-[clamp(20px,2.2vw,42px)]">
+                  <b>{state.bidder_name}</b> يذكر {state.bid} إجابات
+                  {state.challenger_name ? <span className="text-mist"> · تحدّاه {state.challenger_name}</span> : null}
+                </p>
+                <p className="font-display text-[clamp(80px,12vw,240px)] leading-none font-extrabold tabular-nums">
+                  {state.count ?? 0}
+                  <span className="text-[0.4em] text-mist">/{state.bid}</span>
+                </p>
+                <Clock seconds={proveLeft} label={proveLeft === 0 ? "انتهى الوقت" : "الوقت"} />
+              </div>
+            ) : null}
+
+            {phase === "result" && result ? (
+              <div className={cx("mx-auto rounded-[clamp(18px,1.8vw,32px)] border px-[3vw] py-[2vh]", result.success ? "border-correct/60 bg-correct-fill/20" : "border-wrong/60 bg-wrong-fill/20")}>
+                <p className="font-display text-[clamp(32px,4vw,80px)] font-extrabold">
+                  {result.success ? `${result.bidder_name} نجح!` : `${result.bidder_name} خرج من الحلبة`}
+                </p>
+                <p className="mt-[1vh] text-[clamp(18px,1.8vw,34px)] text-mist">
+                  ذكر {result.count} من {result.bid} · {result.success ? "+" : "−"}
+                  {result.points} نقطة
+                </p>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </Panel>
+
+      <Panel className="flex flex-col">
+        <h2 className="mb-[1.5vh] flex items-center gap-2 text-[clamp(20px,1.9vw,36px)]">🥊 الحلبة</h2>
+        <ol className="grid gap-[1vh]">
+          {[...guests]
+            .sort((a, b) => Number(knocked.includes(a.id)) - Number(knocked.includes(b.id)) || b.score - a.score)
+            .map((p) => {
+              const out = knocked.includes(p.id);
+              const now = canFight(state, p.id) && (phase === "bid" || phase === "prove");
+              return (
+                <li
+                  key={p.id}
+                  className={cx(
+                    "flex items-center gap-3 rounded-[clamp(12px,1vw,20px)] border px-[1vw] py-[1vh] text-[clamp(16px,1.5vw,30px)]",
+                    out ? "border-line/50 text-faint line-through" : now && duel ? "border-[#ff5a7a88] bg-[#83184340]" : "border-line bg-deep-2/50",
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate font-semibold">{p.player_name}</span>
+                  <span className="font-bold tabular-nums text-gold">{p.score}</span>
+                </li>
+              );
+            })}
+        </ol>
+      </Panel>
+    </div>
+  );
+}
+
+function Clock({ seconds, label }: { seconds: number | null; label: string }) {
+  if (seconds === null) return null;
+  return (
+    <p className="inline-flex items-center gap-3 text-[clamp(18px,1.9vw,36px)] text-mist">
+      <Glyph name="clock" className="size-[1.1em] text-gold" />
+      {label}
+      <span dir="ltr" className={cx("font-display text-[1.6em] font-extrabold tabular-nums", seconds <= 5 ? "text-wrong" : "text-gold")}>
+        {seconds}s
+      </span>
+    </p>
   );
 }

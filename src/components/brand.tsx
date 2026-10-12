@@ -144,6 +144,7 @@ export function Egg({
 
 /** Each game has its own card colours and a drawn icon (public/brand/games). */
 export const GAME_STYLE: Record<string, { c1: string; c2: string; ink: "light" | "dark" }> = {
+  alhalba: { c1: "#831843", c2: "#1e1b4b", ink: "light" },
   "tactical-grid": { c1: "#7b3fe4", c2: "#3b1f9a", ink: "light" },
   "bluff-master": { c1: "#c23b78", c2: "#6d1f6a", ink: "light" },
   "heads-up": { c1: "#ffb13b", c2: "#e8741a", ink: "dark" },

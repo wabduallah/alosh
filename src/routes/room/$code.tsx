@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Shell } from "@/components/shell";
 import { Button, cx } from "@/components/ui";
 import { Cradle, Glyph } from "@/components/brand";
+import { HalbaPlayerPanel, type HalbaState } from "@/components/halba";
 import { supabase } from "@/lib/supabase";
 
 /**
@@ -50,6 +51,7 @@ function PlayerBoard() {
   const isOutsider = gameSlug === "outsider";
   const isHeads = gameSlug === "heads-up";
   const isMafia = gameSlug === "social-mafia";
+  const isHalba = gameSlug === "alhalba";
   const [error, setError] = useState<string | null>(null);
 
   // Load the room, its public questions, its state, and its players.
@@ -73,7 +75,7 @@ function PlayerBoard() {
 
       const { data: game } = await client.from("games").select("slug").eq("id", r.game_id).single();
       // Heads-up words are never loaded on phones: describers get the current word from the server.
-      const { data: qs } = game?.slug === "heads-up" || game?.slug === "social-mafia"
+      const { data: qs } = game?.slug === "heads-up" || game?.slug === "social-mafia" || game?.slug === "alhalba"
         ? { data: [] }
         : await client
             .from("questions_public")
@@ -252,9 +254,13 @@ function PlayerBoard() {
           <h1 className="text-lg font-extrabold text-ivory">
             الغرفة <span className="room-code text-gold">{room.room_code}</span>
           </h1>
-          <span className="text-sm text-muted">
-            أُجيب {answered.size} من {questions.length}
-          </span>
+          {isHalba ? (
+            <span className="text-sm text-muted">الحلبة</span>
+          ) : (
+            <span className="text-sm text-muted">
+              أُجيب {answered.size} من {questions.length}
+            </span>
+          )}
         </div>
 
         {gameOver ? (
@@ -284,6 +290,10 @@ function PlayerBoard() {
             round={Number(stateData.round ?? 0)}
             reveal={(stateData.reveal as OutsiderRevealView | undefined) ?? null}
           />
+        ) : null}
+
+        {isHalba ? (
+          <HalbaPlayerPanel roomId={room.id} meId={me?.id ?? null} state={stateData as unknown as HalbaState} players={players} />
         ) : null}
 
         {isMafia ? (
@@ -351,11 +361,11 @@ function PlayerBoard() {
             </div>
             ) : null}
           </div>
-        ) : room.status === "playing" && !isOutsider && !isHeads && !isMafia ? (
+        ) : room.status === "playing" && !isOutsider && !isHeads && !isMafia && !isHalba ? (
           <p className="glass-card mb-5 rounded-2xl p-4 text-center text-sm text-muted">اختر المضيف سؤالاً من اللوحة.</p>
         ) : null}
 
-        {categories.length > 0 && !isHeads && !isMafia ? (
+        {categories.length > 0 && !isHeads && !isMafia && !isHalba ? (
           <div className="overflow-x-auto">
             <div
               className="grid min-w-[360px] gap-1.5"
