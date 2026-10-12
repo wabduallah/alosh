@@ -4,7 +4,7 @@ import { Egg, GameIcon, Glyph, Lockup, Mark } from "@/components/brand";
 import { QrCode } from "@/components/qr-code";
 import { buttonBase, buttonTone, cx, joinLink } from "@/components/ui";
 import { ensureSession, supabase } from "@/lib/supabase";
-import { Hearts, canFight, halbaWinner, nameOf, participants, useHalbaCues, useSecondsLeft, type HalbaState } from "@/components/halba";
+import { AnswersList, Hearts, canFight, halbaWinner, nameOf, participants, useHalbaCues, useSecondsLeft, type HalbaState } from "@/components/halba";
 
 /**
  * TV screen for a room (/tv/CODE): display only, for the big screen in the room.
@@ -872,6 +872,7 @@ function Halba({ state, players }: { state: HalbaState; players: Player[] }) {
                   {state.count ?? 0}
                   <span className="text-[0.4em] text-mist">/{state.bid}</span>
                 </p>
+                <AnswersList answers={state.answers ?? []} big />
                 <Clock seconds={proveLeft} label={proveLeft === 0 ? "انتهى الوقت" : "الوقت"} />
               </div>
             ) : null}
