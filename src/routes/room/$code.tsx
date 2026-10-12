@@ -7,6 +7,7 @@ import { Button, cx } from "@/components/ui";
 import { Cradle, Glyph } from "@/components/brand";
 import { HalbaPlayerPanel } from "@/components/halba";
 import { GridPlayerPanel } from "@/components/grid";
+import { ResultShare, rankingShare } from "@/components/result-share";
 import { MafiaShare, MafiaSummary, ROLE_HINTS, ROLE_ICONS, ROLE_NAMES, VotesView, WINNERS, mmss, useCountdown, type MafiaPlayerRow, type MafiaPublicState, type MafiaVote } from "@/components/mafia";
 import { supabase } from "@/lib/supabase";
 
@@ -289,6 +290,7 @@ function PlayerBoard() {
               </p>
             ) : null}
             <p className="mt-1 text-sm text-muted">بنقاط {topScore}</p>
+            {ranking.length > 0 && !isHalba && !isMafia ? <ResultShare className="mt-4" result={rankingShare(gameSlug, ranking)} /> : null}
           </div>
         ) : null}
 

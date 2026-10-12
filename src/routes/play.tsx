@@ -299,6 +299,9 @@ function CreatePage() {
               <Glyph name="tv" />
               افتح شاشة التلفزيون
             </Link>
+            <p className="max-w-xs text-[13px] leading-6 text-mist tv:hidden">
+              ما عندكم تلفزيون؟ تكفي الجوالات: كل لاعب يرى ما يحتاجه في جواله، والمضيف يقدر يعرض الشاشة من جواله بزر «اعرض هنا».
+            </p>
           </section>
 
           <section className="grid gap-5 lg:order-1">

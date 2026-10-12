@@ -3,6 +3,8 @@ import { rememberRoom } from "@/lib/prefs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Shell } from "@/components/shell";
 import { NextGame } from "@/components/next-game";
+import { DisplayChoice } from "@/components/display-here";
+import { ResultShare, rankingShare, teamsShare } from "@/components/result-share";
 import { GridHostPanel } from "@/components/grid";
 import { useRoomSession } from "@/lib/room-session";
 import { Button, buttonBase, buttonTone, cx } from "@/components/ui";
@@ -486,6 +488,7 @@ function HostBoard() {
                 إنهاء الغرفة للجميع
               </Button>
             ) : null}
+            {ranking.length > 0 ? <ResultShare className="mt-5" result={rankingShare(gameSlug, ranking)} /> : null}
           </div>
         ) : null}
         {gameOver ? <NextGame roomId={room.id} roomCode={room.room_code} currentSlug={gameSlug} className="mb-6" /> : null}
@@ -647,14 +650,7 @@ function HostBoard() {
 
 /** Opens the display-only TV screen for this room in a new tab (cast it or open it on the TV). */
 function TvLink({ code }: { code: string }) {
-  return (
-    <div className="-mt-1 mb-4 flex justify-center">
-      <Link to="/tv/$code" params={{ code }} target="_blank" className={cx(buttonBase, buttonTone("outline"))}>
-        <Glyph name="tv" />
-        افتح شاشة التلفزيون
-      </Link>
-    </div>
-  );
+  return <DisplayChoice code={code} />;
 }
 
 type BluffPanelProps = {
@@ -1177,6 +1173,7 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
             <p className="mt-2 text-sm text-muted">
               {scores.red === scores.blue ? "تعادل" : `الفائز: ${winner} بـ ${Math.max(scores.red, scores.blue)} نقطة`}
             </p>
+            {phase === "over" ? <ResultShare className="mt-4" result={teamsShare("heads-up", scores.red, scores.blue)} /> : null}
           </>
         ) : null}
       </div>

@@ -24,6 +24,42 @@ export type ShareResult = {
 
 const W = 1080;
 
+const GAME_TITLES: Record<string, string> = {
+  "bluff-master": "🎭 سيد الخداع",
+  "tactical-grid": "🎲 تحديات العش",
+  "heads-up": "🧠 هل تعرف",
+  outsider: "👀 برة السالفة",
+  "hex-letters": "🔤 خلية الحروف",
+};
+
+/** A result for games scored per player: the top scores, ties named together. */
+export function rankingShare(slug: string | null, ranking: Array<{ player_name: string; score: number }>): ShareResult {
+  const top = ranking[0]?.score ?? 0;
+  const winners = ranking.filter((p) => p.score === top);
+  return {
+    slug: slug ?? "tactical-grid",
+    title: GAME_TITLES[slug ?? ""] ?? "🎲 العش",
+    headline: winners.length > 1 ? `تعادل: ${winners.map((w) => w.player_name).join("، ")}` : (winners[0]?.player_name ?? "انتهت اللعبة"),
+    sub: `🏆 ${top} نقطة`,
+    rows: ranking.slice(0, 8).map((p) => ({ name: p.player_name, value: String(p.score) })),
+  };
+}
+
+/** A result for two-team games. */
+export function teamsShare(slug: string, red: number, blue: number): ShareResult {
+  const w = red === blue ? null : red > blue ? "الفريق الأحمر" : "الفريق الأزرق";
+  return {
+    slug,
+    title: GAME_TITLES[slug] ?? "🎲 العش",
+    headline: w ?? "تعادل",
+    sub: w ? `🏆 ${Math.max(red, blue)} مقابل ${Math.min(red, blue)}` : `${red} لكل فريق`,
+    rows: [
+      { name: "الفريق الأحمر", value: String(red), color: "#ff5a7a" },
+      { name: "الفريق الأزرق", value: String(blue), color: "#6bb8ff" },
+    ].sort((a, b) => Number(b.value) - Number(a.value)),
+  };
+}
+
 export function siteUrl() {
   return typeof window === "undefined" ? "https://al3sh.app" : window.location.origin;
 }
