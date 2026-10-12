@@ -10,6 +10,8 @@ import { GamesTab } from "@/components/admin/games";
 import { QuestionsTab } from "@/components/admin/questions";
 import { WordsTab } from "@/components/admin/words";
 import { RoomsTab } from "@/components/admin/rooms";
+import { StatsTab } from "@/components/admin/stats";
+import { ContentTab } from "@/components/admin/content";
 
 /**
  * Admin panel. Sign-in is a Supabase email/password account whose
@@ -22,12 +24,14 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-type Tab = "games" | "questions" | "words" | "rooms";
+type Tab = "stats" | "games" | "questions" | "words" | "content" | "rooms";
 const TABS: Array<{ key: Tab; label: string; icon: string }> = [
+  { key: "stats", label: "الإحصاءات", icon: "fire" },
+  { key: "rooms", label: "الغرف", icon: "tv" },
   { key: "games", label: "الألعاب", icon: "gamepad" },
   { key: "questions", label: "بنك الأسئلة", icon: "question" },
   { key: "words", label: "الكلمات والمواضيع", icon: "edit" },
-  { key: "rooms", label: "الغرف", icon: "tv" },
+  { key: "content", label: "الاستيراد والجودة", icon: "copy" },
 ];
 
 function isAdmin(session: Session | null) {
@@ -149,9 +153,9 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => Prom
   const [tab, setTab] = useState<Tab>(() => {
     try {
       const saved = sessionStorage.getItem("alosh-admin-tab");
-      return TABS.some((t) => t.key === saved) ? (saved as Tab) : "games";
+      return TABS.some((t) => t.key === saved) ? (saved as Tab) : "stats";
     } catch {
-      return "games";
+      return "stats";
     }
   });
 
@@ -182,7 +186,7 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => Prom
         </Button>
       </div>
 
-      <div role="tablist" aria-label="أقسام الإدارة" className="surface grid grid-cols-2 gap-1 rounded-[24px] p-1.5 sm:flex sm:rounded-full">
+      <div role="tablist" aria-label="أقسام الإدارة" className="surface grid grid-cols-2 gap-1 rounded-[24px] p-1.5 sm:grid-cols-3 xl:flex xl:rounded-full">
         {TABS.map((t) => (
           <button
             key={t.key}
@@ -202,10 +206,12 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => Prom
       </div>
 
       <div role="tabpanel">
+        {tab === "stats" ? <StatsTab /> : null}
         {tab === "games" ? <GamesTab /> : null}
         {tab === "questions" ? <QuestionsTab /> : null}
         {tab === "words" ? <WordsTab /> : null}
         {tab === "rooms" ? <RoomsTab /> : null}
+        {tab === "content" ? <ContentTab /> : null}
       </div>
     </div>
   );

@@ -3,7 +3,7 @@ import { GameIcon, Glyph } from "@/components/brand";
 import { Button, Field, cx, inputClass } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { loadGames, type AdminGame } from "./games";
-import { Loading, Notice, SetupNotice, Sheet, dbMessage, needsSetup, selectClass, textareaClass, toList } from "./common";
+import { BulkBar, Check, Loading, Notice, SetupNotice, Sheet, dbMessage, needsSetup, selectClass, textareaClass, toList, useSelection } from "./common";
 
 type Difficulty = "easy" | "medium" | "hard";
 type Question = {
@@ -29,7 +29,10 @@ export function QuestionsTab() {
   const [setup, setSetup] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [catFilter, setCatFilter] = useState("");
+  const [diffFilter, setDiffFilter] = useState("");
   const [editing, setEditing] = useState<Question | "new" | null>(null);
+  const sel = useSelection();
 
   useEffect(() => {
     void loadGames().then(({ data }) => {
@@ -54,18 +57,42 @@ export function QuestionsTab() {
   }
 
   useEffect(() => {
+    sel.clear();
+    setCatFilter("");
     if (slug) void refresh(slug);
     // refresh reads slug; the effect re-runs when the game changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
 
-  const groups = useMemo(() => {
+  const visible = useMemo(() => {
     const q = query.trim();
-    const list = (questions ?? []).filter((item) => !q || item.question_text.includes(q) || item.correct_answer.includes(q) || item.category_ar.includes(q));
+    return (questions ?? []).filter(
+      (item) =>
+        (!q || item.question_text.includes(q) || item.correct_answer.includes(q) || item.category_ar.includes(q)) &&
+        (!catFilter || item.category_ar === catFilter) &&
+        (!diffFilter || item.difficulty === diffFilter),
+    );
+  }, [questions, query, catFilter, diffFilter]);
+
+  const groups = useMemo(() => {
     const map = new Map<string, Question[]>();
-    for (const item of list) map.set(item.category_ar, [...(map.get(item.category_ar) ?? []), item]);
+    for (const item of visible) map.set(item.category_ar, [...(map.get(item.category_ar) ?? []), item]);
     return [...map.entries()];
-  }, [questions, query]);
+  }, [visible]);
+
+  async function bulk(change: Partial<Question> | "delete") {
+    if (!supabase) return;
+    const ids = [...sel.ids];
+    const { error: bulkError } =
+      change === "delete" ? await supabase.from("questions_bank").delete().in("id", ids) : await supabase.from("questions_bank").update(change).in("id", ids);
+    if (bulkError) {
+      setError(dbMessage(bulkError));
+      return;
+    }
+    setError(null);
+    sel.clear();
+    await refresh();
+  }
 
   const categories = useMemo(() => [...new Set((questions ?? []).map((q) => q.category_ar))], [questions]);
 
@@ -103,7 +130,30 @@ export function QuestionsTab() {
             <Glyph name="plus" className="size-[18px]" />
             سؤال جديد
           </Button>
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <select className={cx(selectClass, "min-h-11 py-1 sm:w-48")} value={catFilter} onChange={(e) => setCatFilter(e.target.value)} aria-label="الفئة">
+              <option value="">كل الفئات</option>
+              {categories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <select className={cx(selectClass, "min-h-11 py-1 sm:w-36")} value={diffFilter} onChange={(e) => setDiffFilter(e.target.value)} aria-label="الصعوبة">
+              <option value="">كل الصعوبات</option>
+              {(Object.keys(DIFFICULTY) as Difficulty[]).map((d) => (
+                <option key={d} value={d}>
+                  {DIFFICULTY[d]}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
+      ) : null}
+      {questions && questions.length > 0 ? (
+        <p className="text-[13px] text-mist">
+          يظهر {visible.length} من {questions.length} سؤال. حدّد أسئلة لتعديلها أو حذفها معًا.
+        </p>
       ) : null}
 
       {questions === null ? (
@@ -114,17 +164,43 @@ export function QuestionsTab() {
         groups.map(([category, items]) => (
           <section key={category} className="surface rounded-[24px] p-4 sm:p-5">
             <h3 className="mb-3 flex items-center gap-2 text-[19px]">
+              <Check
+                checked={items.every((q) => sel.has(q.id))}
+                onChange={() => (items.every((q) => sel.has(q.id)) ? sel.setAll([...sel.ids].filter((id) => !items.some((q) => q.id === id))) : sel.setAll([...new Set([...sel.ids, ...items.map((q) => q.id)])]))}
+                label={`تحديد كل أسئلة ${category}`}
+              />
               <span className="rounded-full bg-violet/25 px-3 py-0.5 text-violet-text">{category}</span>
               <span className="text-[13px] font-normal text-mist">{items.length} سؤال</span>
             </h3>
             <ul className="grid gap-2">
               {items.map((q) => (
-                <QuestionRow key={q.id} q={q} onEdit={() => setEditing(q)} onDeleted={() => refresh()} />
+                <QuestionRow key={q.id} q={q} selected={sel.has(q.id)} onSelect={() => sel.toggle(q.id)} onEdit={() => setEditing(q)} onDeleted={() => refresh()} />
               ))}
             </ul>
           </section>
         ))
       )}
+
+      <BulkBar
+        count={sel.ids.size}
+        visible={visible.length}
+        onSelectAll={() => sel.setAll(visible.map((q) => q.id))}
+        onClear={sel.clear}
+        categories={categories}
+        onMove={(category) => bulk({ category_ar: category })}
+        onDelete={() => bulk("delete")}
+      >
+        <BulkPick
+          label="الصعوبة"
+          options={(Object.keys(DIFFICULTY) as Difficulty[]).map((d) => ({ value: d, label: DIFFICULTY[d] }))}
+          onApply={(v) => bulk({ difficulty: v as Difficulty })}
+        />
+        <BulkPick
+          label="النقاط"
+          options={[100, 200, 300, 400, 500].map((n) => ({ value: String(n), label: String(n) }))}
+          onApply={(v) => bulk({ points: Number(v) })}
+        />
+      </BulkBar>
 
       {editing ? (
         <QuestionEditor
@@ -142,7 +218,40 @@ export function QuestionsTab() {
   );
 }
 
-function QuestionRow({ q, onEdit, onDeleted }: { q: Question; onEdit: () => void; onDeleted: () => void }) {
+/** A select that applies its value to the selection as soon as it changes. */
+function BulkPick({ label, options, onApply }: { label: string; options: Array<{ value: string; label: string }>; onApply: (value: string) => Promise<void> }) {
+  return (
+    <select
+      className={cx(selectClass, "min-h-10 !w-36 shrink-0 py-1")}
+      aria-label={label}
+      value=""
+      onChange={(e) => {
+        if (e.target.value) void onApply(e.target.value);
+      }}
+    >
+      <option value="">{label}…</option>
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function QuestionRow({
+  q,
+  selected,
+  onSelect,
+  onEdit,
+  onDeleted,
+}: {
+  q: Question;
+  selected: boolean;
+  onSelect: () => void;
+  onEdit: () => void;
+  onDeleted: () => void;
+}) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -157,8 +266,11 @@ function QuestionRow({ q, onEdit, onDeleted }: { q: Question; onEdit: () => void
   }
 
   return (
-    <li className="grid gap-2 rounded-[16px] border border-line bg-deep-2/50 p-3 sm:grid-cols-[auto_1fr_auto] sm:items-center sm:gap-3">
-      <span className="w-fit rounded-[10px] border border-gold/40 bg-night/50 px-2.5 py-1 text-[15px] font-bold tabular-nums text-gold">{q.points}</span>
+    <li className={cx("grid gap-2 rounded-[16px] border p-3 sm:grid-cols-[auto_1fr_auto] sm:items-center sm:gap-3", selected ? "border-gold/60 bg-gold/5" : "border-line bg-deep-2/50")}>
+      <span className="flex items-center gap-2">
+        <Check checked={selected} onChange={onSelect} label={`تحديد: ${q.question_text}`} />
+        <span className="w-fit rounded-[10px] border border-gold/40 bg-night/50 px-2.5 py-1 text-[15px] font-bold tabular-nums text-gold">{q.points}</span>
+      </span>
       <div className="min-w-0">
         <p className="text-[15px] leading-7 text-ivory">{q.question_text}</p>
         <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-mist">
