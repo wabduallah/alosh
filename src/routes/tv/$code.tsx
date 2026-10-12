@@ -4,7 +4,7 @@ import { Egg, GameIcon, Glyph, Lockup, Mark } from "@/components/brand";
 import { QrCode } from "@/components/qr-code";
 import { buttonBase, buttonTone, cx, joinLink } from "@/components/ui";
 import { ensureSession, supabase } from "@/lib/supabase";
-import { canFight, halbaWinner, nameOf, useSecondsLeft, type HalbaState } from "@/components/halba";
+import { Hearts, canFight, halbaWinner, nameOf, participants, useHalbaCues, useSecondsLeft, type HalbaState } from "@/components/halba";
 
 /**
  * TV screen for a room (/tv/CODE): display only, for the big screen in the room.
@@ -202,7 +202,7 @@ function TvScreen() {
   }, [questions]);
 
   const guests = players.filter((p) => !p.is_host);
-  const ranking = [...guests].sort((a, b) => b.score - a.score);
+  const ranking = [...(isHalba ? participants(state as unknown as HalbaState, players) : guests)].sort((a, b) => b.score - a.score);
   const answered = new Set(state.answered ?? []);
   const active = questions.find((q) => q.id === activeId) ?? null;
   const allDone = isBoard && questions.length > 0 && answered.size >= questions.length;
@@ -812,9 +812,11 @@ function Halba({ state, players }: { state: HalbaState; players: Player[] }) {
   const phase = state.phase ?? "";
   const bidLeft = useSecondsLeft(phase === "bid" ? state.bid_ends_at : null);
   const proveLeft = useSecondsLeft(phase === "prove" ? state.prove_ends_at : null);
-  const guests = players.filter((p) => !p.is_host);
+  const guests = participants(state, players);
   const knocked = state.knocked ?? [];
+  const maxLives = state.max_lives ?? 1;
   const winner = phase === "over" ? halbaWinner(state, players) : null;
+  useHalbaCues(state, { sound: true });
   const duel = Array.isArray(state.duel) && state.duel.length === 2 ? state.duel : null;
   const result = state.result;
 
@@ -877,7 +879,7 @@ function Halba({ state, players }: { state: HalbaState; players: Player[] }) {
             {phase === "result" && result ? (
               <div className={cx("mx-auto rounded-[clamp(18px,1.8vw,32px)] border px-[3vw] py-[2vh]", result.success ? "border-correct/60 bg-correct-fill/20" : "border-wrong/60 bg-wrong-fill/20")}>
                 <p className="font-display text-[clamp(32px,4vw,80px)] font-extrabold">
-                  {result.success ? `${result.bidder_name} نجح!` : `${result.bidder_name} خرج من الحلبة`}
+                  {result.success ? `${result.bidder_name} نجح!` : result.knocked_out ? `${result.bidder_name} خرج من الحلبة` : `${result.bidder_name} خسر محاولة`}
                 </p>
                 <p className="mt-[1vh] text-[clamp(18px,1.8vw,34px)] text-mist">
                   ذكر {result.count} من {result.bid} · {result.success ? "+" : "−"}
@@ -906,6 +908,7 @@ function Halba({ state, players }: { state: HalbaState; players: Player[] }) {
                   )}
                 >
                   <span className="min-w-0 flex-1 truncate font-semibold">{p.player_name}</span>
+                  {!out ? <Hearts left={state.lives?.[p.id] ?? maxLives} max={maxLives} className="text-[0.8em]" /> : null}
                   <span className="font-bold tabular-nums text-gold">{p.score}</span>
                 </li>
               );
