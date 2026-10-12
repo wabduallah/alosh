@@ -1,6 +1,6 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Glyph } from "@/components/brand";
-import { cx, inputClass } from "@/components/ui";
+import { Button, cx, inputClass } from "@/components/ui";
 
 /** Multi-line text field, same look as inputClass. */
 export const textareaClass = cx(inputClass, "min-h-24 py-3 leading-7");
@@ -131,4 +131,131 @@ export function Loading({ label = "جارٍ التحميل…" }: { label?: stri
       {label}
     </p>
   );
+}
+
+/**
+ * Bar for acting on selected items. Sticks to the bottom of the screen while
+ * something is selected. Moving to a category and deleting are built in; pass
+ * other actions as children.
+ */
+export function BulkBar({
+  count,
+  visible,
+  onSelectAll,
+  onClear,
+  categories,
+  onMove,
+  onDelete,
+  children,
+}: {
+  count: number;
+  visible: number;
+  onSelectAll: () => void;
+  onClear: () => void;
+  categories?: string[];
+  onMove?: (category: string) => Promise<void>;
+  onDelete: () => Promise<void>;
+  children?: ReactNode;
+}) {
+  const [category, setCategory] = useState("");
+  const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setConfirm(false), [count]);
+  if (count === 0) return null;
+  async function run(fn: () => Promise<void>) {
+    setBusy(true);
+    await fn();
+    setBusy(false);
+    setConfirm(false);
+  }
+  return (
+    <div role="region" aria-label="إجراءات المحدد" className="sticky bottom-[calc(92px+env(safe-area-inset-bottom))] z-40 grid gap-2 rounded-[20px] border border-gold/50 bg-night/95 p-3 shadow-lift backdrop-blur-md lg:bottom-3">
+      <div className="flex flex-wrap items-center gap-2 text-[14px]">
+        <b className="text-ivory">محدد {count}</b>
+        {count < visible ? (
+          <button type="button" className="min-h-9 rounded-full px-2 text-gold underline-offset-4 hover:underline" onClick={onSelectAll}>
+            حدد كل الظاهر ({visible})
+          </button>
+        ) : null}
+        <button type="button" className="min-h-9 rounded-full px-2 text-mist hover:text-ivory" onClick={onClear}>
+          ألغِ التحديد
+        </button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {onMove ? (
+          <div className="flex min-w-0 flex-1 basis-56 gap-2">
+            <input
+              className={cx(inputClass, "min-h-10 py-1")}
+              list="bulk-categories"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              placeholder="انقل إلى فئة…"
+              aria-label="الفئة الجديدة"
+            />
+            <datalist id="bulk-categories">
+              {(categories ?? []).map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+            <Button tone="quiet" className="min-h-10 shrink-0 px-4" disabled={busy || !category.trim()} onClick={() => run(() => onMove(category.trim()))}>
+              انقل
+            </Button>
+          </div>
+        ) : null}
+        {children}
+        {confirm ? (
+          <>
+            <Button tone="danger" className="min-h-10 px-4" disabled={busy} onClick={() => run(onDelete)}>
+              {busy ? "جارٍ الحذف…" : `احذف ${count} نهائيًا`}
+            </Button>
+            <Button tone="quiet" className="min-h-10 px-4" onClick={() => setConfirm(false)}>
+              إلغاء
+            </Button>
+          </>
+        ) : (
+          <Button tone="quiet" className="min-h-10 px-4" onClick={() => setConfirm(true)}>
+            <Glyph name="trash" className="size-[18px]" />
+            حذف
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** A square checkbox that matches the panel. */
+export function Check({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={onChange}
+      className={cx(
+        "grid size-7 shrink-0 place-items-center rounded-[8px] border transition",
+        checked ? "border-gold bg-gold text-night" : "border-line-strong bg-deep-2/60 text-transparent hover:border-glow",
+      )}
+    >
+      <Glyph name="check" className="size-4" />
+    </button>
+  );
+}
+
+/** Selected ids, with toggle / set-all / clear. */
+export function useSelection() {
+  const [ids, setIds] = useState<Set<string>>(() => new Set());
+  return {
+    ids,
+    has: (id: string) => ids.has(id),
+    toggle: (id: string) =>
+      setIds((cur) => {
+        const next = new Set(cur);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      }),
+    setAll: (list: string[]) => setIds(new Set(list)),
+    clear: () => setIds(new Set()),
+  };
 }

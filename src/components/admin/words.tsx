@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Glyph } from "@/components/brand";
-import { Button, Field, inputClass } from "@/components/ui";
+import { Button, Field, cx, inputClass } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
-import { Loading, Notice, SetupNotice, Sheet, dbMessage, needsSetup, textareaClass, toList } from "./common";
+import { BulkBar, Check, Loading, Notice, SetupNotice, Sheet, dbMessage, needsSetup, selectClass, textareaClass, toList, useSelection } from "./common";
 
 type HeadsWord = { id: string; word: string; category_ar: string | null };
 type Topic = { id: string; title_ar: string; words: string[] };
-type HalbaTopic = { id: string; topic_ar: string; min_answers: number; time_limit_sec: number; category: string | null };
+type HalbaTopic = { id: string; topic_ar: string; min_answers: number; time_limit_sec: number; category: string | null; answers?: string[] };
 
 /** Words for «على راسك» and topics for «برة السالفة». Both need supabase/admin_panel.sql. */
 export function WordsTab() {
@@ -24,6 +24,8 @@ function HeadsWords() {
   const [setup, setSetup] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [query, setQuery] = useState("");
+  const sel = useSelection();
 
   async function refresh() {
     if (!supabase) return;
@@ -42,14 +44,29 @@ function HeadsWords() {
     void refresh();
   }, []);
 
+  const shown = useMemo(() => {
+    const q = query.trim();
+    return (words ?? []).filter((w) => !q || w.word.includes(q) || (w.category_ar ?? "").includes(q));
+  }, [words, query]);
+
+  async function bulk(change: { category_ar: string } | "delete") {
+    if (!supabase) return;
+    const ids = [...sel.ids];
+    const { error: bulkError } =
+      change === "delete" ? await supabase.from("heads_words").delete().in("id", ids) : await supabase.from("heads_words").update(change).in("id", ids);
+    if (bulkError) return setError(dbMessage(bulkError));
+    sel.clear();
+    await refresh();
+  }
+
   const groups = useMemo(() => {
     const map = new Map<string, HeadsWord[]>();
-    for (const w of words ?? []) {
+    for (const w of shown) {
       const key = w.category_ar ?? "بدون فئة";
       map.set(key, [...(map.get(key) ?? []), w]);
     }
     return [...map.entries()];
-  }, [words]);
+  }, [shown]);
 
   async function remove(w: HeadsWord) {
     if (!supabase) return;
@@ -76,6 +93,7 @@ function HeadsWords() {
       </div>
       {setup ? <SetupNotice /> : null}
       {error ? <Notice tone="error">{error}</Notice> : null}
+      {words && words.length > 0 ? <SearchBox value={query} onChange={setQuery} label="ابحث في الكلمات" /> : null}
       {words === null ? (
         <Loading />
       ) : (
@@ -87,8 +105,16 @@ function HeadsWords() {
             </h3>
             <ul className="flex flex-wrap gap-2">
               {items.map((w) => (
-                <li key={w.id} className="inline-flex min-h-10 items-center gap-1 rounded-full border border-line bg-deep-2/60 ps-3.5 pe-1 text-[15px] text-ivory">
-                  {w.word}
+                <li
+                  key={w.id}
+                  className={cx(
+                    "inline-flex min-h-10 items-center gap-1 rounded-full border ps-1 pe-1 text-[15px] text-ivory",
+                    sel.has(w.id) ? "border-gold bg-gold/15" : "border-line bg-deep-2/60",
+                  )}
+                >
+                  <button type="button" role="checkbox" aria-checked={sel.has(w.id)} onClick={() => sel.toggle(w.id)} className="min-h-9 rounded-full ps-2.5 pe-1">
+                    {w.word}
+                  </button>
                   <button
                     type="button"
                     onClick={() => remove(w)}
@@ -103,6 +129,15 @@ function HeadsWords() {
           </div>
         ))
       )}
+      <BulkBar
+        count={sel.ids.size}
+        visible={shown.length}
+        onSelectAll={() => sel.setAll(shown.map((w) => w.id))}
+        onClear={sel.clear}
+        categories={groups.map(([c]) => c).filter((c) => c !== "بدون فئة")}
+        onMove={(category) => bulk({ category_ar: category })}
+        onDelete={() => bulk("delete")}
+      />
       {adding ? (
         <AddWords
           categories={groups.map(([c]) => c).filter((c) => c !== "بدون فئة")}
@@ -321,14 +356,22 @@ function HalbaTopics() {
   const [setup, setSetup] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<HalbaTopic | "new" | null>(null);
+  const [hasAnswers, setHasAnswers] = useState(true);
+  const [query, setQuery] = useState("");
+  const [cat, setCat] = useState("");
+  const [onlyMissing, setOnlyMissing] = useState(false);
+  const sel = useSelection();
 
   async function refresh() {
     if (!supabase) return;
-    const { data, error: loadError } = await supabase
-      .from("alhalba_topics")
-      .select("id, topic_ar, min_answers, time_limit_sec, category")
-      .order("category")
-      .order("topic_ar");
+    const base = "id, topic_ar, min_answers, time_limit_sec, category";
+    const first = await supabase.from("alhalba_topics").select(`${base}, answers`).order("category").order("topic_ar");
+    // Before supabase/admin_v2.sql there is no answers column: load the rest.
+    const noColumn = first.error?.code === "42703";
+    setHasAnswers(!noColumn);
+    const res = noColumn ? await supabase.from("alhalba_topics").select(base).order("category").order("topic_ar") : first;
+    const data = res.data as unknown as HalbaTopic[] | null;
+    const loadError = res.error;
     if (loadError) {
       const missing = needsSetup(loadError) || loadError.code === "42P01" || loadError.code === "PGRST205";
       setSetup(missing);
@@ -350,6 +393,27 @@ function HalbaTopics() {
     const { error: deleteError } = await supabase.from("alhalba_topics").delete().eq("id", t.id);
     if (deleteError) return setError(dbMessage(deleteError, "تعذّر حذف الموضوع."));
     setTopics((current) => (current ?? []).filter((x) => x.id !== t.id));
+  }
+
+  const categories = useMemo(() => [...new Set((topics ?? []).map((t) => t.category).filter((c): c is string => !!c))], [topics]);
+  const shown = useMemo(() => {
+    const q = query.trim();
+    return (topics ?? []).filter(
+      (t) =>
+        (!q || t.topic_ar.includes(q) || (t.answers ?? []).some((a) => a.includes(q))) &&
+        (!cat || (t.category ?? "") === cat) &&
+        (!onlyMissing || (t.answers ?? []).length === 0),
+    );
+  }, [topics, query, cat, onlyMissing]);
+
+  async function bulk(change: { category: string } | "delete") {
+    if (!supabase) return;
+    const ids = [...sel.ids];
+    const { error: bulkError } =
+      change === "delete" ? await supabase.from("alhalba_topics").delete().in("id", ids) : await supabase.from("alhalba_topics").update(change).in("id", ids);
+    if (bulkError) return setError(dbMessage(bulkError));
+    sel.clear();
+    await refresh();
   }
 
   return (
@@ -374,18 +438,53 @@ function HalbaTopics() {
         </Notice>
       ) : null}
       {error ? <Notice tone="error">{error}</Notice> : null}
+      {!hasAnswers && !setup ? (
+        <Notice tone="info">
+          لإضافة إجابات مرجعية تُقبل تلقائيًا في اللعب، شغّل الملف <code dir="ltr" className="rounded bg-night/60 px-1.5 py-0.5 text-[13px]">supabase/admin_v2.sql</code> مرة واحدة.
+        </Notice>
+      ) : null}
+      {topics && topics.length > 0 ? (
+        <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
+          <SearchBox value={query} onChange={setQuery} label="ابحث في المواضيع والإجابات" />
+          <select className={cx(selectClass, "min-h-11 py-1 sm:w-44")} value={cat} onChange={(e) => setCat(e.target.value)} aria-label="الفئة">
+            <option value="">كل الفئات</option>
+            {categories.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+          {hasAnswers ? (
+            <label className="inline-flex min-h-11 items-center gap-2 text-[14px] text-ivory">
+              <input type="checkbox" className="size-5 accent-[var(--color-gold)]" checked={onlyMissing} onChange={(e) => setOnlyMissing(e.target.checked)} />
+              بدون إجابات فقط
+            </label>
+          ) : null}
+        </div>
+      ) : null}
       {topics === null ? (
         <Loading />
-      ) : topics.length > 0 ? (
+      ) : shown.length > 0 ? (
         <ul className="surface grid gap-2 rounded-[22px] p-3 sm:p-4">
-          {topics.map((t) => (
-            <li key={t.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[14px] border border-line bg-deep-2/50 px-3 py-2">
-              <span className="min-w-0 flex-1 text-[15px] text-ivory">{t.topic_ar}</span>
-              {t.category ? <span className="rounded-full bg-violet/25 px-2.5 py-0.5 text-[12px] text-violet-text">{t.category}</span> : null}
-              <span className="text-[13px] text-mist">
-                يبدأ من {t.min_answers} · {t.time_limit_sec} ث
-              </span>
-              <span className="flex gap-1">
+          {shown.map((t) => (
+            <li
+              key={t.id}
+              className={cx("flex items-center gap-3 rounded-[14px] border px-3 py-2", sel.has(t.id) ? "border-gold/60 bg-gold/5" : "border-line bg-deep-2/50")}
+            >
+              <Check checked={sel.has(t.id)} onChange={() => sel.toggle(t.id)} label={`تحديد: ${t.topic_ar}`} />
+              <div className="min-w-0 flex-1">
+                <p className="text-[15px] leading-6 text-ivory">{t.topic_ar}</p>
+                <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-mist">
+                  {t.category ? <span className="rounded-full bg-violet/25 px-2.5 py-0.5 text-[12px] text-violet-text">{t.category}</span> : null}
+                  <span>
+                    يبدأ من {t.min_answers} · {t.time_limit_sec} ث
+                  </span>
+                  {hasAnswers ? (
+                    <span className={(t.answers ?? []).length === 0 ? "text-gold" : ""}>{(t.answers ?? []).length ? `${(t.answers ?? []).length} إجابة مرجعية` : "بدون إجابات"}</span>
+                  ) : null}
+                </p>
+              </div>
+              <span className="flex shrink-0 gap-1">
                 <Button tone="quiet" className="min-h-10 px-3" onClick={() => setEditing(t)} aria-label={`تعديل ${t.topic_ar}`}>
                   <Glyph name="edit" className="size-[18px]" />
                 </Button>
@@ -396,11 +495,23 @@ function HalbaTopics() {
             </li>
           ))}
         </ul>
+      ) : topics.length > 0 ? (
+        <p className="text-[14px] text-mist">لا مواضيع تطابق البحث.</p>
       ) : null}
+      <BulkBar
+        count={sel.ids.size}
+        visible={shown.length}
+        onSelectAll={() => sel.setAll(shown.map((t) => t.id))}
+        onClear={sel.clear}
+        categories={categories}
+        onMove={(category) => bulk({ category })}
+        onDelete={() => bulk("delete")}
+      />
       {editing ? (
         <HalbaTopicEditor
+          hasAnswers={hasAnswers}
           topic={editing === "new" ? null : editing}
-          categories={[...new Set((topics ?? []).map((t) => t.category).filter((c): c is string => !!c))]}
+          categories={categories}
           onClose={() => setEditing(null)}
           onSaved={async () => {
             setEditing(null);
@@ -413,11 +524,13 @@ function HalbaTopics() {
 }
 
 function HalbaTopicEditor({
+  hasAnswers,
   topic,
   categories,
   onClose,
   onSaved,
 }: {
+  hasAnswers: boolean;
   topic: HalbaTopic | null;
   categories: string[];
   onClose: () => void;
@@ -427,13 +540,22 @@ function HalbaTopicEditor({
   const [min, setMin] = useState(topic?.min_answers ?? 3);
   const [seconds, setSeconds] = useState(topic?.time_limit_sec ?? 30);
   const [category, setCategory] = useState(topic?.category ?? "");
+  const [answers, setAnswers] = useState((topic?.answers ?? []).join("\n"));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function save(event: FormEvent) {
     event.preventDefault();
     if (!supabase) return;
-    const row = { topic_ar: text.trim(), min_answers: Math.round(min), time_limit_sec: Math.round(seconds), category: category.trim() || null };
+    const list = [...new Set(toList(answers))];
+    const row = {
+      topic_ar: text.trim(),
+      min_answers: Math.round(min),
+      time_limit_sec: Math.round(seconds),
+      category: category.trim() || null,
+      ...(hasAnswers ? { answers: list } : {}),
+    };
+    if (list.length > 400) return setError("الإجابات حدها 400.");
     if (row.topic_ar.length < 3) return setError("اكتب الموضوع.");
     if (!(row.min_answers >= 1 && row.min_answers <= 30)) return setError("أقل مزايدة بين 1 و30.");
     if (!(row.time_limit_sec >= 10 && row.time_limit_sec <= 180)) return setError("الوقت بين 10 و180 ثانية.");
@@ -469,11 +591,26 @@ function HalbaTopicEditor({
             <option key={c} value={c} />
           ))}
         </datalist>
+        {hasAnswers ? (
+          <Field label={`الإجابات المرجعية (${toList(answers).length})`} hint="إجابة في كل سطر. ما يكتبه اللاعب ويطابق إحداها يُقبل تلقائيًا (بدون تشكيل أو «ال»)، والباقي يحكم عليه الحَكَم. لا تظهر للاعبين.">
+            <textarea className={textareaClass} value={answers} onChange={(e) => setAnswers(e.target.value)} rows={8} />
+          </Field>
+        ) : null}
         {error ? <Notice tone="error">{error}</Notice> : null}
         <Button type="submit" tone="primary" className="min-h-14 text-[17px]" disabled={busy}>
           {busy ? "جارٍ الحفظ…" : topic ? "حفظ التعديل" : "أضف الموضوع"}
         </Button>
       </form>
     </Sheet>
+  );
+}
+
+function SearchBox({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
+  return (
+    <label className="relative min-w-0 flex-1 basis-60">
+      <span className="sr-only">{label}</span>
+      <input className={cx(inputClass, "min-h-11 ps-10")} value={value} onChange={(e) => onChange(e.target.value)} placeholder={label} />
+      <Glyph name="search" className="pointer-events-none absolute start-3 top-1/2 size-5 -translate-y-1/2 text-faint" />
+    </label>
   );
 }

@@ -71,7 +71,7 @@ export type HalbaState = {
   stats?: HalbaStats;
   result?: HalbaResult | null;
 };
-export type HalbaAnswer = { n: number; text: string; status: "pending" | "ok" | "no"; by?: string | null; steal?: boolean };
+export type HalbaAnswer = { n: number; text: string; status: "pending" | "ok" | "no"; by?: string | null; steal?: boolean; auto?: boolean };
 export type HalbaPlayer = { id: string; player_name: string; score: number; is_host: boolean; team_color?: string | null };
 
 export const HALBA_ERRORS: Record<string, string> = {
@@ -880,12 +880,15 @@ function JudgeControls({ roomId, state, reload, compact = false }: { roomId: str
 
   return (
     <div className="grid gap-3 rounded-[22px] border border-gold/40 bg-gold/5 p-4">
-      <p className="text-[14px] font-semibold text-gold">أنت الحَكَم: ✓ للإجابة الصحيحة، ✗ للخاطئة</p>
+      <p className="text-[14px] font-semibold text-gold">أنت الحَكَم: ✓ للإجابة الصحيحة، ✗ للخاطئة. «تلقائي» قُبلت من قائمة الموضوع، وتقدر ترفضها.</p>
       {answers.length > 0 ? (
         <ul className="grid gap-2">
           {answers.map((a) => (
             <li key={a.n} className={cx("flex items-center gap-2 rounded-[14px] border px-3 py-1.5", STATUS_STYLE[a.status])}>
-              <span className="min-w-0 flex-1 truncate text-start text-[17px] font-semibold">{a.text}</span>
+              <span className="min-w-0 flex-1 truncate text-start text-[17px] font-semibold">
+                {a.text}
+                {a.auto ? <span className="ms-2 text-[12px] font-normal text-correct">تلقائي</span> : null}
+              </span>
               <button
                 type="button"
                 onClick={() => act("halba_mark", { p_n: a.n, p_ok: true })}
