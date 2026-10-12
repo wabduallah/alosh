@@ -183,6 +183,7 @@ export const GAME_STYLE: Record<string, { c1: string; c2: string; ink: "light" |
   outsider: { c1: "#1f9a74", c2: "#0e5244", ink: "light" },
   "social-mafia": { c1: "#2b63e0", c2: "#163a9a", ink: "light" },
   "word-guess": { c1: "#1e3f9c", c2: "#0e2667", ink: "light" },
+  "hex-letters": { c1: "#b4531a", c2: "#6b2a12", ink: "light" },
   "secret-code": { c1: "#5b3fd0", c2: "#2a1d7a", ink: "light" },
   "one-word": { c1: "#0f7f8a", c2: "#0b4352", ink: "light" },
 };

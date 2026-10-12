@@ -14,6 +14,14 @@ type Stats = {
   content: { questions: Record<string, number>; heads_words: number; outsider_topics: number; halba_topics: number; halba_with_answers: number };
 };
 
+type FunnelRow = { opened: number; joined: number; started: number; finished: number; avg_people: number | null; avg_minutes: number | null };
+type Funnel = {
+  since: string;
+  tracking_from: string;
+  totals: FunnelRow;
+  by_game: Array<FunnelRow & { slug: string; title: string }>;
+};
+
 const RANGES = [7, 30, 90];
 const num = new Intl.NumberFormat("ar-u-nu-latn");
 const dayLabel = new Intl.DateTimeFormat("ar-u-nu-latn", { day: "numeric", month: "short", timeZone: "UTC" });
@@ -25,12 +33,18 @@ export function StatsTab() {
   const [setup, setSetup] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // null: not loaded yet; false: needs supabase/polish_v1.sql.
+  const [funnel, setFunnel] = useState<Funnel | null | false>(null);
 
   async function refresh(range = days) {
     if (!supabase) return;
     setLoading(true);
-    const { data, error: rpcError } = await supabase.rpc("admin_stats", { p_days: range });
+    const [{ data, error: rpcError }, f] = await Promise.all([
+      supabase.rpc("admin_stats", { p_days: range }),
+      supabase.rpc("admin_funnel", { p_days: range }),
+    ]);
     setLoading(false);
+    setFunnel(f.error ? false : (f.data as Funnel));
     if (rpcError) {
       setSetup(needsSetup(rpcError));
       setError(needsSetup(rpcError) ? null : dbMessage(rpcError, "تعذّر تحميل الإحصاءات."));
@@ -78,12 +92,12 @@ export function StatsTab() {
       {error ? <Notice tone="error">{error}</Notice> : null}
 
       {!stats && !setup && !error ? <Loading /> : null}
-      {stats ? <StatsBody stats={stats} /> : null}
+      {stats ? <StatsBody stats={stats} funnel={funnel} /> : null}
     </div>
   );
 }
 
-function StatsBody({ stats }: { stats: Stats }) {
+function StatsBody({ stats, funnel }: { stats: Stats; funnel: Funnel | null | false }) {
   const t = stats.totals;
   const finishedShare = t.rooms > 0 ? Math.round((t.finished / t.rooms) * 100) : 0;
   return (
@@ -110,6 +124,18 @@ function StatsBody({ stats }: { stats: Stats }) {
         <Tile label="انتهت" value={num.format(t.finished)} sub={t.rooms ? `${finishedShare}% من الغرف` : undefined} />
         <Tile label="متوسط الأشخاص في الغرفة" value={num.format(t.avg_people)} sub={`${num.format(t.people)} انضمام بالمجموع`} />
       </div>
+
+      <Panel title="من الفتح إلى النهاية" note="الغرف التي أُنشئت في المدة المختارة، منذ بدء القياس. الغرف المهجورة 6 ساعات تُغلق ولا تُحسب منتهية.">
+        {funnel === false ? (
+          <p className="text-[14px] text-mist">
+            يحتاج الملف <code dir="ltr" className="rounded bg-night/60 px-1.5 py-0.5 text-[13px]">supabase/polish_v1.sql</code>. بعد تشغيله يبدأ القياس من تلك اللحظة.
+          </p>
+        ) : funnel ? (
+          <FunnelView funnel={funnel} />
+        ) : (
+          <Loading />
+        )}
+      </Panel>
 
       <Panel title="الغرف يومًا بيوم" note="بتوقيت الرياض">
         <Bars
@@ -254,5 +280,80 @@ function Content({ stats }: { stats: Stats }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+const STEPS: Array<{ key: "opened" | "joined" | "started" | "finished"; label: string }> = [
+  { key: "opened", label: "فُتحت" },
+  { key: "joined", label: "دخلها لاعبون" },
+  { key: "started", label: "بدأت اللعبة" },
+  { key: "finished", label: "أنهاها المضيف" },
+];
+const fullDate = new Intl.DateTimeFormat("ar-u-nu-latn", { day: "numeric", month: "long", hour: "numeric", minute: "2-digit", timeZone: "Asia/Riyadh" });
+const pct = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / whole) * 100)}%` : "—");
+
+/** The room funnel: totals as bars, then one row per game. */
+function FunnelView({ funnel }: { funnel: Funnel }) {
+  const t = funnel.totals;
+  if (!t.opened) {
+    return <p className="py-4 text-[14px] text-mist">لا توجد غرف منذ بدء القياس ({fullDate.format(new Date(funnel.tracking_from))}).</p>;
+  }
+  return (
+    <div className="grid gap-4">
+      <ol className="grid gap-2">
+        {STEPS.map((step) => (
+          <li key={step.key} className="grid grid-cols-[110px_1fr_auto] items-center gap-3 text-[14px]">
+            <span className="text-mist">{step.label}</span>
+            <span className="h-3 rounded-full bg-deep-2/80">
+              <span className="block h-full rounded-full bg-gold/80" style={{ width: `${(t[step.key] / t.opened) * 100}%`, minWidth: t[step.key] ? 4 : 0 }} />
+            </span>
+            <span className="tabular-nums text-ivory">
+              <b>{num.format(t[step.key])}</b> <span className="text-[12px] text-mist">{pct(t[step.key], t.opened)}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+      <p className="text-[13px] text-mist">
+        متوسط اللاعبين في الغرف التي بدأت: <b className="text-ivory tabular-nums">{t.avg_people ?? "—"}</b> · متوسط مدة اللعب:{" "}
+        <b className="text-ivory tabular-nums">{t.avg_minutes != null ? `${t.avg_minutes} دقيقة` : "—"}</b>
+      </p>
+      <div className="-mx-1 overflow-x-auto px-1">
+        <table className="w-full min-w-[520px] text-[14px]">
+          <thead>
+            <tr className="text-start text-[12px] text-mist">
+              <th className="py-2 text-start font-semibold">اللعبة</th>
+              {STEPS.map((s) => (
+                <th key={s.key} className="py-2 font-semibold">
+                  {s.label}
+                </th>
+              ))}
+              <th className="py-2 font-semibold">لاعبين</th>
+              <th className="py-2 font-semibold">دقائق</th>
+            </tr>
+          </thead>
+          <tbody>
+            {funnel.by_game.map((g) => (
+              <tr key={g.slug} className="border-t border-line">
+                <td className="py-2">
+                  <span className="flex items-center gap-2">
+                    <GameIcon id={g.slug} size="sm" className="size-8!" />
+                    <span className="truncate font-semibold text-ivory">{g.title}</span>
+                  </span>
+                </td>
+                {STEPS.map((s) => (
+                  <td key={s.key} className="py-2 text-center tabular-nums text-ivory">
+                    {num.format(g[s.key])}
+                    {s.key !== "opened" ? <span className="block text-[11px] text-mist">{pct(g[s.key], g.opened)}</span> : null}
+                  </td>
+                ))}
+                <td className="py-2 text-center tabular-nums text-ivory">{g.avg_people ?? "—"}</td>
+                <td className="py-2 text-center tabular-nums text-ivory">{g.avg_minutes ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[12px] text-faint">بدأ القياس: {fullDate.format(new Date(funnel.tracking_from))}</p>
+    </div>
   );
 }

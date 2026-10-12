@@ -59,26 +59,21 @@ function PageBack() {
   );
 }
 
-type RoutePath = "/" | "/questions" | "/rank" | "/settings";
-const NAV: Array<{ to: RoutePath | "/#games"; key: string; icon: string; hash?: boolean }> = [
+type RoutePath = "/" | "/games" | "/join" | "/settings";
+/** Main links. The question bank and the leaderboard stay reachable by URL but leave the menus until they have content. */
+const NAV: Array<{ to: RoutePath; key: string; icon: string }> = [
   { to: "/", key: "nav.home", icon: "home" },
-  { to: "/#games", key: "nav.games", icon: "gamepad", hash: true },
-  { to: "/questions", key: "nav.questions", icon: "question" },
-  { to: "/rank", key: "nav.rank", icon: "trophy" },
+  { to: "/games", key: "nav.games", icon: "gamepad" },
+  { to: "/join", key: "nav.joinTab", icon: "phone" },
   { to: "/settings", key: "nav.settings", icon: "gear" },
 ];
 
+/** A tab is active on its own page and, for the games tab, on every game page. */
+const isActive = (to: RoutePath, path: string) => (to === "/" ? path === "/" : path === to || path.startsWith(`${to}/`));
+
 function NavLink({ item, active, className, children }: { item: (typeof NAV)[number]; active: boolean; className?: string; children: ReactNode }) {
-  // In-page anchors are plain links; real routes go through the router.
-  if (item.hash) {
-    return (
-      <a href={item.to} className={className}>
-        {children}
-      </a>
-    );
-  }
   return (
-    <Link to={item.to as RoutePath} className={className} aria-current={active ? "page" : undefined}>
+    <Link to={item.to} className={className} aria-current={active ? "page" : undefined}>
       {children}
     </Link>
   );
@@ -113,7 +108,7 @@ function SiteHeader({ t, lang, setLang, paper = false, onMenu }: { t: T; lang: L
 
         <nav aria-label="Main" className="mx-auto hidden items-center gap-1 lg:flex">
           {NAV.map((item) => {
-            const active = !item.hash && item.to === path;
+            const active = isActive(item.to, path);
             return (
               <NavLink
                 key={item.to}
@@ -175,7 +170,7 @@ function MenuSheet({ t, lang, setLang, onClose }: { t: T; lang: Lang; setLang: (
         <div aria-hidden="true" className="mx-auto mb-4 h-[5px] w-10 rounded-full bg-line-strong" />
         <nav aria-label="Main" className="grid gap-1" onClick={onClose}>
           {NAV.map((item) => {
-            const active = !item.hash && item.to === path;
+            const active = isActive(item.to, path);
             return (
               <NavLink key={item.to} item={item} active={active} className={cx(row, active ? "text-gold" : "text-ivory")}>
                 <Glyph name={item.icon} className="size-5" />
@@ -183,10 +178,6 @@ function MenuSheet({ t, lang, setLang, onClose }: { t: T; lang: Lang; setLang: (
               </NavLink>
             );
           })}
-          <Link to="/join" className={cx(row, "text-ivory")}>
-            <Glyph name="phone" className="size-5" />
-            {t("nav.join")}
-          </Link>
         </nav>
         <div className="mt-3 flex items-center gap-3 border-t border-line pt-4">
           <LangToggle lang={lang} setLang={setLang} className="grid" />
@@ -207,7 +198,7 @@ function TabBar({ t }: { t: T }) {
     <nav aria-label="Tabs" className="fixed inset-x-0 bottom-0 z-30 px-3 pb-[max(10px,env(safe-area-inset-bottom))] lg:hidden">
       <div className="surface mx-auto flex max-w-xl items-stretch gap-1 rounded-[22px] p-1.5 backdrop-blur-xl">
         {NAV.map((item) => {
-          const active = !item.hash && item.to === path;
+          const active = isActive(item.to, path);
           return (
             <NavLink
               key={item.to}
@@ -259,15 +250,20 @@ function SiteFooter({ brand, t }: { brand: string; t: T }) {
           <p className="sr-only">{brand}</p>
           <p className="max-w-xs text-[14px] leading-[24px] text-mist">العب، نافس، وابتكر. ألعاب مجانية بالكامل.</p>
         </div>
-        <nav className="flex flex-wrap gap-x-6">
-          <Link to="/questions" className={link}>
-            بنك الأسئلة
+        <nav aria-label="روابط" className="flex flex-wrap gap-x-6 lg:col-span-2 lg:justify-end">
+          <Link to="/games" className={link}>
+            {t("nav.games")}
           </Link>
-          <Link to="/rank" className={link}>
-            {t("nav.rank")}
+          <Link to="/join" className={link}>
+            {t("nav.join")}
+          </Link>
+          <Link to="/play" search={{ game: "" }} className={link}>
+            {t("nav.play")}
+          </Link>
+          <Link to="/settings" className={link}>
+            {t("nav.settings")}
           </Link>
         </nav>
-        <p className="text-[14px] text-mist">الحالة: متصل بالخادم عند فتح غرفة.</p>
       </div>
       <p className="flex items-center justify-center gap-1.5 border-t border-line px-4 py-4 text-center font-display text-[15px] font-bold text-ivory">
         حيث تلتقي التحديات بالمتعة الجماعية
