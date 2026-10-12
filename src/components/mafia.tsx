@@ -16,9 +16,11 @@ export type MafiaSettings = {
   jester?: boolean;
   mayor?: boolean;
   bodyguard?: boolean;
+  sniper?: boolean;
+  seer?: boolean;
 };
 export type MafiaVote = { voter: string; target: string; weight: number };
-export type MafiaLogEntry = { round: number; type: "night" | "vote"; text: string; votes?: MafiaVote[] };
+export type MafiaLogEntry = { round: number; type: "night" | "vote" | "shot"; text: string; votes?: MafiaVote[] };
 export type MafiaPublicState = {
   phase?: string;
   round?: number;
@@ -30,6 +32,8 @@ export type MafiaPublicState = {
   last_votes?: MafiaVote[] | null;
   day_ends_at?: string | null;
   log?: MafiaLogEntry[];
+  last_shot?: { text: string; at: string } | null;
+  last_settings?: MafiaSettings | null;
 };
 export type MafiaPlayerRow = { player_id: string; player_name: string; alive: boolean; player_role: string | null; is_mayor?: boolean };
 
@@ -41,6 +45,8 @@ export const ROLE_NAMES: Record<string, string> = {
   jester: "مهرّج",
   mayor: "العمدة",
   bodyguard: "حارس",
+  sniper: "قنّاص",
+  seer: "عرّافة",
 };
 export const ROLE_ICONS: Record<string, string> = {
   mafia: "🔪",
@@ -50,6 +56,8 @@ export const ROLE_ICONS: Record<string, string> = {
   jester: "🃏",
   mayor: "👑",
   bodyguard: "🛡️",
+  sniper: "🎯",
+  seer: "🔮",
 };
 export const ROLE_HINTS: Record<string, string> = {
   mafia: "كل ليلة اتفقوا مع زملائكم على ضحية. ترون اختيارات بعض هنا. نهارًا لا تكشفوا أنفسكم.",
@@ -59,6 +67,8 @@ export const ROLE_HINTS: Record<string, string> = {
   jester: "أنت المهرّج: تفوز وحدك إذا أقصوك بالتصويت. خلّهم يشكّون فيك… بدون ما تكشف نفسك.",
   mayor: "الكل يعرف أنك العمدة، وصوتك بصوتين. انتبه: المافيا تعرفك أيضًا.",
   bodyguard: "كل ليلة احرس لاعبًا. إذا هاجمته المافيا تموت أنت بدلًا منه.",
+  sniper: "معك رصاصة واحدة في المباراة، تطلقها في النهار على من تشكّ فيه. لا يعرف أحد من أطلقها.",
+  seer: "مرة واحدة في المباراة تعرف دور لاعب خرج من اللعبة. استخدمها في الوقت المناسب.",
 };
 
 export const WINNERS: Record<string, string> = {
@@ -97,7 +107,10 @@ export function narratorLine(state: MafiaPublicState, rows: MafiaPlayerRow[]) {
     if (s.bodyguard) parts.push("الحارس: من تحرس؟");
     return parts.join(" ");
   }
-  if (phase === "day") return `طلع الصباح… افتحوا أعينكم. ${state.last_result ?? ""} والآن ناقشوا: من بينكم المافيا؟`;
+  if (phase === "day") {
+    const night = [...(state.log ?? [])].reverse().find((l) => l.type === "night")?.text ?? (state.last_shot ? "" : (state.last_result ?? ""));
+    return `طلع الصباح… افتحوا أعينكم. ${night} والآن ناقشوا: من بينكم المافيا؟`;
+  }
   if (phase === "vote") {
     if (Array.isArray(state.runoff)) {
       const names = rows.filter((r) => state.runoff?.includes(r.player_id)).map((r) => r.player_name).join(" و");
@@ -162,6 +175,20 @@ export function useMafiaCues(state: MafiaPublicState, rows: MafiaPlayerRow[], vo
     // Only a new phase, round or runoff cues a sound.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.phase, state.round, state.runoff?.join(","), voice]);
+
+  // The sniper's shot: a bang, and the narrator says what happened.
+  const lastShot = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const at = state.last_shot?.at ?? null;
+    if (lastShot.current === undefined) {
+      lastShot.current = at;
+      return;
+    }
+    if (!at || at === lastShot.current) return;
+    lastShot.current = at;
+    playCue("gavel");
+    if (voice && state.last_shot?.text) speak(state.last_shot.text);
+  }, [state.last_shot?.at, state.last_shot?.text, voice]);
 }
 
 /** Who voted for whom, grouped by the player they voted for. */
@@ -214,7 +241,7 @@ export function MafiaSummary({ state, rows, big = false }: { state: MafiaPublicS
                 .filter((l) => l.round === r)
                 .map((l, i) => (
                   <p key={i} className="leading-relaxed text-ivory">
-                    <span aria-hidden="true">{l.type === "night" ? "🌙 " : "🗳️ "}</span>
+                    <span aria-hidden="true">{l.type === "night" ? "🌙 " : l.type === "shot" ? "🎯 " : "🗳️ "}</span>
                     {l.text}
                     {l.votes && l.votes.length > 0 ? (
                       <span className="block text-mist">

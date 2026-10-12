@@ -946,6 +946,8 @@ type MafiaMe = {
   my_pick?: string | null;
   last_save?: string | null;
   self_save_used?: boolean | null;
+  shot_used?: boolean | null;
+  seer_result?: { name: string; role: string } | null;
 };
 type MafiaRow = MafiaPlayerRow;
 type MafiaPick = { player_name: string; target_id: string; target_name: string };
@@ -959,6 +961,8 @@ const MAFIA_PLAYER_ERRORS: Record<string, string> = {
   SAME_SAVE: "لا تقدر تحمي نفس اللاعب ليلتين متتاليتين.",
   SELF_USED: "حميت نفسك من قبل. حماية النفس مرة واحدة في المباراة.",
   NOT_IN_RUNOFF: "إعادة التصويت بين المتعادلين فقط.",
+  USED: "استخدمتها من قبل في هذه المباراة.",
+  NOT_DEAD: "اختر لاعبًا خرج من اللعبة.",
 };
 
 function MafiaPlayerPanel({ roomId, meId, state }: { roomId: string; meId: string | null; state: StateData }) {
@@ -1058,6 +1062,27 @@ function MafiaPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
     }
   }
 
+  const [aim, setAim] = useState<string | null>(null);
+  async function special(fn: "mafia_shoot" | "mafia_seer", target: string) {
+    if (!supabase || busy) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const { data, error } = await supabase.rpc(fn, { p_room_id: roomId, p_target_id: target });
+      if (error) throw error;
+      const result = data as { ok: boolean; reason?: string };
+      if (!result.ok) setMessage(MAFIA_PLAYER_ERRORS[result.reason ?? ""] ?? "تعذّر تنفيذ الاختيار.");
+      setAim(null);
+    } catch {
+      setMessage("تعذّر تنفيذ الاختيار.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const dead = rows.filter((p) => !p.alive);
+  const showSniper = iAmAlive && role === "sniper" && phase === "day" && !me?.shot_used;
+  const showSeer = iAmAlive && role === "seer" && phase !== "over" && phase !== "" && !me?.seer_result;
+
   const chosenName = rows.find((p) => p.player_id === picked)?.player_name ?? null;
   const over = phase === "over";
   const split = role === "mafia" && phase === "night" && new Set(picks.map((x) => x.target_id)).size > 1;
@@ -1126,6 +1151,65 @@ function MafiaPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
         <p className="mt-3 text-sm text-muted">
           صوّت <b className="tabular-nums text-ivory">{progress.done ?? 0}</b> من <b className="tabular-nums text-ivory">{progress.total ?? 0}</b>
         </p>
+      ) : null}
+
+      {role === "seer" && me?.seer_result ? (
+        <p className="mt-4 rounded-2xl border border-violet-text/40 bg-violet-fill/10 p-3 text-sm text-ivory">
+          🔮 {me.seer_result.name} كان <b>{ROLE_NAMES[me.seer_result.role] ?? ""}</b>
+        </p>
+      ) : null}
+      {role === "sniper" && me?.shot_used ? <p className="mt-4 text-sm text-muted">🎯 أطلقت رصاصتك.</p> : null}
+
+      {showSniper ? (
+        <div className="mt-5 rounded-2xl border border-wrong/40 bg-wrong-fill/10 p-4">
+          <p className="text-sm font-bold text-ivory">🎯 رصاصتك الوحيدة: على من تطلقها؟</p>
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            {rows
+              .filter((p) => p.alive && p.player_id !== meId)
+              .map((p) => (
+                <button
+                  key={p.player_id}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setAim(aim === p.player_id ? null : p.player_id)}
+                  aria-pressed={aim === p.player_id}
+                  className={cx("min-h-11 rounded-full border px-4 text-sm font-bold", aim === p.player_id ? "border-wrong bg-wrong-fill/30 text-ivory" : "border-line text-ivory")}
+                >
+                  {p.is_mayor ? "👑 " : ""}
+                  {p.player_name}
+                </button>
+              ))}
+          </div>
+          {aim ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => special("mafia_shoot", aim)}
+              className="mt-3 min-h-12 rounded-full bg-[linear-gradient(90deg,#ff5a7a,#c21d4f)] px-6 text-sm font-extrabold text-ivory disabled:opacity-50"
+            >
+              أطلق على {rows.find((p) => p.player_id === aim)?.player_name}
+            </button>
+          ) : (
+            <p className="mt-2 text-xs text-muted">مرة واحدة في المباراة، ولا يعرف أحد من أطلقها.</p>
+          )}
+        </div>
+      ) : null}
+
+      {showSeer ? (
+        <div className="mt-5 rounded-2xl border border-violet-text/40 bg-violet-fill/10 p-4">
+          <p className="text-sm font-bold text-ivory">🔮 اكشف دور لاعب خرج (مرة واحدة)</p>
+          {dead.length === 0 ? (
+            <p className="mt-2 text-xs text-muted">لم يخرج أحد بعد.</p>
+          ) : (
+            <div className="mt-3 flex flex-wrap justify-center gap-2">
+              {dead.map((p) => (
+                <button key={p.player_id} type="button" disabled={busy} onClick={() => special("mafia_seer", p.player_id)} className="min-h-11 rounded-full border border-line px-4 text-sm font-bold text-ivory">
+                  {p.player_name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       ) : null}
 
       {canAct ? (
