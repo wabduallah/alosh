@@ -12,6 +12,7 @@ import { WordsTab } from "@/components/admin/words";
 import { RoomsTab } from "@/components/admin/rooms";
 import { StatsTab } from "@/components/admin/stats";
 import { ContentTab } from "@/components/admin/content";
+import { SiteTab } from "@/components/admin/site";
 
 /**
  * Admin panel. Sign-in is a Supabase email/password account whose
@@ -24,7 +25,7 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-type Tab = "stats" | "games" | "questions" | "words" | "content" | "rooms";
+type Tab = "stats" | "games" | "questions" | "words" | "content" | "rooms" | "site";
 const TABS: Array<{ key: Tab; label: string; icon: string }> = [
   { key: "stats", label: "الإحصاءات", icon: "fire" },
   { key: "rooms", label: "الغرف", icon: "tv" },
@@ -32,6 +33,7 @@ const TABS: Array<{ key: Tab; label: string; icon: string }> = [
   { key: "questions", label: "بنك الأسئلة", icon: "question" },
   { key: "words", label: "الكلمات والمواضيع", icon: "edit" },
   { key: "content", label: "الاستيراد والجودة", icon: "copy" },
+  { key: "site", label: "الموقع", icon: "gear" },
 ];
 
 function isAdmin(session: Session | null) {
@@ -212,6 +214,7 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => Prom
         {tab === "words" ? <WordsTab /> : null}
         {tab === "rooms" ? <RoomsTab /> : null}
         {tab === "content" ? <ContentTab /> : null}
+        {tab === "site" ? <SiteTab /> : null}
       </div>
     </div>
   );

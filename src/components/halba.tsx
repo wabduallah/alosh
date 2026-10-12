@@ -4,6 +4,7 @@ import { HalbaShare } from "@/components/halba-share";
 import { Button, cx, inputClass } from "@/components/ui";
 import { playCue } from "@/lib/sfx";
 import { supabase } from "@/lib/supabase";
+import { useSiteSettings } from "@/lib/site-settings";
 
 /**
  * «الحلبة»: shared state shape, helpers, and the host and player panels.
@@ -978,6 +979,19 @@ export function HalbaHostPanel({ roomId, roomCode, roomStatus }: { roomId: strin
   const hostId = players.find((p) => p.is_host)?.id ?? null;
   useHalbaCues(state, { sound: true, meId: hostId });
 
+  // The admin's defaults (admin panel → الموقع) preselect the setup; the host can still change them.
+  const site = useSiteSettings();
+  const appliedDefaults = useRef(false);
+  useEffect(() => {
+    const d = site?.game_defaults?.alhalba;
+    if (!d || appliedDefaults.current) return;
+    appliedDefaults.current = true;
+    if (d.mode === "ffa" || d.mode === "duel" || d.mode === "teams") setMode(d.mode);
+    if (typeof d.rounds === "number" && [3, 5, 7, 10].includes(d.rounds)) setRounds(d.rounds);
+    if (typeof d.lives === "number" && d.lives >= 1 && d.lives <= 3) setLives(d.lives);
+    if (typeof d.host_plays === "boolean") setHostPlays(d.host_plays);
+  }, [site]);
+
   // Topic categories for the setup (needs alhalba_v4.sql; hidden until it is applied).
   useEffect(() => {
     if (!supabase) return;
@@ -1259,7 +1273,7 @@ function Choice({ label, value, options, onChange }: { label: string; value: str
             role="radio"
             aria-checked={value === o.value}
             onClick={() => onChange(o.value)}
-            className={cx("min-h-11 flex-1 rounded-full px-2 text-[14px] font-semibold transition sm:px-3 sm:text-[15px]", value === o.value ? "btn-gold" : "text-mist hover:text-ivory")}
+            className={cx("min-h-11 flex-1 rounded-full px-1.5 text-[13px] font-semibold whitespace-nowrap transition sm:px-3 sm:text-[15px]", value === o.value ? "btn-gold" : "text-mist hover:text-ivory")}
           >
             {o.label}
           </button>
