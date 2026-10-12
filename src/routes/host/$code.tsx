@@ -1179,6 +1179,7 @@ const MAFIA_HOST_ERRORS: Record<string, string> = {
   NO_STATE: "تعذّر تحميل اللعبة.",
   BAD_MAFIA_COUNT: "عدد المافيا لازم يكون أقل من نصف اللاعبين.",
   TOO_MANY_ROLES: "الأدوار أكثر من اللاعبين. قلّل الأدوار الإضافية أو عدد المافيا.",
+  NOT_OVER: "المباراة لم تنتهِ بعد.",
 };
 
 /** mafia_progress(): votes for everyone, night actions for the host only (mafia_v2.sql). */
@@ -1201,6 +1202,8 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
   const [jester, setJester] = useState(false);
   const [mayor, setMayor] = useState(false);
   const [bodyguard, setBodyguard] = useState(false);
+  const [sniper, setSniper] = useState(false);
+  const [seer, setSeer] = useState(false);
 
   useEffect(() => {
     if (!supabase) return;
@@ -1227,7 +1230,7 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
     };
   }, [roomId]);
 
-  async function step(fn: "mafia_start" | "mafia_resolve_night" | "mafia_open_vote" | "mafia_close_vote", args: Record<string, unknown> = {}) {
+  async function step(fn: "mafia_start" | "mafia_resolve_night" | "mafia_open_vote" | "mafia_close_vote" | "mafia_reset", args: Record<string, unknown> = {}) {
     if (!supabase || busy) return;
     setBusy(true);
     setError(null);
@@ -1263,6 +1266,26 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
   const over = phase === "over";
   const alive = rows.filter((p) => p.alive).length;
   const runoff = Array.isArray(state.runoff) ? state.runoff : null;
+
+  // After «مباراة جديدة», the setup starts from the last match's choices.
+  const prefilled = useRef(false);
+  useEffect(() => {
+    const last = state.last_settings;
+    if (phase !== "" || !last || prefilled.current) return;
+    prefilled.current = true;
+    setMafiaCount(last.auto_mafia === false ? (last.mafia ?? 0) : 0);
+    setReveal(!!last.reveal_roles);
+    setDaySeconds(last.day_seconds ?? 120);
+    setJester(!!last.jester);
+    setMayor(!!last.mayor);
+    setBodyguard(!!last.bodyguard);
+    setSniper(!!last.sniper);
+    setSeer(!!last.seer);
+  }, [phase, state.last_settings]);
+  useEffect(() => {
+    if (phase !== "") prefilled.current = false;
+  }, [phase]);
+
   const dayLeft = useCountdown(phase === "day" ? state.day_ends_at : null);
   const complete = !!progress && progress.phase === phase && (phase === "night" || phase === "vote") && (progress.total ?? 0) > 0 && (progress.done ?? 0) >= (progress.total ?? 0);
   const stepKey = `${phase}:${round}:${runoff ? "r" : ""}`;
@@ -1306,7 +1329,7 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
   const maxMafia = Math.max(1, Math.floor((guests - 1) / 2));
   const autoMafia = guests >= 10 ? 3 : guests >= 7 ? 2 : 1;
   const plannedMafia = mafiaCount || autoMafia;
-  const special = 2 + Number(jester) + Number(mayor) + Number(bodyguard);
+  const special = 2 + Number(jester) + Number(mayor) + Number(bodyguard) + Number(sniper) + Number(seer);
   const fits = guests >= 5 && plannedMafia * 2 < guests && plannedMafia + special < guests;
 
   return (
@@ -1360,6 +1383,8 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
                 { on: jester, set: setJester, role: "jester", text: "يفوز وحده إذا أقصوه بالتصويت." },
                 { on: mayor, set: setMayor, role: "mayor", text: "معروف للجميع، وصوته بصوتين." },
                 { on: bodyguard, set: setBodyguard, role: "bodyguard", text: "يحرس لاعبًا كل ليلة، ويموت بدلًا منه إذا هوجم." },
+                { on: sniper, set: setSniper, role: "sniper", text: "رصاصة واحدة في المباراة، يطلقها في النهار." },
+                { on: seer, set: setSeer, role: "seer", text: "مرة واحدة تعرف دور لاعب خرج من اللعبة." },
               ].map((r) => (
                 <label key={r.role} className="flex items-start gap-3 rounded-2xl border border-line bg-deep-2/50 p-3">
                   <input type="checkbox" checked={r.on} onChange={(e) => r.set(e.target.checked)} className="mt-1 size-5 accent-[var(--color-gold)]" />
@@ -1376,7 +1401,7 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
               {guests < 5
                 ? "تحتاجون 5 لاعبين على الأقل غير المضيف."
                 : fits
-                  ? `الأدوار: ${plannedMafia} مافيا، طبيب، محقق${bodyguard ? "، حارس" : ""}${mayor ? "، عمدة" : ""}${jester ? "، مهرّج" : ""}، والباقي مواطنون (${guests - plannedMafia - special}).`
+                  ? `الأدوار: ${plannedMafia} مافيا، طبيب، محقق${bodyguard ? "، حارس" : ""}${mayor ? "، عمدة" : ""}${jester ? "، مهرّج" : ""}${sniper ? "، قنّاص" : ""}${seer ? "، عرّافة" : ""}، والباقي مواطنون (${guests - plannedMafia - special}).`
                   : "الأدوار أكثر من اللاعبين. قلّل الأدوار الإضافية أو عدد المافيا."}
             </p>
           </div>
@@ -1442,7 +1467,7 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
               tone="primary"
               onClick={() =>
                 step("mafia_start", {
-                  p_settings: { mafia: mafiaCount || null, reveal_roles: reveal, day_seconds: daySeconds, jester, mayor, bodyguard },
+                  p_settings: { mafia: mafiaCount || null, reveal_roles: reveal, day_seconds: daySeconds, jester, mayor, bodyguard, sniper, seer },
                 })
               }
               disabled={busy || !fits}
@@ -1472,6 +1497,9 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
             <p className="text-2xl font-extrabold text-ivory">{WINNERS[state.winner ?? ""] ?? "انتهت اللعبة"}</p>
             <MafiaSummary state={state} rows={rows} />
             <MafiaShare state={state} rows={rows} />
+            <Button type="button" tone="primary" className="mx-auto" onClick={() => step("mafia_reset")} disabled={busy}>
+              مباراة جديدة بنفس اللاعبين
+            </Button>
           </div>
         ) : null}
         {error ? (

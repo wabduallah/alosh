@@ -757,7 +757,12 @@ function Mafia({ state, rows }: { state: StateData; rows: MafiaRow[] }) {
         </p>
         <p className="mt-[1vh] font-display text-[clamp(36px,4.6vw,92px)] font-extrabold">{headline}</p>
         <p className="mx-auto mt-[1.5vh] max-w-[70vw] text-[clamp(18px,1.8vw,34px)] leading-relaxed text-mist">{narratorLine(ms, list)}</p>
-        {phase !== "day" && ms.last_result ? <p className="mt-[2vh] text-[clamp(20px,2vw,38px)] font-bold">{ms.last_result}</p> : null}
+        {ms.last_result && (phase !== "day" || ms.last_shot?.text === ms.last_result) ? (
+          <p className={cx("mt-[2vh] text-[clamp(20px,2vw,38px)] font-bold", phase === "day" && "rise rounded-[clamp(14px,1.2vw,24px)] border border-wrong/50 bg-wrong-fill/20 px-[2vw] py-[1vh]")}>
+            {phase === "day" ? "🎯 " : ""}
+            {ms.last_result}
+          </p>
+        ) : null}
         {phase === "day" && dayLeft !== null ? (
           <p dir="ltr" key={dayLeft <= 10 ? dayLeft : "calm"} className={cx("mt-[2vh] font-display text-[clamp(56px,7vw,140px)] leading-none font-extrabold tabular-nums", dayLeft <= 10 ? "beat text-wrong" : "text-gold")}>
             {mmss(dayLeft)}
