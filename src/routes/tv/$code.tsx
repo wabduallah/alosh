@@ -4,6 +4,7 @@ import { Egg, GameIcon, Glyph, Lockup, Mark } from "@/components/brand";
 import { QrCode } from "@/components/qr-code";
 import { buttonBase, buttonTone, cx, joinLink } from "@/components/ui";
 import { ensureSession, supabase } from "@/lib/supabase";
+import { useRoomSession } from "@/lib/room-session";
 import {
   AnswersList,
   Hearts,
@@ -227,6 +228,11 @@ function TvScreen() {
   const answered = new Set(state.answered ?? []);
   const active = questions.find((q) => q.id === activeId) ?? null;
   const allDone = isBoard && questions.length > 0 && answered.size >= questions.length;
+  // A new round from the host (same room, new game or replay) reloads this screen; the poll also keeps the status fresh.
+  const liveStatus = useRoomSession(room?.id);
+  useEffect(() => {
+    if (liveStatus) setRoom((current) => (current && current.status !== liveStatus ? { ...current, status: liveStatus } : current));
+  }, [liveStatus]);
   const finished = room?.status === "finished" || allDone;
 
   if (error) {
