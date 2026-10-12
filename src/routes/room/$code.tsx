@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { rememberRoom } from "@/lib/prefs";
 import { useEffect, useMemo, useState } from "react";
 import { Shell } from "@/components/shell";
+import { useRoomSession } from "@/lib/room-session";
 import { Button, cx } from "@/components/ui";
 import { Cradle, Glyph } from "@/components/brand";
 import { HalbaPlayerPanel } from "@/components/halba";
@@ -212,6 +213,11 @@ function PlayerBoard() {
   const canBuzz = !!active && !!stateData.buzzer_open && !buzzer && !!me && !me.is_host && !buzzing;
   const ranking = [...players].filter((p) => !p.is_host).sort((a, b) => b.score - a.score);
   const allDone = questions.length > 0 && answered.size >= questions.length;
+  // A new round from the host (same room, new game or replay) reloads this screen; the poll also keeps the status fresh.
+  const liveStatus = useRoomSession(room?.id);
+  useEffect(() => {
+    if (liveStatus) setRoom((current) => (current && current.status !== liveStatus ? { ...current, status: liveStatus } : current));
+  }, [liveStatus]);
   const gameOver = allDone || room?.status === "finished";
   const topScore = ranking.length ? ranking[0].score : 0;
   const winners = ranking.filter((p) => p.score === topScore);

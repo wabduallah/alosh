@@ -2,6 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { rememberRoom } from "@/lib/prefs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Shell } from "@/components/shell";
+import { NextGame } from "@/components/next-game";
+import { useRoomSession } from "@/lib/room-session";
 import { Button, buttonBase, buttonTone, cx } from "@/components/ui";
 import { Glyph } from "@/components/brand";
 import { ShareRoom } from "@/components/share";
@@ -180,7 +182,11 @@ function HostBoard() {
   const buzzer = roomState?.state_data?.buzzer ?? null;
   const ranking = [...players].filter((p) => !p.is_host).sort((a, b) => b.score - a.score);
   const allDone = questions.length > 0 && answered.size >= questions.length;
-  const gameOver = allDone || room?.status === "finished";
+  const liveStatus = useRoomSession(room?.id);
+  const gameOver = allDone || room?.status === "finished" || liveStatus === "finished";
+  // Any game is over: offer a new round in the same room (same players, same code).
+  const roundOver = gameOver || roomState?.state_data?.phase === "over";
+  const nextGame = room && roundOver ? <NextGame roomId={room.id} roomCode={room.room_code} currentSlug={gameSlug} className="mx-auto mt-5 max-w-3xl" /> : null;
   const topScore = ranking.length ? ranking[0].score : 0;
   const winners = ranking.filter((p) => p.score === topScore);
 
@@ -396,6 +402,7 @@ function HostBoard() {
         <ShareRoom code={room.room_code} />
         <TvLink code={room.room_code} />
         <OutsiderHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
+        {nextGame}
       </Shell>
     );
   }
@@ -406,6 +413,7 @@ function HostBoard() {
         <ShareRoom code={room.room_code} />
         <TvLink code={room.room_code} />
         <MafiaHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
+        {nextGame}
       </Shell>
     );
   }
@@ -416,6 +424,7 @@ function HostBoard() {
         <ShareRoom code={room.room_code} />
         <TvLink code={room.room_code} />
         <HalbaHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
+        {nextGame}
       </Shell>
     );
   }
@@ -426,6 +435,7 @@ function HostBoard() {
         <ShareRoom code={room.room_code} />
         <TvLink code={room.room_code} />
         <HeadsHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
+        {nextGame}
       </Shell>
     );
   }
@@ -465,6 +475,7 @@ function HostBoard() {
             ) : null}
           </div>
         ) : null}
+        {gameOver ? <NextGame roomId={room.id} roomCode={room.room_code} currentSlug={gameSlug} className="mb-6" /> : null}
 
         {active ? (
           <div className="glass-card mb-6 rounded-[28px] p-6 text-center lg:p-8 tv:p-12">

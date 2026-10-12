@@ -15,8 +15,10 @@ import { CATALOG, PLAYABLE_SLUGS, findCard } from "@/lib/catalog";
  * the database trigger, so it's read back from the inserted row.
  */
 export const Route = createFileRoute("/play")({
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (search: Record<string, unknown>): { game: string; room?: string } => ({
     game: typeof search.game === "string" ? search.game : "",
+    // A room the host already has (a new round after a game): open its lobby.
+    ...(typeof search.room === "string" && search.room ? { room: search.room } : {}),
   }),
   head: () => ({ meta: [{ title: "إنشاء غرفة — العش" }] }),
   component: CreatePage,
@@ -48,7 +50,7 @@ type PlayerRow = {
 };
 
 function CreatePage() {
-  const { game: preselected } = Route.useSearch();
+  const { game: preselected, room: roomParam } = Route.useSearch();
   const [games, setGames] = useState<GameRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   // The URL carries a game slug (e.g. tactical-grid). Selection uses the row id.
@@ -91,6 +93,39 @@ function CreatePage() {
       setGames(rows.sort((a, b) => pos(a) - pos(b)));
     })();
   }, []);
+
+  // ?room=CODE: the host's existing room, back in its lobby for a new round.
+  const [resuming, setResuming] = useState(!!roomParam);
+  useEffect(() => {
+    if (!roomParam || !supabase) {
+      setResuming(false);
+      return;
+    }
+    const client = supabase;
+    let alive = true;
+    (async () => {
+      try {
+        const session = await ensureSession();
+        const { data } = await client
+          .from("game_rooms")
+          .select("id, room_code, game_id, status, host_id")
+          .eq("room_code", roomParam.toUpperCase())
+          .maybeSingle();
+        if (!alive) return;
+        const found = data as (RoomRow & { host_id: string }) | null;
+        if (!found || found.host_id !== session.user.id) setFormError("لم نجد غرفتك. أنشئ غرفة جديدة.");
+        else if (found.status !== "finished") {
+          setRoom({ id: found.id, room_code: found.room_code, game_id: found.game_id, status: found.status });
+          rememberRoom(found.room_code, true);
+        }
+      } finally {
+        if (alive) setResuming(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [roomParam]);
 
   // Once a room exists, keep its player list live. Any insert, update or delete
   // on this room's players triggers a fresh read, which respects RLS.
@@ -337,7 +372,7 @@ function CreatePage() {
 
   // Opened from a game («ابدأ الغرفة»): only that game, its details, and the host's name.
   const chosen = preselected && games ? games.find((g) => g.slug === preselected) ?? null : null;
-  if (preselected && games === null && !loadError) {
+  if ((preselected && games === null && !loadError) || resuming) {
     return (
       <Shell>
         <p className="mt-6 flex items-center gap-3 text-[15px] text-mist">
