@@ -4,10 +4,10 @@ import { rememberRoom } from "@/lib/prefs";
 import { useEffect, useState, type FormEvent } from "react";
 import { Shell } from "@/components/shell";
 import { Button, Field, buttonBase, buttonTone, inputClass, cx, joinLink } from "@/components/ui";
-import { Egg, GameIcon, Glyph, Mark } from "@/components/brand";
+import { Egg, GameIcon, Glyph, Mark, gameStyle, gameVars } from "@/components/brand";
 import { QrCode } from "@/components/qr-code";
 import { ensureSession, supabase } from "@/lib/supabase";
-import { CATALOG, PLAYABLE_SLUGS } from "@/lib/catalog";
+import { CATALOG, PLAYABLE_SLUGS, findCard } from "@/lib/catalog";
 
 /**
  * Create-room page. Lists the playable games from Supabase (see lib/catalog), then creates a room for
@@ -335,6 +335,105 @@ function CreatePage() {
     );
   }
 
+  // Opened from a game («ابدأ الغرفة»): only that game, its details, and the host's name.
+  const chosen = preselected && games ? games.find((g) => g.slug === preselected) ?? null : null;
+  if (preselected && games === null && !loadError) {
+    return (
+      <Shell>
+        <p className="mt-6 flex items-center gap-3 text-[15px] text-mist">
+          <span aria-hidden="true" className="size-5 animate-spin rounded-full border-2 border-gold border-t-transparent motion-reduce:animate-none" />
+          جارٍ التحميل…
+        </p>
+      </Shell>
+    );
+  }
+  if (chosen) {
+    const card = findCard(chosen.slug);
+    const title = card?.title ?? chosen.title_ar;
+    const dark = gameStyle(chosen.slug).ink === "dark";
+    const ink = dark ? "text-on-gold" : "text-ivory";
+    const soft = dark ? "text-on-gold/85" : "text-ivory/85";
+    const chip = cx("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[14px] font-semibold", dark ? "bg-white/30" : "bg-black/25", ink);
+    return (
+      <Shell>
+        <section className="mx-auto grid max-w-2xl gap-4">
+          <header style={gameVars(chosen.slug)} className="gcard relative grid gap-3 overflow-hidden rounded-[28px] p-5 sm:p-7">
+            <span aria-hidden="true" className="pointer-events-none absolute -top-16 -end-16 size-56 rounded-full bg-white/10 blur-3xl" />
+            <div className="flex items-center gap-4">
+              <span className="gcard-icon grid size-20 shrink-0 place-items-center rounded-full">
+                <img src={`/brand/games/game-${chosen.slug}.svg`} alt="" className="size-16" />
+              </span>
+              <div className="grid min-w-0 gap-2">
+                <h1 className={cx("text-[30px] leading-10 sm:text-[36px] sm:leading-[48px]", ink)}>{title}</h1>
+                <div className="flex flex-wrap gap-2">
+                  <span className={chip}>
+                    <Glyph name="users" className="size-4" />
+                    <bdi dir="ltr">{chosen.min_players}-{chosen.max_players}</bdi> لاعب
+                  </span>
+                  {card?.howTo ? (
+                    <span className={chip}>
+                      <Glyph name="clock" className="size-4" />
+                      {card.howTo.minutes}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+            <p className={cx("text-[16px] leading-[29px]", soft)}>{card?.blurb ?? chosen.description_ar}</p>
+          </header>
+
+          <form onSubmit={createRoom} className="surface grid gap-4 rounded-[24px] p-5 sm:p-6">
+            <Field label="اسمك (المضيف)">
+              <input
+                className={inputClass}
+                value={hostName}
+                onChange={(e) => setHostName(e.target.value)}
+                maxLength={24}
+                placeholder="اكتب اسمك"
+                autoComplete="nickname"
+              />
+            </Field>
+            {formError ? (
+              <p className="flex items-center gap-1.5 text-[14px] font-semibold text-wrong">
+                <Glyph name="alert" className="size-4" />
+                {formError}
+              </p>
+            ) : null}
+            <Button type="submit" tone="primary" disabled={busy || !selected} className="min-h-14 w-full text-[18px]">
+              <Glyph name="users" />
+              {busy ? "جارٍ الإنشاء…" : `افتح غرفة ${title}`}
+            </Button>
+            <p className="text-[13px] leading-6 text-mist">بعد فتح الغرفة يظهر رمزها ورمز QR، فينضم اللاعبون من جوالاتهم، ثم تبدأ اللعبة.</p>
+          </form>
+
+          {card?.howTo ? (
+            <details className="surface group rounded-[24px] p-5 sm:p-6">
+              <summary className="flex cursor-pointer list-none items-center gap-2 text-[19px] font-bold text-ivory">
+                <Glyph name="question" className="size-6 text-gold" />
+                طريقة اللعب
+                <Glyph name="forward" className="ms-auto size-5 text-mist transition group-open:-rotate-90" />
+              </summary>
+              <p className="mt-3 text-[15px] leading-[27px] text-ivory">{card.howTo.goal}</p>
+              <ol className="mt-3 grid gap-3">
+                {card.howTo.steps.map((step, index) => (
+                  <li key={step} className="flex gap-3 text-[15px] leading-[27px] text-mist">
+                    <span className="btn-gold grid size-7 shrink-0 place-items-center rounded-full text-[13px] font-bold">{index + 1}</span>
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </details>
+          ) : null}
+
+          <Link to="/play" search={{ game: "" }} className={cx(buttonBase, buttonTone("quiet"), "w-fit")}>
+            <Glyph name="gamepad" className="size-[18px]" />
+            اختر لعبة أخرى
+          </Link>
+        </section>
+      </Shell>
+    );
+  }
+
   return (
     <Shell>
       <section className="mx-auto max-w-4xl">
@@ -343,6 +442,7 @@ function CreatePage() {
           <div>
             <h1 className="text-[30px] leading-10 lg:text-[40px] lg:leading-[52px]">إنشاء غرفة</h1>
             <p className="mt-1 text-[15px] leading-[26px] text-mist">اختر اللعبة، واكتب اسمك، ثم افتح الغرفة.</p>
+            {preselected && games && !chosen ? <p className="mt-2 text-[14px] font-semibold text-gold">هذه اللعبة غير متاحة الآن، اختر لعبة أخرى.</p> : null}
           </div>
         </div>
 
@@ -378,7 +478,7 @@ function CreatePage() {
                       <span className="text-[14px] leading-6 text-mist">{g.description_ar}</span>
                       <span className="mt-1 inline-flex items-center gap-1.5 text-[13px] font-bold text-mist">
                         <Glyph name="users" className="size-[15px]" />
-                        {g.min_players}–{g.max_players} لاعب
+                        <bdi dir="ltr">{g.min_players}-{g.max_players}</bdi> لاعب
                       </span>
                     </span>
                     <span
