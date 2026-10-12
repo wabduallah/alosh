@@ -4,6 +4,7 @@ import { HalbaShare } from "@/components/halba-share";
 import { Button, cx, inputClass } from "@/components/ui";
 import { playCue } from "@/lib/sfx";
 import { supabase } from "@/lib/supabase";
+import { useLivePoll } from "@/lib/live";
 import { useSiteSettings } from "@/lib/site-settings";
 import { vibrate } from "@/lib/prefs";
 
@@ -274,20 +275,8 @@ export function useHalbaLive(roomId: string) {
     if (ps) setPlayers(ps as HalbaPlayer[]);
   }, [roomId]);
 
-  useEffect(() => {
-    if (!supabase) return;
-    const client = supabase;
-    void load();
-    const channel = client
-      .channel(`halba-${roomId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "room_game_state", filter: `room_id=eq.${roomId}` }, () => void load())
-      .subscribe();
-    const poll = window.setInterval(load, 1000);
-    return () => {
-      window.clearInterval(poll);
-      client.removeChannel(channel);
-    };
-  }, [roomId, load]);
+  // Realtime first; a 2-second poll only while realtime is not connected (8 seconds otherwise).
+  useLivePoll(`halba-${roomId}`, [{ table: "room_game_state", filter: `room_id=eq.${roomId}` }, { table: "room_players", filter: `room_id=eq.${roomId}` }], load);
 
   return { state, players, reload: load };
 }

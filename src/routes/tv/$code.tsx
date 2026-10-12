@@ -3,8 +3,10 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Egg, GameIcon, Glyph, Lockup, Mark } from "@/components/brand";
 import { QrCode } from "@/components/qr-code";
 import { buttonBase, buttonTone, cx, joinLink } from "@/components/ui";
+import { adaptivePoll } from "@/lib/live";
 import { ensureSession, supabase } from "@/lib/supabase";
 import { useRoomSession } from "@/lib/room-session";
+import { GridTv } from "@/components/grid";
 import {
   AnswersList,
   Hearts,
@@ -99,7 +101,8 @@ function TvScreen() {
   const isHeads = slug === "heads-up";
   const isMafia = slug === "social-mafia";
   const isHalba = slug === "alhalba";
-  const isBoard = !isOutsider && !isHeads && !isMafia && !isHalba;
+  const isGrid = slug === "tactical-grid";
+  const isBoard = !isOutsider && !isHeads && !isMafia && !isHalba && !isGrid;
 
   // Load the room once, then its game and its public questions (no answers).
   useEffect(() => {
@@ -182,11 +185,11 @@ function TvScreen() {
       .on("postgres_changes", { event: "*", schema: "public", table: "room_game_state", filter: `room_id=eq.${roomId}` }, () => refresh())
       .on("postgres_changes", { event: "*", schema: "public", table: "room_players", filter: `room_id=eq.${roomId}` }, () => refresh())
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "game_rooms", filter: `id=eq.${roomId}` }, () => refresh())
-      .subscribe();
-    const poll = window.setInterval(refresh, 2000);
+      .subscribe((status) => poller.onStatus(status));
+    const poller = adaptivePoll(refresh, 2000);
     return () => {
       cancelled = true;
-      window.clearInterval(poll);
+      poller.stop();
       client.removeChannel(channel);
     };
   }, [room?.id, isBluff, isOutsider, isMafia]);
@@ -280,7 +283,7 @@ function TvScreen() {
     >
       {room.status === "lobby" ? (
         <Lobby code={room.room_code} link={link} game={game} players={guests} />
-      ) : finished ? (
+      ) : finished && !isGrid ? (
         <Results slug={slug} ranking={ranking} state={state} mafia={mafia} />
       ) : isHeads ? (
         <Heads state={state} players={players} now={now} />
@@ -288,6 +291,8 @@ function TvScreen() {
         <Outsider state={state} counts={counts} />
       ) : isMafia ? (
         <Mafia state={state} rows={mafia} players={players} />
+      ) : isGrid ? (
+        <GridTv roomId={room.id} />
       ) : isHalba ? (
         <Halba state={state as unknown as HalbaState} players={players} />
       ) : (

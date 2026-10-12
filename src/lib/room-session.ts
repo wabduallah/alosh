@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { adaptivePoll } from "@/lib/live";
 
 /**
  * Watches a room for a new round started by the host (supabase/rooms_v1.sql):
@@ -51,12 +52,12 @@ export function useRoomSession(roomId: string | null | undefined) {
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "game_rooms", filter: `id=eq.${roomId}` }, (payload) => {
         check(payload.new as { status?: string; game_id?: string; session?: number });
       })
-      .subscribe();
-    // Realtime can drop on phones and sleeping tabs: check every few seconds too.
-    const timer = window.setInterval(poll, 3000);
+      .subscribe((status) => poller.onStatus(status));
+    // Realtime can drop on phones and sleeping tabs: check every few seconds too (slower while it is connected).
+    const poller = adaptivePoll(poll, 3000);
     return () => {
       alive = false;
-      window.clearInterval(timer);
+      poller.stop();
       client.removeChannel(channel);
     };
   }, [roomId]);

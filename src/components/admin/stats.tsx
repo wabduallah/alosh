@@ -159,6 +159,10 @@ function StatsBody({ stats, funnel }: { stats: Stats; funnel: Funnel | null | fa
       <Panel title="المحتوى">
         <Content stats={stats} />
       </Panel>
+
+      <Panel title="سرعة الاتصال من جهازك" note="الوقت الذي يستغرقه طلب صغير من هذا الجهاز إلى قاعدة البيانات وعودته. جرّبه من جوال على شبكة عادية في المكان الذي يلعب فيه الناس.">
+        <Latency />
+      </Panel>
     </>
   );
 }
@@ -354,6 +358,43 @@ function FunnelView({ funnel }: { funnel: Funnel }) {
         </table>
       </div>
       <p className="text-[12px] text-faint">بدأ القياس: {fullDate.format(new Date(funnel.tracking_from))}</p>
+    </div>
+  );
+}
+
+/** Round-trip time from this device to the database: a few tiny reads, the median and the best. */
+function Latency() {
+  const [result, setResult] = useState<{ median: number; best: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function measure() {
+    if (!supabase) return;
+    setBusy(true);
+    const times: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      const t0 = performance.now();
+      await supabase.from("games").select("slug").limit(1);
+      times.push(performance.now() - t0);
+    }
+    // The first request also opens the connection: leave it out.
+    const rest = times.slice(1).sort((a, b) => a - b);
+    setResult({ median: Math.round(rest[Math.floor(rest.length / 2)]), best: Math.round(rest[0]) });
+    setBusy(false);
+  }
+  const verdict = !result ? null : result.median < 150 ? { text: "ممتاز", tone: "text-correct" } : result.median < 300 ? { text: "مقبول", tone: "text-gold" } : { text: "بطيء: يستحق نقل قاعدة البيانات لمنطقة أقرب", tone: "text-wrong" };
+  return (
+    <div className="flex flex-wrap items-center gap-4">
+      <Button tone="quiet" onClick={measure} disabled={busy}>
+        <Glyph name="clock" className="size-[18px]" />
+        {busy ? "جارٍ القياس…" : "قِس الآن"}
+      </Button>
+      {result ? (
+        <p className="text-[15px] text-mist">
+          الوسط <b className="text-ivory tabular-nums">{result.median}</b> ملّي ثانية · الأفضل <b className="text-ivory tabular-nums">{result.best}</b> ·{" "}
+          <span className={cx("font-semibold", verdict?.tone)}>{verdict?.text}</span>
+        </p>
+      ) : (
+        <p className="text-[13px] text-mist">قاعدة البيانات حاليًا في منطقة سيول (كوريا).</p>
+      )}
     </div>
   );
 }

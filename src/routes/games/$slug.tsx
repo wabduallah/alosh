@@ -4,6 +4,7 @@ import { EmptyState } from "@/components/empty-state";
 import { GameIcon, Glyph, gameStyle, gameVars } from "@/components/brand";
 import { buttonBase, buttonTone, cx } from "@/components/ui";
 import { findCard, useGames } from "@/lib/catalog";
+import { gameJsonLd, gameSeo } from "@/lib/seo";
 
 /**
  * One page per game, for search engines and for sharing: what the game is, who it suits,
@@ -14,11 +15,14 @@ export const Route = createFileRoute("/games/$slug")({
   head: ({ params }) => {
     const card = findCard(params.slug);
     if (!card) return { meta: [{ title: "لعبة غير موجودة — العش" }] };
+    const url = `https://www.al3sh.app/games/${card.id}`;
     return {
       meta: [
         { title: `${card.title}: لعبة جماعية من الجوال — العش` },
         { name: "description", content: `${card.blurb} ${card.players} لاعب، مجانًا وبدون تسجيل.` },
       ],
+      links: [{ rel: "canonical", href: url }],
+      scripts: gameJsonLd(card, url).map((data) => ({ type: "application/ld+json", children: JSON.stringify(data) })),
     };
   },
   component: GamePage,
@@ -51,6 +55,7 @@ function GamePage() {
   const ink = dark ? "text-on-gold" : "text-ivory";
   const soft = dark ? "text-on-gold/85" : "text-ivory/85";
   const rules = card.howTo;
+  const seo = gameSeo(card);
   const others = games.filter((g) => g.id !== game.id && !g.soon);
 
   return (
@@ -113,10 +118,42 @@ function GamePage() {
             ماذا تحتاجون؟
           </h2>
           <ul className="grid gap-2 text-[15px] leading-[27px] text-mist">
-            <li>• شاشة كبيرة للمضيف: تلفزيون أو لابتوب أو تابلت، يفتح عليها الغرفة.</li>
+            <li>• شاشة كبيرة إن وُجدت: تلفزيون أو لابتوب أو تابلت. وبدونها يعرض المضيف الشاشة من جواله بزر «اعرض هنا».</li>
             <li>• جوال لكل لاعب، ينضم بمسح رمز QR أو بكتابة رمز الغرفة.</li>
             <li>• لا تسجيل ولا تحميل ولا دفع.</li>
           </ul>
+        </section>
+
+        {seo.examples ? (
+          <section aria-labelledby="examples-title" className="surface grid gap-3 rounded-[24px] p-5 sm:p-7">
+            <h2 id="examples-title" className="flex items-center gap-2 text-[22px] leading-8">
+              <Glyph name="fire" className="size-6 text-gold" />
+              {seo.examples.title}
+            </h2>
+            <ul className="flex flex-wrap gap-2">
+              {seo.examples.items.map((item) => (
+                <li key={item} className="rounded-[14px] border border-line-strong/60 bg-deep-2/60 px-3 py-2 text-[15px] text-ivory">
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        <section aria-labelledby="faq-title" className="surface grid gap-2 rounded-[24px] p-5 sm:p-7">
+          <h2 id="faq-title" className="mb-1 flex items-center gap-2 text-[22px] leading-8">
+            <Glyph name="info" className="size-6 text-gold" />
+            أسئلة شائعة
+          </h2>
+          {seo.faq.map((f) => (
+            <details key={f.q} className="group rounded-[16px] border border-line bg-deep-2/40 px-4 py-3">
+              <summary className="flex cursor-pointer list-none items-center gap-2 text-[16px] font-semibold text-ivory">
+                {f.q}
+                <Glyph name="forward" className="ms-auto size-4 shrink-0 text-mist transition group-open:-rotate-90" />
+              </summary>
+              <p className="mt-2 text-[15px] leading-[27px] text-mist">{f.a}</p>
+            </details>
+          ))}
         </section>
 
         {others.length ? (

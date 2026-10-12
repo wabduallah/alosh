@@ -18,6 +18,21 @@ export const Route = createFileRoute("/")({
       { title: "العش — ألعاب جماعية للعائلة والأصدقاء" },
       { name: "description", content: "ألعاب جماعية تُلعب على شاشة واحدة وجوال لكل لاعب، مجانًا وبدون تسجيل." },
     ],
+    links: [{ rel: "canonical", href: "https://www.al3sh.app/" }],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "WebSite",
+          name: "العش",
+          alternateName: "al3sh",
+          url: "https://www.al3sh.app/",
+          inLanguage: "ar",
+          description: "ألعاب جماعية للعائلة والأصدقاء: شاشة واحدة وجوال لكل لاعب، مجانًا وبدون تسجيل.",
+        }),
+      },
+    ],
   }),
   component: Home,
 });
@@ -118,7 +133,7 @@ function Hero() {
               حيث تلتقي التحديات بالمتعة الجماعية
             </p>
             <p className="max-w-md text-[15px] leading-[26px] text-mist sm:rounded-2xl sm:bg-night/40 sm:px-4 sm:py-3 sm:text-[16px] sm:leading-[29px] lg:bg-transparent lg:p-0 lg:text-[18px] lg:leading-8">
-              تلفزيون واحد في الوسط، وجوالاتكم حواليه. بدون تسجيل وبدون تحميل، افتحوا الغرفة وابدأوا السهرة.
+              تلفزيون أو لابتوب في الوسط وجوالاتكم حواليه، وإن ما توفّر فالجوال يكفي. بدون تسجيل وبدون تحميل، افتحوا الغرفة وابدأوا السهرة.
             </p>
             <div className="grid w-full grid-cols-2 gap-2 sm:mt-1 sm:flex sm:w-auto sm:flex-wrap sm:justify-center sm:gap-3 lg:justify-start">
               <Link to="/play" search={{ game: "" }} className={cx(buttonBase, buttonTone("primary"), "min-h-12 px-3 text-[16px] sm:min-h-14 sm:px-8 sm:text-[17px]")}>
