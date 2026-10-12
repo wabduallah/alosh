@@ -281,7 +281,7 @@ function TvScreen() {
       ) : isOutsider ? (
         <Outsider state={state} counts={counts} />
       ) : isMafia ? (
-        <Mafia state={state} rows={mafia} />
+        <Mafia state={state} rows={mafia} players={players} />
       ) : isHalba ? (
         <Halba state={state as unknown as HalbaState} players={players} />
       ) : (
@@ -709,7 +709,7 @@ function Outsider({ state, counts }: { state: StateData; counts: Counts | null }
 
 /* ---------------- المافيا ---------------- */
 
-function Mafia({ state, rows }: { state: StateData; rows: MafiaRow[] }) {
+function Mafia({ state, rows, players }: { state: StateData; rows: MafiaRow[]; players: Player[] }) {
   const ms = state as unknown as MafiaPublicState;
   const list = rows as MafiaPlayerRow[];
   const phase = String(ms.phase ?? "");
@@ -786,7 +786,13 @@ function Mafia({ state, rows }: { state: StateData; rows: MafiaRow[] }) {
                     !p.alive ? "bg-deep/50 text-faint line-through" : runoff?.includes(p.player_id) ? "bg-gold/15 ring-2 ring-gold" : runoff ? "bg-deep-2/40 text-mist" : "bg-deep-2/70",
                   )}
                 >
-                  <Egg name={p.player_name} index={i + 1} size="sm" className={cx("w-[clamp(28px,2.4vw,46px)]!", !p.alive && "opacity-40")} />
+                  <Egg
+                    name={p.player_name}
+                    index={players.findIndex((x) => x.id === p.player_id) + 1 || i + 1}
+                    avatar={players.find((x) => x.id === p.player_id)?.avatar}
+                    size="sm"
+                    className={cx("w-[clamp(28px,2.4vw,46px)]!", !p.alive && "opacity-40")}
+                  />
                   <span className="min-w-0 truncate">
                     {p.is_mayor ? "👑 " : ""}
                     {p.player_name}

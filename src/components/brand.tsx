@@ -1,5 +1,7 @@
 import { useId, useState, type CSSProperties, type ReactNode } from "react";
 import { cx } from "@/components/ui";
+import { BIRD_ART } from "@/components/bird-art";
+import { BIRD_IDS, NO_AVATAR, isBird } from "@/lib/prefs";
 
 /*
  * Brand pieces of the Al3sh identity: the chick-in-nest logo, the nest cradle,
@@ -91,9 +93,27 @@ export function initialOf(name: string) {
   return s.charAt(0);
 }
 
+/** One of the bird avatars (components/bird-art.ts), filling the box it sits in. */
+export function BirdArt({ id, className }: { id: string; className?: string }) {
+  const art = BIRD_ART[id] ?? BIRD_ART.chick;
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      preserveAspectRatio="xMidYMax meet"
+      aria-hidden="true"
+      className={className}
+      // Static drawings shipped with the site, never user input.
+      dangerouslySetInnerHTML={{ __html: art.svg }}
+    />
+  );
+}
+
+export const birdName = (id: string) => BIRD_ART[id]?.name ?? "";
+
 /**
- * A player is an egg in the nest: the colour follows join order (egg-1 … egg-8),
- * players 9–14 reuse the colours with speckles.
+ * A player is an egg in the nest with a bird inside. The colour follows join order
+ * (egg-1 … egg-8, players 9+ reuse them with speckles) and so does the bird, unless
+ * the player chose their own in the settings page, or chose no bird (first letter).
  */
 export function Egg({
   name = "",
@@ -113,12 +133,14 @@ export function Egg({
   buzz?: boolean;
   host?: boolean;
   empty?: boolean;
-  /** The player's chosen egg (settings page): colour 1–8 and an optional emoji. */
-  avatar?: { c?: number; e?: string | null } | null;
+  /** The player's chosen egg (settings page): colour 1–8 and a bird id or "none". */
+  avatar?: { c?: number | null; e?: string | null } | null;
   className?: string;
 }) {
   const chosen = avatar && Number.isInteger(avatar.c) && (avatar.c as number) >= 1 && (avatar.c as number) <= 8 ? (avatar.c as number) : null;
   const n = chosen ?? ((Math.max(1, index) - 1) % 8) + 1;
+  const pick = avatar?.e;
+  const bird = pick === NO_AVATAR ? null : isBird(pick) ? pick : BIRD_IDS[(Math.max(1, index) - 1) % BIRD_IDS.length];
   const label = empty ? "مكان فارغ" : `${name}${host ? " (المضيف)" : ""}${me ? " (أنت)" : ""}`;
   return (
     <span
@@ -134,7 +156,13 @@ export function Egg({
       )}
       style={empty ? undefined : { backgroundColor: `var(--color-egg-${n})` }}
     >
-      {empty ? "" : avatar?.e ? <span className="text-[1.15em] leading-none">{avatar.e}</span> : initialOf(name)}
+      {empty ? "" : bird ? (
+        <span aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">
+          <BirdArt id={bird} className="absolute inset-x-0 bottom-0 h-[92%] w-full" />
+        </span>
+      ) : (
+        initialOf(name)
+      )}
       {host ? (
         <span aria-hidden="true" className="absolute -top-1.5 -end-2 grid size-[22px] place-items-center rounded-full border border-line-strong bg-night text-gold">
           <Glyph name="tv" className="size-[13px]" />

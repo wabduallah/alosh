@@ -1,12 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 import { Shell } from "@/components/shell";
-import { Egg, Glyph } from "@/components/brand";
+import { BirdArt, Egg, Glyph, birdName } from "@/components/brand";
 import { Toggle } from "@/components/admin/common";
 import { Button, cx } from "@/components/ui";
 import { useI18n } from "@/lib/i18n";
 import {
-  AVATAR_EMOJIS,
+  BIRD_IDS,
+  NO_AVATAR,
+  cleanAvatar,
   getAvatar,
   reduceMotionOn,
   setAvatar,
@@ -24,6 +26,12 @@ export const Route = createFileRoute("/settings")({
   head: () => ({ meta: [{ title: "الإعدادات — العش" }] }),
   component: SettingsPage,
 });
+
+const tile = (on: boolean) =>
+  cx(
+    "grid aspect-square place-items-center rounded-[18px] border transition",
+    on ? "border-gold bg-gold/15 shadow-[0_0_0_2px_var(--color-gold)]" : "border-line-strong/70 bg-deep-2/50 hover:border-glow",
+  );
 
 const choice = (on: boolean) =>
   cx(
@@ -72,7 +80,16 @@ function SettingsPage() {
     setReady(true);
   }, []);
 
-  function pickAvatar(next: Avatar | null) {
+  const colour = avatar?.c ?? null;
+  const bird = avatar?.e ?? null;
+  const birdLabel = bird === NO_AVATAR ? "بدون صورة رمزية" : bird ? birdName(bird) : "طائر تلقائي";
+  const colourLabel = bird === NO_AVATAR
+    ? colour ? "أول حرف من اسمك، على لونك" : "أول حرف من اسمك، ولون حسب ترتيب دخولك"
+    : bird ? (colour ? "على لونك" : "لون حسب ترتيب دخولك") : colour ? "حسب ترتيب دخولك، على لونك" : "الطائر واللون حسب ترتيب دخولك";
+
+  /** Changes the bird or the colour; null puts that part back on automatic. */
+  function update(part: Avatar) {
+    const next = cleanAvatar({ c: colour, e: bird, ...part });
     setAvatarState(next);
     setAvatar(next);
     setSaved(true);
@@ -98,23 +115,67 @@ function SettingsPage() {
           </div>
         </Section>
 
-        <Section title="صورتك في الغرف" icon="user" note="لون بيضتك ورمزها، يظهران لكل من في الغرفة وعلى التلفزيون في الغرف التي تدخلها من الآن.">
+        <Section title="صورتك في الغرف" icon="user" note="طائرك ولون بيضتك، يظهران لكل من في الغرفة وعلى التلفزيون في الغرف التي تدخلها من الآن.">
           <div className="flex items-center gap-4">
             <Egg name="أنت" index={1} avatar={avatar} size="xl" />
-            <div className="min-w-0 text-[14px] text-mist">
-              {avatar ? (avatar.e ? "لونك ورمزك" : "لونك، مع أول حرف من اسمك") : "تلقائي: لون حسب ترتيب دخولك، وأول حرف من اسمك"}
+            <div className="min-w-0 text-[14px] leading-6 text-mist">
+              <span className="block font-semibold text-ivory">{birdLabel}</span>
+              {colourLabel}
               {saved ? <span className="block font-semibold text-correct">حُفظت ✓</span> : null}
             </div>
           </div>
+          <div role="radiogroup" aria-labelledby="bird-label" className="grid gap-2">
+            <span id="bird-label" className="text-[14px] font-semibold text-ivory">الطائر</span>
+            <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-9 sm:gap-2">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={!bird}
+                onClick={() => update({ e: null })}
+                className={cx(tile(!bird), "text-[13px] font-bold", !bird ? "text-gold" : "text-mist")}
+              >
+                تلقائي
+              </button>
+              {BIRD_IDS.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="radio"
+                  aria-checked={bird === id}
+                  aria-label={birdName(id)}
+                  title={birdName(id)}
+                  onClick={() => update({ e: id })}
+                  className={cx(tile(bird === id), "overflow-hidden p-1")}
+                >
+                  <BirdArt id={id} className="size-full" />
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={bird === NO_AVATAR}
+              onClick={() => update({ e: NO_AVATAR })}
+              className={cx(
+                "flex min-h-11 w-fit items-center gap-2 rounded-full border px-4 text-[14px] font-semibold",
+                bird === NO_AVATAR ? "border-gold text-gold" : "border-line-strong/70 text-mist hover:text-ivory",
+              )}
+            >
+              <span aria-hidden="true" className={cx("grid size-5 place-items-center rounded-full border text-[11px]", bird === NO_AVATAR ? "border-gold bg-gold text-night" : "border-line-strong")}>
+                {bird === NO_AVATAR ? "✓" : ""}
+              </span>
+              بدون صورة رمزية (أول حرف من اسمي)
+            </button>
+          </div>
           <div className="grid gap-2">
-            <span className="text-[14px] font-semibold text-ivory">اللون</span>
+            <span className="text-[14px] font-semibold text-ivory">لون البيضة</span>
             <div role="radiogroup" aria-label="لون البيضة" className="flex flex-wrap gap-2">
               <button
                 type="button"
                 role="radio"
-                aria-checked={!avatar}
-                onClick={() => pickAvatar(null)}
-                className={cx("min-h-11 rounded-full border px-4 text-[14px] font-semibold", !avatar ? "border-gold text-gold" : "border-line-strong/70 text-mist hover:text-ivory")}
+                aria-checked={!colour}
+                onClick={() => update({ c: null })}
+                className={cx("min-h-11 rounded-full border px-4 text-[14px] font-semibold", !colour ? "border-gold text-gold" : "border-line-strong/70 text-mist hover:text-ivory")}
               >
                 تلقائي
               </button>
@@ -123,43 +184,12 @@ function SettingsPage() {
                   key={c}
                   type="button"
                   role="radio"
-                  aria-checked={avatar?.c === c}
+                  aria-checked={colour === c}
                   aria-label={`اللون ${c}`}
-                  onClick={() => pickAvatar({ c, e: avatar?.e ?? null })}
-                  className={cx("size-11 rounded-full border-2 transition", avatar?.c === c ? "border-ivory shadow-[0_0_0_3px_var(--color-gold)]" : "border-transparent")}
+                  onClick={() => update({ c })}
+                  className={cx("size-11 rounded-full border-2 transition", colour === c ? "border-ivory shadow-[0_0_0_3px_var(--color-gold)]" : "border-transparent")}
                   style={{ backgroundColor: `var(--color-egg-${c})` }}
                 />
-              ))}
-            </div>
-          </div>
-          <div className={cx("grid gap-2", !avatar && "opacity-50")}>
-            <span className="text-[14px] font-semibold text-ivory">
-              الرمز {!avatar ? <span className="font-normal text-mist">(اختر لونًا أولًا)</span> : null}
-            </span>
-            <div role="radiogroup" aria-label="رمز البيضة" className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={!!avatar && !avatar.e}
-                aria-label="أول حرف من اسمي"
-                disabled={!avatar}
-                onClick={() => avatar && pickAvatar({ c: avatar.c, e: null })}
-                className={cx("grid size-11 place-items-center rounded-full border text-[15px] font-bold", avatar && !avatar.e ? "border-gold text-gold" : "border-line-strong/70 text-mist")}
-              >
-                أ
-              </button>
-              {AVATAR_EMOJIS.map((e) => (
-                <button
-                  key={e}
-                  type="button"
-                  role="radio"
-                  aria-checked={avatar?.e === e}
-                  disabled={!avatar}
-                  onClick={() => avatar && pickAvatar({ c: avatar.c, e })}
-                  className={cx("grid size-11 place-items-center rounded-full border text-[22px] transition", avatar?.e === e ? "border-gold bg-gold/15" : "border-line-strong/70 hover:border-glow")}
-                >
-                  {e}
-                </button>
               ))}
             </div>
           </div>
