@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Egg, Glyph } from "@/components/brand";
-import { Button, cx } from "@/components/ui";
+import { Button, cx, inputClass } from "@/components/ui";
 import { playCue } from "@/lib/sfx";
 import { supabase } from "@/lib/supabase";
 
@@ -41,8 +41,10 @@ export type HalbaState = {
   bid_ends_at?: string | null;
   prove_ends_at?: string | null;
   count?: number;
+  answers?: HalbaAnswer[];
   result?: HalbaResult | null;
 };
+export type HalbaAnswer = { n: number; text: string; status: "pending" | "ok" | "no" };
 export type HalbaPlayer = { id: string; player_name: string; score: number; is_host: boolean };
 
 export const HALBA_ERRORS: Record<string, string> = {
@@ -60,6 +62,11 @@ export const HALBA_ERRORS: Record<string, string> = {
   NOT_YET: "المزايدة ما خلصت بعد.",
   NOT_IN_ROOM: "انضم للغرفة أولًا.",
   NOT_JUDGE: "الحَكَم هو من يحسب الإجابات.",
+  NOT_BIDDER: "صاحب المزايدة فقط يكتب الإجابات.",
+  BAD_ANSWER: "اكتب إجابة قصيرة.",
+  TOO_MANY: "وصلت لأقصى عدد من الإجابات.",
+  DUPLICATE: "كتبتها من قبل.",
+  NO_ANSWER: "هذه الإجابة غير موجودة.",
 };
 
 /** Parses a timestamp from JSON, trimming microseconds that JS can't read. */
@@ -298,6 +305,73 @@ function ResultCard({ result, maxLives }: { result: HalbaResult; maxLives: numbe
   );
 }
 
+/* ---------------- Typed answers ---------------- */
+
+const STATUS_STYLE: Record<HalbaAnswer["status"], string> = {
+  pending: "border-line-strong/60 bg-deep-2/70 text-ivory",
+  ok: "border-correct/60 bg-correct-fill/20 text-ivory",
+  no: "border-wrong/50 bg-wrong-fill/15 text-faint line-through",
+};
+
+/** The bidder's answers so far, with their judging. */
+export function AnswersList({ answers, big = false }: { answers: HalbaAnswer[]; big?: boolean }) {
+  if (answers.length === 0) return null;
+  return (
+    <ul className="flex flex-wrap justify-center gap-2">
+      {answers.map((a) => (
+        <li key={a.n} className={cx("inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-semibold", big ? "text-[clamp(18px,1.8vw,34px)]" : "text-[15px]", STATUS_STYLE[a.status])}>
+          {a.status === "ok" ? <Glyph name="check" className="size-[1em] text-correct" /> : a.status === "no" ? <Glyph name="x" className="size-[1em] text-wrong" /> : null}
+          {a.text}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** The bidder types answers one by one; the box stays focused for the next one. */
+function AnswerInput({ roomId, reload }: { roomId: string; reload: () => Promise<void> }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const box = useRef<HTMLInputElement>(null);
+
+  async function send(event: FormEvent) {
+    event.preventDefault();
+    const value = text.trim();
+    if (!value || busy) return;
+    setBusy(true);
+    setMessage(null);
+    const { error } = await call("halba_answer", { p_room_id: roomId, p_text: value });
+    if (error) setMessage(error);
+    else setText("");
+    await reload();
+    setBusy(false);
+    box.current?.focus();
+  }
+
+  return (
+    <form onSubmit={send} className="grid gap-2">
+      <div className="flex gap-2">
+        <input
+          ref={box}
+          autoFocus
+          className={cx(inputClass, "min-h-14 text-[18px]")}
+          value={text}
+          maxLength={60}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="اكتب إجابة واضغط إرسال"
+          enterKeyHint="send"
+          autoComplete="off"
+        />
+        <Button type="submit" tone="primary" className="min-h-14 shrink-0 px-5" disabled={busy || !text.trim()}>
+          إرسال
+        </Button>
+      </div>
+      {message ? <p className="text-[14px] font-semibold text-wrong">{message}</p> : null}
+    </form>
+  );
+}
+
 /* ---------------- Fighter and judge controls ---------------- */
 
 /** Bidding, challenging and "your turn": shown on any phone that is in the ring (the host's too). */
@@ -389,10 +463,15 @@ function FighterControls({
 
   if (phase === "prove" && iAmBidder) {
     return (
-      <p className="rounded-[18px] border border-gold/50 bg-gold/10 p-4 font-display text-[22px] font-extrabold text-ivory">
-        دورك! اذكر {state.bid} إجابات بصوت عالٍ
-        {state.challenger_name ? <span className="block text-[15px] font-semibold text-mist">{nameOf(players, state.challenger) || state.challenger_name} يحسب إجاباتك</span> : null}
-      </p>
+      <div className="grid gap-3">
+        <p className="rounded-[18px] border border-gold/50 bg-gold/10 p-4 font-display text-[22px] font-extrabold text-ivory">
+          دورك! اكتب {state.bid} إجابات، أو قلها بصوت عالٍ
+          <span className="block text-[15px] font-semibold text-mist">
+            {state.challenger ? `${nameOf(players, state.challenger) || state.challenger_name} يحكم على إجاباتك` : "الحَكَم يحكم على إجاباتك"}
+          </span>
+        </p>
+        <AnswerInput roomId={roomId} reload={reload} />
+      </div>
     );
   }
   return null;
@@ -415,29 +494,62 @@ function JudgeControls({ roomId, state, reload, compact = false }: { roomId: str
     setBusy(false);
   }
 
+  const answers = state.answers ?? [];
+  const pending = answers.filter((a) => a.status === "pending").length;
+
+  // After the clock: a moment for the last answer to land, then close by itself, once nothing waits for a ✓/✗.
   useEffect(() => {
-    if (left === 0 && !finishing.current) {
+    if (left === 0 && pending === 0 && !finishing.current) {
       finishing.current = true;
-      // A moment for the last answer to land, then the round closes by itself.
       const t = window.setTimeout(() => void act("halba_finish"), 2500);
       return () => window.clearTimeout(t);
     }
     // act only needs the latest room id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [left]);
+  }, [left, pending]);
 
   return (
     <div className="grid gap-3 rounded-[22px] border border-gold/40 bg-gold/5 p-4">
-      <p className="text-[14px] font-semibold text-gold">أنت الحَكَم: اضغط +1 لكل إجابة صحيحة تسمعها</p>
+      <p className="text-[14px] font-semibold text-gold">أنت الحَكَم: ✓ للإجابة الصحيحة، ✗ للخاطئة</p>
+      {answers.length > 0 ? (
+        <ul className="grid gap-2">
+          {answers.map((a) => (
+            <li key={a.n} className={cx("flex items-center gap-2 rounded-[14px] border px-3 py-1.5", STATUS_STYLE[a.status])}>
+              <span className="min-w-0 flex-1 truncate text-start text-[17px] font-semibold">{a.text}</span>
+              <button
+                type="button"
+                onClick={() => act("halba_mark", { p_n: a.n, p_ok: true })}
+                disabled={busy}
+                aria-label={`قبول ${a.text}`}
+                className={cx("grid size-11 place-items-center rounded-full border transition", a.status === "ok" ? "border-correct bg-correct-fill text-night" : "border-correct/60 text-correct hover:bg-correct-fill/20")}
+              >
+                <Glyph name="check" className="size-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => act("halba_mark", { p_n: a.n, p_ok: false })}
+                disabled={busy}
+                aria-label={`رفض ${a.text}`}
+                className={cx("grid size-11 place-items-center rounded-full border transition", a.status === "no" ? "border-wrong bg-wrong-fill text-ivory" : "border-wrong/60 text-wrong hover:bg-wrong-fill/20")}
+              >
+                <Glyph name="x" className="size-5" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-[13px] text-mist">الإجابات المكتوبة تظهر هنا. إذا قالها بصوت عالٍ، استخدم +1.</p>
+      )}
+      {pending > 0 && left === 0 ? <p className="text-[13px] font-semibold text-gold">احكم على الإجابات الباقية ({pending}) لتنتهي الجولة.</p> : null}
       <div className="flex items-center justify-center gap-4">
-        <Button tone="quiet" className="size-16 rounded-full p-0 text-[26px]" onClick={() => act("halba_count", { p_delta: -1 })} disabled={busy || left === 0} aria-label="إنقاص إجابة">
+        <Button tone="quiet" className="size-14 rounded-full p-0 text-[24px]" onClick={() => act("halba_count", { p_delta: -1 })} disabled={busy || left === 0} aria-label="إنقاص إجابة">
           −
         </Button>
         <p className={cx("min-w-28 font-display leading-none font-extrabold tabular-nums text-ivory", compact ? "text-[52px]" : "text-[64px]")}>
           {state.count ?? 0}
           <span className="text-[0.45em] text-mist">/{state.bid}</span>
         </p>
-        <Button tone="primary" className="size-20 rounded-full p-0 text-[32px]" onClick={() => act("halba_count", { p_delta: 1 })} disabled={busy || left === 0} aria-label="إجابة صحيحة">
+        <Button tone="primary" className="size-16 rounded-full p-0 text-[26px]" onClick={() => act("halba_count", { p_delta: 1 })} disabled={busy || left === 0} aria-label="إجابة صحيحة منطوقة">
           <span dir="ltr">+1</span>
         </Button>
       </div>
@@ -452,13 +564,16 @@ function JudgeControls({ roomId, state, reload, compact = false }: { roomId: str
 /** Shown to everyone else during the proof. */
 function ProofView({ state, players }: { state: HalbaState; players: HalbaPlayer[] }) {
   return (
+    <div className="grid gap-3">
+    <AnswersList answers={state.answers ?? []} />
     <p className="font-display text-[56px] leading-none font-extrabold tabular-nums text-ivory">
       {state.count ?? 0}
       <span className="text-[24px] text-mist">/{state.bid}</span>
       <span className="mt-2 block font-sans text-[14px] font-normal text-mist">
-        {state.challenger ? `يحسب ${nameOf(players, state.challenger) || state.challenger_name}` : "يحسب الحَكَم"}
+        {state.challenger ? `يحكم ${nameOf(players, state.challenger) || state.challenger_name}` : "يحكم الحَكَم"}
       </span>
     </p>
+    </div>
   );
 }
 
