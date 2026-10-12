@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Shell } from "@/components/shell";
 import { Button, cx } from "@/components/ui";
 import { Cradle, Glyph } from "@/components/brand";
-import { HalbaPlayerPanel, type HalbaState } from "@/components/halba";
+import { HalbaPlayerPanel } from "@/components/halba";
 import { supabase } from "@/lib/supabase";
 
 /**
@@ -293,7 +293,7 @@ function PlayerBoard() {
         ) : null}
 
         {isHalba ? (
-          <HalbaPlayerPanel roomId={room.id} meId={me?.id ?? null} state={stateData as unknown as HalbaState} players={players} />
+          <HalbaPlayerPanel roomId={room.id} meId={me?.id ?? null} />
         ) : null}
 
         {isMafia ? (
@@ -402,7 +402,7 @@ function PlayerBoard() {
           </div>
         ) : null}
 
-        {ranking.length > 0 ? (
+        {ranking.length > 0 && !isHalba ? (
           <div className="glass-card mt-6 rounded-2xl p-4">
             <h2 className="mb-2 text-sm font-extrabold text-ivory">النتائج</h2>
             <ul className="space-y-2">
