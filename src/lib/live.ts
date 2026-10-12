@@ -56,3 +56,37 @@ export function useLivePoll(name: string, tables: Array<{ table: string; filter?
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 }
+
+/**
+ * The same adaptive poll for code that manages its own realtime channel:
+ *   const poll = adaptivePoll(load, 2000);
+ *   channel.subscribe(poll.onStatus);
+ *   ...cleanup: poll.stop();
+ * Polls every `fastMs` until the channel is connected, then every POLL_HEALTHY_MS.
+ */
+export function adaptivePoll(fn: () => unknown, fastMs = POLL_FALLBACK_MS) {
+  let healthy = false;
+  let stopped = false;
+  let timer = 0;
+  const schedule = () => {
+    window.clearTimeout(timer);
+    if (stopped) return;
+    timer = window.setTimeout(() => {
+      if (typeof document === "undefined" || document.visibilityState === "visible") void fn();
+      schedule();
+    }, healthy ? Math.max(fastMs, POLL_HEALTHY_MS) : fastMs);
+  };
+  schedule();
+  return {
+    onStatus(status: string) {
+      const was = healthy;
+      healthy = status === "SUBSCRIBED";
+      if (healthy && !was) void fn();
+      schedule();
+    },
+    stop() {
+      stopped = true;
+      window.clearTimeout(timer);
+    },
+  };
+}

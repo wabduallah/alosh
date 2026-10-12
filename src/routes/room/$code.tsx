@@ -9,6 +9,7 @@ import { HalbaPlayerPanel } from "@/components/halba";
 import { GridPlayerPanel } from "@/components/grid";
 import { ResultShare, rankingShare } from "@/components/result-share";
 import { MafiaShare, MafiaSummary, ROLE_HINTS, ROLE_ICONS, ROLE_NAMES, VotesView, WINNERS, mmss, useCountdown, type MafiaPlayerRow, type MafiaPublicState, type MafiaVote } from "@/components/mafia";
+import { adaptivePoll } from "@/lib/live";
 import { supabase } from "@/lib/supabase";
 
 /**
@@ -164,7 +165,7 @@ function PlayerBoard() {
           setPlayers((data ?? []) as PlayerRow[]);
         },
       )
-      .subscribe();
+      .subscribe((status) => poller.onStatus(status));
 
     async function refreshPlayers() {
       const { data } = await client
@@ -174,7 +175,7 @@ function PlayerBoard() {
       if (data) setPlayers(data as PlayerRow[]);
     }
 
-    const timer = window.setInterval(() => {
+    const poller = adaptivePoll(() => {
       refreshState();
       refreshPlayers();
     }, 2000);
@@ -187,7 +188,7 @@ function PlayerBoard() {
     document.addEventListener("visibilitychange", onVisible);
 
     return () => {
-      window.clearInterval(timer);
+      poller.stop();
       document.removeEventListener("visibilitychange", onVisible);
       client.removeChannel(channel);
     };

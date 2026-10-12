@@ -4,6 +4,7 @@ import { getAvatar, rememberRoom } from "@/lib/prefs";
 import { useEffect, useState, type FormEvent } from "react";
 import { Button, Field, buttonBase, buttonTone, cx, inputClass } from "@/components/ui";
 import { CodeCells, Cradle, Egg, Glyph, Mark } from "@/components/brand";
+import { adaptivePoll } from "@/lib/live";
 import { ensureSession, supabase } from "@/lib/supabase";
 
 /** Room codes use this alphabet only (no I, O, 0, 1), matching the database. */
@@ -51,14 +52,14 @@ export function JoinRoom({ initialCode = "" }: { initialCode?: string }) {
           loadPlayers();
         },
       )
-      .subscribe();
+      .subscribe((status) => poller.onStatus(status));
 
     // Fallback: re-read the list every few seconds in case realtime drops.
-    const timer = window.setInterval(loadPlayers, 3000);
+    const poller = adaptivePoll(loadPlayers, 3000);
 
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      poller.stop();
       client.removeChannel(channel);
     };
   }, [room]);

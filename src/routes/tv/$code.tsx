@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Egg, GameIcon, Glyph, Lockup, Mark } from "@/components/brand";
 import { QrCode } from "@/components/qr-code";
 import { buttonBase, buttonTone, cx, joinLink } from "@/components/ui";
+import { adaptivePoll } from "@/lib/live";
 import { ensureSession, supabase } from "@/lib/supabase";
 import { useRoomSession } from "@/lib/room-session";
 import { GridTv } from "@/components/grid";
@@ -184,11 +185,11 @@ function TvScreen() {
       .on("postgres_changes", { event: "*", schema: "public", table: "room_game_state", filter: `room_id=eq.${roomId}` }, () => refresh())
       .on("postgres_changes", { event: "*", schema: "public", table: "room_players", filter: `room_id=eq.${roomId}` }, () => refresh())
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "game_rooms", filter: `id=eq.${roomId}` }, () => refresh())
-      .subscribe();
-    const poll = window.setInterval(refresh, 2000);
+      .subscribe((status) => poller.onStatus(status));
+    const poller = adaptivePoll(refresh, 2000);
     return () => {
       cancelled = true;
-      window.clearInterval(poll);
+      poller.stop();
       client.removeChannel(channel);
     };
   }, [room?.id, isBluff, isOutsider, isMafia]);

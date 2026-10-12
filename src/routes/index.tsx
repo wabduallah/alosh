@@ -18,6 +18,21 @@ export const Route = createFileRoute("/")({
       { title: "العش — ألعاب جماعية للعائلة والأصدقاء" },
       { name: "description", content: "ألعاب جماعية تُلعب على شاشة واحدة وجوال لكل لاعب، مجانًا وبدون تسجيل." },
     ],
+    links: [{ rel: "canonical", href: "https://www.al3sh.app/" }],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "WebSite",
+          name: "العش",
+          alternateName: "al3sh",
+          url: "https://www.al3sh.app/",
+          inLanguage: "ar",
+          description: "ألعاب جماعية للعائلة والأصدقاء: شاشة واحدة وجوال لكل لاعب، مجانًا وبدون تسجيل.",
+        }),
+      },
+    ],
   }),
   component: Home,
 });

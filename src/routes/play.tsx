@@ -6,6 +6,7 @@ import { Shell } from "@/components/shell";
 import { Button, Field, buttonBase, buttonTone, inputClass, cx, joinLink } from "@/components/ui";
 import { Egg, GameIcon, Glyph, Mark, gameStyle, gameVars } from "@/components/brand";
 import { QrCode } from "@/components/qr-code";
+import { adaptivePoll } from "@/lib/live";
 import { ensureSession, supabase } from "@/lib/supabase";
 import { CATALOG, PLAYABLE_SLUGS, findCard } from "@/lib/catalog";
 
@@ -165,10 +166,10 @@ function CreatePage() {
           loadPlayers();
         },
       )
-      .subscribe();
+      .subscribe((status) => poller.onStatus(status));
 
     // Fallback: realtime can drop silently on a phone or a sleeping tab. Re-read the list every few seconds.
-    const timer = window.setInterval(loadPlayers, 3000);
+    const poller = adaptivePoll(loadPlayers, 3000);
     const onVisible = () => {
       if (document.visibilityState === "visible") loadPlayers();
     };
@@ -176,7 +177,7 @@ function CreatePage() {
 
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      poller.stop();
       document.removeEventListener("visibilitychange", onVisible);
       client.removeChannel(channel);
     };

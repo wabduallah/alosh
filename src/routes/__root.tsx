@@ -5,6 +5,8 @@ import { I18nProvider } from "@/lib/i18n";
 import appCss from "../styles.css?url";
 import { PrefsBoot } from "@/components/prefs-boot";
 
+const CF_BEACON = (import.meta.env.VITE_CF_BEACON_TOKEN as string | undefined)?.trim() || "";
+
 export const Route = createRootRoute({
   head: () => ({
     meta: [
@@ -30,6 +32,10 @@ export const Route = createRootRoute({
       { rel: "manifest", href: "/__grok/manifest.webmanifest" },
       { rel: "apple-touch-icon", href: "/__grok/icon-180.png" },
     ],
+    // Visitor analytics (Cloudflare Web Analytics: no cookies, no personal data), when a token is set.
+    scripts: CF_BEACON
+      ? [{ src: "https://static.cloudflareinsights.com/beacon.min.js", defer: true, "data-cf-beacon": JSON.stringify({ token: CF_BEACON }) }]
+      : [],
   }),
   component: () => (
     <html lang="ar" dir="rtl" suppressHydrationWarning>

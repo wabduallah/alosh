@@ -12,6 +12,7 @@ import { Glyph } from "@/components/brand";
 import { ShareRoom } from "@/components/share";
 import { HalbaHostPanel } from "@/components/halba";
 import { MafiaShare, MafiaSummary, ROLE_ICONS, ROLE_NAMES, VotesView, WINNERS, mmss, narratorLine, useCountdown, type MafiaPlayerRow, type MafiaPublicState } from "@/components/mafia";
+import { adaptivePoll } from "@/lib/live";
 import { ensureSession, supabase } from "@/lib/supabase";
 
 /**
@@ -156,16 +157,16 @@ function HostBoard() {
           refresh();
         },
       )
-      .subscribe();
+      .subscribe((status) => poller.onStatus(status));
 
-    const timer = window.setInterval(refresh, 2000);
+    const poller = adaptivePoll(refresh, 2000);
     const onVisible = () => {
       if (document.visibilityState === "visible") refresh();
     };
     document.addEventListener("visibilitychange", onVisible);
 
     return () => {
-      window.clearInterval(timer);
+      poller.stop();
       document.removeEventListener("visibilitychange", onVisible);
       client.removeChannel(channel);
     };
