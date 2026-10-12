@@ -1,10 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Shell } from "@/components/shell";
 import { Button, buttonBase, buttonTone, cx } from "@/components/ui";
 import { Glyph } from "@/components/brand";
 import { ShareRoom } from "@/components/share";
 import { HalbaHostPanel } from "@/components/halba";
+import { MafiaShare, MafiaSummary, ROLE_ICONS, ROLE_NAMES, VotesView, WINNERS, mmss, narratorLine, useCountdown, type MafiaPlayerRow, type MafiaPublicState } from "@/components/mafia";
 import { ensureSession, supabase } from "@/lib/supabase";
 
 /**
@@ -1167,46 +1168,56 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
   );
 }
 
-type MafiaState = { phase?: string; round?: number; winner?: string | null; last_result?: string | null; runoff?: string[] | null };
+type MafiaState = MafiaPublicState;
 
 const MAFIA_HOST_ERRORS: Record<string, string> = {
   ROOM_NOT_PLAYING: "ابدأ الغرفة أولًا.",
   ALREADY_STARTED: "اللعبة بدأت بالفعل.",
-  NOT_ENOUGH_PLAYERS: "تحتاج المافيا إلى 5 لاعبين على الأقل.",
+  NOT_ENOUGH_PLAYERS: "تحتاج المافيا إلى 5 لاعبين على الأقل غير المضيف.",
   TOO_MANY_PLAYERS: "الحد الأقصى 14 لاعبًا.",
   WRONG_PHASE: "هذه الخطوة غير متاحة الآن.",
   NO_STATE: "تعذّر تحميل اللعبة.",
+  BAD_MAFIA_COUNT: "عدد المافيا لازم يكون أقل من نصف اللاعبين.",
+  TOO_MANY_ROLES: "الأدوار أكثر من اللاعبين. قلّل الأدوار الإضافية أو عدد المافيا.",
 };
-
-const MAFIA_ROLE_LABELS: Record<string, string> = { mafia: "مافيا", citizen: "مواطن", doctor: "طبيب", detective: "محقق" };
 
 /** mafia_progress(): votes for everyone, night actions for the host only (mafia_v2.sql). */
 type MafiaProgress = { phase?: string; done?: number; total?: number; mafia_split?: boolean };
 
 function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; roomCode: string; roomStatus: string }) {
   const [state, setState] = useState<MafiaState>({});
-  const [rows, setRows] = useState<{ player_id: string; player_name: string; alive: boolean; player_role: string | null }[]>([]);
+  const [rows, setRows] = useState<MafiaPlayerRow[]>([]);
+  const [guests, setGuests] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ended, setEnded] = useState(roomStatus === "finished");
   const [progress, setProgress] = useState<MafiaProgress | null>(null);
   const [auto, setAuto] = useState(true);
   const [countdown, setCountdown] = useState<number | null>(null);
+  // Setup
+  const [mafiaCount, setMafiaCount] = useState(0);
+  const [reveal, setReveal] = useState(false);
+  const [daySeconds, setDaySeconds] = useState(120);
+  const [jester, setJester] = useState(false);
+  const [mayor, setMayor] = useState(false);
+  const [bodyguard, setBodyguard] = useState(false);
 
   useEffect(() => {
     if (!supabase) return;
     const client = supabase;
     let cancelled = false;
     async function load() {
-      const [{ data: gs }, { data: list }, { data: prog }] = await Promise.all([
+      const [{ data: gs }, { data: list }, { data: prog }, { count }] = await Promise.all([
         client.from("room_game_state").select("state_data").eq("room_id", roomId).maybeSingle(),
         client.rpc("mafia_players", { p_room_id: roomId }),
         client.rpc("mafia_progress", { p_room_id: roomId }),
+        client.from("room_players").select("id", { count: "exact", head: true }).eq("room_id", roomId).eq("is_host", false),
       ]);
       if (cancelled) return;
       if (gs) setState((gs.state_data ?? {}) as MafiaState);
-      if (list) setRows(list as typeof rows);
+      if (list) setRows(list as MafiaPlayerRow[]);
       setProgress((prog ?? null) as MafiaProgress | null);
+      if (typeof count === "number") setGuests(count);
     }
     load();
     const poll = window.setInterval(load, 1500);
@@ -1214,16 +1225,14 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
       cancelled = true;
       window.clearInterval(poll);
     };
-    // rows is set inside load; the effect only depends on the room.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
-  async function step(fn: "mafia_start" | "mafia_resolve_night" | "mafia_open_vote" | "mafia_close_vote") {
+  async function step(fn: "mafia_start" | "mafia_resolve_night" | "mafia_open_vote" | "mafia_close_vote", args: Record<string, unknown> = {}) {
     if (!supabase || busy) return;
     setBusy(true);
     setError(null);
     try {
-      const { data, error: rpcError } = await supabase.rpc(fn, { p_room_id: roomId });
+      const { data, error: rpcError } = await supabase.rpc(fn, { p_room_id: roomId, ...args });
       if (rpcError) throw rpcError;
       const result = data as { ok: boolean; reason?: string };
       if (!result.ok) setError(MAFIA_HOST_ERRORS[result.reason ?? ""] ?? "تعذّر تنفيذ الخطوة.");
@@ -1254,6 +1263,7 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
   const over = phase === "over";
   const alive = rows.filter((p) => p.alive).length;
   const runoff = Array.isArray(state.runoff) ? state.runoff : null;
+  const dayLeft = useCountdown(phase === "day" ? state.day_ends_at : null);
   const complete = !!progress && progress.phase === phase && (phase === "night" || phase === "vote") && (progress.total ?? 0) > 0 && (progress.done ?? 0) >= (progress.total ?? 0);
   const stepKey = `${phase}:${round}:${runoff ? "r" : ""}`;
 
@@ -1275,12 +1285,29 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
     // step is stable for this one-shot call.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [countdown]);
+
+  // The day timer ran out: open the vote (when automatic moves are on).
+  const dayDone = useRef("");
+  useEffect(() => {
+    if (phase !== "day" || dayLeft !== 0 || !auto || dayDone.current === stepKey) return;
+    dayDone.current = stepKey;
+    void step("mafia_open_vote");
+    // step is stable for this one-shot call.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, dayLeft, auto, stepKey]);
+
   const headline =
     phase === "" ? "جاهزون للبدء؟"
-    : phase === "night" ? `ليل الجولة ${round}`
-    : phase === "day" ? `نهار الجولة ${round}`
-    : phase === "vote" ? "التصويت"
+    : phase === "night" ? `🌙 ليل الجولة ${round}`
+    : phase === "day" ? `☀️ نهار الجولة ${round}`
+    : phase === "vote" ? (runoff ? "إعادة التصويت" : "التصويت")
     : "انتهت اللعبة";
+
+  const maxMafia = Math.max(1, Math.floor((guests - 1) / 2));
+  const autoMafia = guests >= 10 ? 3 : guests >= 7 ? 2 : 1;
+  const plannedMafia = mafiaCount || autoMafia;
+  const special = 2 + Number(jester) + Number(mayor) + Number(bodyguard);
+  const fits = guests >= 5 && plannedMafia * 2 < guests && plannedMafia + special < guests;
 
   return (
     <section className="mx-auto mt-2 max-w-2xl lg:max-w-3xl tv:max-w-5xl">
@@ -1290,6 +1317,71 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
         <p className="mt-4 text-xl font-extrabold text-ivory">{headline}</p>
         {state.last_result ? <p className="mt-3 text-sm font-bold text-ivory">{state.last_result}</p> : null}
 
+        {narratorLine(state, rows) ? (
+          <div className="mt-4 rounded-2xl border border-violet-text/40 bg-violet-fill/10 p-3 text-start">
+            <p className="text-xs font-bold text-violet-text">🎙️ اقرأ بصوت عالٍ</p>
+            <p className="mt-1 text-[15px] leading-7 text-ivory">{narratorLine(state, rows)}</p>
+          </div>
+        ) : null}
+
+        {phase === "" ? (
+          <div className="mt-5 grid gap-4 text-start">
+            <p className="text-center text-sm text-muted">
+              في الغرفة {guests} {guests > 2 && guests < 11 ? "لاعبين" : "لاعبًا"} غير المضيف. المضيف هو الراوي ولا يلعب.
+            </p>
+            <MafiaChoice
+              label="عدد المافيا"
+              value={mafiaCount}
+              onChange={setMafiaCount}
+              options={[{ value: 0, label: `تلقائي (${autoMafia})` }, ...[1, 2, 3, 4].filter((n) => n <= maxMafia).map((n) => ({ value: n, label: String(n) }))]}
+            />
+            <MafiaChoice
+              label="مؤقت النهار (للنقاش)"
+              value={daySeconds}
+              onChange={setDaySeconds}
+              options={[
+                { value: 0, label: "بدون" },
+                { value: 60, label: "دقيقة" },
+                { value: 120, label: "دقيقتان" },
+                { value: 180, label: "3 دقائق" },
+                { value: 300, label: "5 دقائق" },
+              ]}
+            />
+            <label className="flex items-start gap-3 rounded-2xl border border-line bg-deep-2/50 p-3">
+              <input type="checkbox" checked={reveal} onChange={(e) => setReveal(e.target.checked)} className="mt-1 size-5 accent-[var(--color-gold)]" />
+              <span>
+                <b className="text-ivory">كشف دور من يخرج</b>
+                <span className="block text-xs text-muted">عند القتل أو الإقصاء يُعلن دوره. بدونها تبقى الأدوار سرًّا حتى النهاية.</span>
+              </span>
+            </label>
+            <div className="grid gap-2">
+              <p className="text-sm font-bold text-ivory">أدوار إضافية</p>
+              {[
+                { on: jester, set: setJester, role: "jester", text: "يفوز وحده إذا أقصوه بالتصويت." },
+                { on: mayor, set: setMayor, role: "mayor", text: "معروف للجميع، وصوته بصوتين." },
+                { on: bodyguard, set: setBodyguard, role: "bodyguard", text: "يحرس لاعبًا كل ليلة، ويموت بدلًا منه إذا هوجم." },
+              ].map((r) => (
+                <label key={r.role} className="flex items-start gap-3 rounded-2xl border border-line bg-deep-2/50 p-3">
+                  <input type="checkbox" checked={r.on} onChange={(e) => r.set(e.target.checked)} className="mt-1 size-5 accent-[var(--color-gold)]" />
+                  <span>
+                    <b className="text-ivory">
+                      {ROLE_ICONS[r.role]} {ROLE_NAMES[r.role]}
+                    </b>
+                    <span className="block text-xs text-muted">{r.text}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p className={cx("text-center text-xs", fits ? "text-muted" : "text-gold")}>
+              {guests < 5
+                ? "تحتاجون 5 لاعبين على الأقل غير المضيف."
+                : fits
+                  ? `الأدوار: ${plannedMafia} مافيا، طبيب، محقق${bodyguard ? "، حارس" : ""}${mayor ? "، عمدة" : ""}${jester ? "، مهرّج" : ""}، والباقي مواطنون (${guests - plannedMafia - special}).`
+                  : "الأدوار أكثر من اللاعبين. قلّل الأدوار الإضافية أو عدد المافيا."}
+            </p>
+          </div>
+        ) : null}
+
         <div className="mt-6 grid grid-cols-2 gap-2 text-right sm:grid-cols-3">
           {rows.map((p) => (
             <div
@@ -1297,20 +1389,22 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
               className={cx(
                 "rounded-xl px-3 py-2 text-sm font-bold",
                 p.alive ? "bg-deep-2/70 text-ivory" : "bg-deep/50 text-muted line-through",
+                runoff?.includes(p.player_id) && "ring-2 ring-gold",
               )}
             >
+              {p.is_mayor ? "👑 " : ""}
               {p.player_name}
-              {over && p.player_role ? (
-                <span className="block text-xs font-normal text-muted no-underline">{MAFIA_ROLE_LABELS[p.player_role] ?? ""}</span>
+              {p.player_role && (over || !p.alive) ? (
+                <span className="block text-xs font-normal text-muted no-underline">{ROLE_NAMES[p.player_role] ?? ""}</span>
               ) : null}
             </div>
           ))}
         </div>
-        <p className="mt-3 text-xs text-muted">الأحياء: {alive}</p>
+        {phase !== "" ? <p className="mt-3 text-xs text-muted">الأحياء: {alive}</p> : null}
 
-        {runoff && phase === "vote" ? (
-          <p className="mt-4 rounded-2xl border border-gold/40 bg-gold/10 p-3 text-sm font-bold text-ivory">
-            إعادة التصويت بين: {rows.filter((p) => runoff.includes(p.player_id)).map((p) => p.player_name).join(" و")}
+        {phase === "day" && dayLeft !== null ? (
+          <p className={cx("mt-4 font-display text-4xl font-extrabold tabular-nums", dayLeft <= 10 ? "text-wrong" : "text-gold")} dir="ltr">
+            {mmss(dayLeft)}
           </p>
         ) : null}
 
@@ -1326,17 +1420,34 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
                 الكل اختار. {phase === "night" ? "يطلع الفجر" : "يُغلق التصويت"} بعد {countdown}…
               </p>
             ) : null}
-            <label className="inline-flex items-center gap-2 text-xs text-muted">
-              <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="size-4 accent-[var(--color-gold)]" />
-              انتقل تلقائيًا عندما يختار الجميع
-            </label>
+          </div>
+        ) : null}
+        {phase !== "" && !over ? (
+          <label className="mt-3 inline-flex items-center gap-2 text-xs text-muted">
+            <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="size-4 accent-[var(--color-gold)]" />
+            انتقل تلقائيًا (عندما يختار الجميع، أو ينتهي وقت النهار)
+          </label>
+        ) : null}
+
+        {(phase === "night" || (phase === "vote" && runoff)) && state.last_votes && state.last_votes.length > 0 ? (
+          <div className="mx-auto mt-4 max-w-md">
+            <VotesView votes={state.last_votes} />
           </div>
         ) : null}
 
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           {phase === "" ? (
-            <Button type="button" tone="primary" onClick={() => step("mafia_start")} disabled={busy}>
-              ابدأ اللعبة
+            <Button
+              type="button"
+              tone="primary"
+              onClick={() =>
+                step("mafia_start", {
+                  p_settings: { mafia: mafiaCount || null, reveal_roles: reveal, day_seconds: daySeconds, jester, mayor, bodyguard },
+                })
+              }
+              disabled={busy || !fits}
+            >
+              وزّع الأدوار وابدأ
             </Button>
           ) : null}
           {phase === "night" ? (
@@ -1357,9 +1468,11 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
         </div>
 
         {over ? (
-          <p className="mt-4 text-xl font-extrabold text-ivory">
-            {state.winner === "mafia" ? "فازت المافيا" : "فاز المواطنون"}
-          </p>
+          <div className="mt-5 grid gap-4">
+            <p className="text-2xl font-extrabold text-ivory">{WINNERS[state.winner ?? ""] ?? "انتهت اللعبة"}</p>
+            <MafiaSummary state={state} rows={rows} />
+            <MafiaShare state={state} rows={rows} />
+          </div>
         ) : null}
         {error ? (
           <p role="alert" className="mt-3 text-sm text-wrong">
@@ -1378,5 +1491,27 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
         <p className="mt-6 text-center text-sm text-muted">انتهت الغرفة.</p>
       )}
     </section>
+  );
+}
+
+function MafiaChoice({ label, value, options, onChange }: { label: string; value: number; options: Array<{ value: number; label: string }>; onChange: (v: number) => void }) {
+  return (
+    <div className="grid gap-1.5">
+      <span className="text-sm font-bold text-ivory">{label}</span>
+      <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1.5">
+        {options.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={value === o.value}
+            onClick={() => onChange(o.value)}
+            className={cx("min-h-10 rounded-full border px-4 text-sm font-semibold transition", value === o.value ? "btn-gold border-transparent" : "border-line-strong/70 bg-deep-2/60 text-mist hover:text-ivory")}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

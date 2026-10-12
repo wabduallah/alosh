@@ -4,6 +4,7 @@ import { Shell } from "@/components/shell";
 import { Button, cx } from "@/components/ui";
 import { Cradle, Glyph } from "@/components/brand";
 import { HalbaPlayerPanel } from "@/components/halba";
+import { MafiaShare, MafiaSummary, ROLE_HINTS, ROLE_ICONS, ROLE_NAMES, VotesView, WINNERS, mmss, useCountdown, type MafiaPlayerRow, type MafiaPublicState, type MafiaVote } from "@/components/mafia";
 import { supabase } from "@/lib/supabase";
 
 /**
@@ -254,8 +255,8 @@ function PlayerBoard() {
           <h1 className="text-lg font-extrabold text-ivory">
             الغرفة <span className="room-code text-gold">{room.room_code}</span>
           </h1>
-          {isHalba ? (
-            <span className="text-sm text-muted">الحلبة</span>
+          {isHalba || isMafia ? (
+            <span className="text-sm text-muted">{isHalba ? "الحلبة" : "المافيا"}</span>
           ) : (
             <span className="text-sm text-muted">
               أُجيب {answered.size} من {questions.length}
@@ -402,7 +403,7 @@ function PlayerBoard() {
           </div>
         ) : null}
 
-        {ranking.length > 0 && !isHalba ? (
+        {ranking.length > 0 && !isHalba && !isMafia ? (
           <div className="glass-card mt-6 rounded-2xl p-4">
             <h2 className="mb-2 text-sm font-extrabold text-ivory">النتائج</h2>
             <ul className="space-y-2">
@@ -946,16 +947,9 @@ type MafiaMe = {
   last_save?: string | null;
   self_save_used?: boolean | null;
 };
-type MafiaRow = { player_id: string; player_name: string; alive: boolean; player_role: string | null };
+type MafiaRow = MafiaPlayerRow;
 type MafiaPick = { player_name: string; target_id: string; target_name: string };
 
-const MAFIA_ROLE_NAMES: Record<string, string> = { mafia: "مافيا", citizen: "مواطن", doctor: "طبيب", detective: "محقق" };
-const MAFIA_ROLE_HINTS: Record<string, string> = {
-  mafia: "كل ليلة اتفقوا مع زملائكم على ضحية. ترون اختيارات بعض هنا. نهارًا لا تكشفوا أنفسكم.",
-  citizen: "استمعوا للنقاش وصوّتوا لإقصاء المافيا.",
-  doctor: "كل ليلة احموا لاعبًا. لا تحموا نفس اللاعب ليلتين متتاليتين، وتحمون أنفسكم مرة واحدة فقط.",
-  detective: "كل ليلة تحققوا من لاعب واحد. النتيجة تظهر بعد انتهاء الليل.",
-};
 const MAFIA_PLAYER_ERRORS: Record<string, string> = {
   WRONG_PHASE: "هذه الخطوة غير متاحة الآن.",
   NOT_ACTIVE: "لا يمكنك التصرف الآن.",
@@ -981,6 +975,8 @@ function MafiaPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
   const winner = typeof state.winner === "string" ? state.winner : null;
   const lastResult = typeof state.last_result === "string" ? state.last_result : null;
   const runoff = Array.isArray(state.runoff) ? (state.runoff as string[]) : null;
+  const votes = Array.isArray(state.last_votes) ? (state.last_votes as MafiaVote[]) : [];
+  const dayLeft = useCountdown(phase === "day" ? (state.day_ends_at as string | null | undefined) : null);
 
   useEffect(() => {
     if (!supabase) return;
@@ -1021,7 +1017,7 @@ function MafiaPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
   const teammates = me?.teammates ?? [];
   const inspectLocked = role === "detective" && phase === "night" && !!me?.pending_inspect;
   const canAct =
-    iAmAlive && ((phase === "night" && ["mafia", "doctor", "detective"].includes(role) && !inspectLocked) || phase === "vote");
+    iAmAlive && ((phase === "night" && ["mafia", "doctor", "detective", "bodyguard"].includes(role) && !inspectLocked) || phase === "vote");
   const picked = chosen ?? me?.my_pick ?? null;
 
   const targets = rows.filter((p) => {
@@ -1075,8 +1071,10 @@ function MafiaPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
       ) : (
         <>
           <p className="mt-3 text-sm text-muted">دورك</p>
-          <p className="text-2xl font-extrabold text-ivory">{MAFIA_ROLE_NAMES[role] ?? ""}</p>
-          <p className="mt-2 text-sm leading-7 text-muted">{MAFIA_ROLE_HINTS[role] ?? ""}</p>
+          <p className="text-2xl font-extrabold text-ivory">
+            {ROLE_ICONS[role] ?? ""} {ROLE_NAMES[role] ?? ""}
+          </p>
+          <p className="mt-2 text-sm leading-7 text-muted">{ROLE_HINTS[role] ?? ""}</p>
           {role === "mafia" && teammates.length > 0 ? (
             <p className="mt-2 text-sm text-muted">
               زملاؤك المافيا: <span className="font-bold text-ivory">{teammates.join("، ")}</span>
@@ -1107,9 +1105,23 @@ function MafiaPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
       {lastResult ? <p className="mt-4 text-sm font-bold text-ivory">{lastResult}</p> : null}
 
       {phase === "night" && me?.started === true && iAmAlive && !canAct && !inspectLocked ? (
-        <p className="mt-4 text-sm text-muted">اغمضوا أعينكم. الليل للمافيا والطبيب والمحقق.</p>
+        <p className="mt-4 text-sm text-muted">اغمضوا أعينكم. الليل لأصحاب الأدوار.</p>
       ) : null}
-      {phase === "day" ? <p className="mt-4 text-sm text-muted">النهار: ناقشوا من تظنون أنه مافيا.</p> : null}
+      {phase === "day" ? (
+        <p className="mt-4 text-sm text-muted">
+          النهار: ناقشوا من تظنون أنه مافيا.
+          {dayLeft !== null ? (
+            <b dir="ltr" className={cx("mt-1 block font-display text-3xl tabular-nums", dayLeft <= 10 ? "text-wrong" : "text-gold")}>
+              {mmss(dayLeft)}
+            </b>
+          ) : null}
+        </p>
+      ) : null}
+      {(phase === "night" || (phase === "vote" && runoff)) && votes.length > 0 ? (
+        <div className="mt-4">
+          <VotesView votes={votes} />
+        </div>
+      ) : null}
       {phase === "vote" && progress?.phase === "vote" ? (
         <p className="mt-3 text-sm text-muted">
           صوّت <b className="tabular-nums text-ivory">{progress.done ?? 0}</b> من <b className="tabular-nums text-ivory">{progress.total ?? 0}</b>
@@ -1135,6 +1147,7 @@ function MafiaPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
                     picked === p.player_id ? "border-gold bg-gold/10 text-gold" : "border-line text-ivory",
                   )}
                 >
+                  {p.is_mayor ? "👑 " : ""}
                   {p.player_name}
                   {why ? <span className="text-[11px] font-normal text-muted">{why}</span> : null}
                   {team.length > 0 ? <span className="text-[11px] font-normal text-wrong">🔪 {team.map((x) => x.player_name).join("، ")}</span> : null}
@@ -1152,19 +1165,10 @@ function MafiaPlayerPanel({ roomId, meId, state }: { roomId: string; meId: strin
       ) : null}
 
       {over ? (
-        <div className="mt-5">
-          <p className="text-xl font-extrabold text-ivory">{winner === "mafia" ? "فازت المافيا" : "فاز المواطنون"}</p>
-          <ul className="mt-3 grid gap-2 text-right">
-            {rows.map((p) => (
-              <li key={p.player_id} className="flex justify-between rounded-xl bg-deep-2/70 px-4 py-2 text-ivory">
-                <span>{p.player_name}</span>
-                <span className="text-muted">
-                  {MAFIA_ROLE_NAMES[p.player_role ?? ""] ?? ""}
-                  {p.alive ? "" : " · خرج"}
-                </span>
-              </li>
-            ))}
-          </ul>
+        <div className="mt-5 grid gap-4">
+          <p className="text-xl font-extrabold text-ivory">{WINNERS[winner ?? ""] ?? "انتهت اللعبة"}</p>
+          <MafiaSummary state={state as MafiaPublicState} rows={rows} />
+          <MafiaShare state={state as MafiaPublicState} rows={rows} />
         </div>
       ) : null}
 

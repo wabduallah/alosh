@@ -26,6 +26,7 @@ import {
   useTicks,
   type HalbaState,
 } from "@/components/halba";
+import { MafiaSummary, ROLE_NAMES, VotesView, WINNERS, mmss, narratorLine, setVoicePreference, speak, useCountdown, useMafiaCues, voicePreference, type MafiaPlayerRow, type MafiaPublicState } from "@/components/mafia";
 
 /**
  * TV screen for a room (/tv/CODE): display only, for the big screen in the room.
@@ -67,9 +68,8 @@ type StateData = {
   last_result?: string | null;
 } & Record<string, unknown>;
 type Counts = { phase?: string; round?: number; submitted?: number; voted?: number; players?: number };
-type MafiaRow = { player_id: string; player_name: string; alive: boolean; player_role: string | null };
+type MafiaRow = { player_id: string; player_name: string; alive: boolean; player_role: string | null; is_mayor?: boolean };
 
-const MAFIA_ROLE_LABELS: Record<string, string> = { mafia: "مافيا", citizen: "مواطن", doctor: "طبيب", detective: "محقق" };
 const TEAM_NAMES: Record<string, string> = { red: "الفريق الأحمر", blue: "الفريق الأزرق" };
 
 /** Parses a timestamp from JSON, trimming microseconds that JS can't read. */
@@ -710,45 +710,95 @@ function Outsider({ state, counts }: { state: StateData; counts: Counts | null }
 /* ---------------- المافيا ---------------- */
 
 function Mafia({ state, rows }: { state: StateData; rows: MafiaRow[] }) {
-  const phase = String(state.phase ?? "");
-  const round = Number(state.round ?? 1);
+  const ms = state as unknown as MafiaPublicState;
+  const list = rows as MafiaPlayerRow[];
+  const phase = String(ms.phase ?? "");
+  const round = Number(ms.round ?? 1);
+  const runoff = phase === "vote" && Array.isArray(ms.runoff) ? ms.runoff : null;
+  const [voice, setVoice] = useState(false);
+  useEffect(() => setVoice(voicePreference()), []);
+  useMafiaCues(ms, list, voice);
+  const dayLeft = useCountdown(phase === "day" ? ms.day_ends_at : null);
+  const night = phase === "night";
   const headline =
     phase === "" ? "جاهزون للبدء؟"
-    : phase === "night" ? `ليل الجولة ${round}`
+    : night ? `ليل الجولة ${round}`
     : phase === "day" ? `نهار الجولة ${round}`
-    : phase === "vote" ? "التصويت"
-    : "انتهت اللعبة";
-  const hint =
-    phase === "night" ? "اغمضوا أعينكم. الليل للمافيا والطبيب والمحقق."
-    : phase === "day" ? "النهار: ناقشوا من تظنون أنه مافيا."
-    : phase === "vote" ? "صوّتوا من جوالاتكم لإقصاء لاعب."
-    : "";
-  const runoff = phase === "vote" && Array.isArray(state.runoff) ? (state.runoff as string[]) : null;
+    : phase === "vote" ? (runoff ? "إعادة التصويت" : "التصويت")
+    : WINNERS[ms.winner ?? ""] ?? "انتهت اللعبة";
+  const votes = (night || runoff || phase === "over") && Array.isArray(ms.last_votes) ? ms.last_votes : [];
+
   return (
-    <div className="grid flex-1 content-center gap-[3vh]">
-      <Panel className="text-center">
-        <Glyph name={phase === "night" ? "shield" : "users"} className="mx-auto size-[clamp(40px,4vw,80px)] text-gold" />
-        <p className="mt-[1vh] font-display text-[clamp(36px,4.6vw,92px)] font-extrabold">{runoff ? "إعادة التصويت" : headline}</p>
-        {hint ? <p className="mt-[1vh] text-[clamp(18px,1.8vw,34px)] text-mist">{hint}</p> : null}
-        {state.last_result ? <p className="mt-[2vh] text-[clamp(20px,2vw,38px)] font-bold">{state.last_result}</p> : null}
+    <div className="relative grid flex-1 content-center gap-[3vh]">
+      {/* Night darkens the whole screen; day warms it a little. */}
+      <div
+        aria-hidden="true"
+        className={cx(
+          "pointer-events-none fixed inset-0 transition-opacity duration-1000",
+          night ? "bg-[radial-gradient(ellipse_at_top,#1a2050_0%,#03040c_75%)] opacity-90" : phase === "day" ? "bg-[radial-gradient(ellipse_at_top,#ffb54722_0%,transparent_60%)] opacity-100" : "opacity-0",
+        )}
+      />
+      <Panel className="relative text-center">
+        <button
+          type="button"
+          onClick={() => {
+            const next = !voice;
+            setVoice(next);
+            setVoicePreference(next);
+            if (next) speak(narratorLine(ms, list));
+          }}
+          aria-pressed={voice}
+          className="absolute end-[1.5vw] top-[1.5vh] inline-flex min-h-10 items-center gap-2 rounded-full border border-line-strong/70 bg-deep-2/60 px-4 text-[clamp(13px,1vw,20px)] text-mist hover:text-ivory"
+        >
+          {voice ? "🔊 الراوي يتكلم" : "🔈 شغّل صوت الراوي"}
+        </button>
+        <p aria-hidden="true" className="text-[clamp(40px,4vw,80px)] leading-none">
+          {night ? "🌙" : phase === "day" ? "☀️" : phase === "vote" ? "🗳️" : phase === "over" ? "🏁" : "🕵️"}
+        </p>
+        <p className="mt-[1vh] font-display text-[clamp(36px,4.6vw,92px)] font-extrabold">{headline}</p>
+        <p className="mx-auto mt-[1.5vh] max-w-[70vw] text-[clamp(18px,1.8vw,34px)] leading-relaxed text-mist">{narratorLine(ms, list)}</p>
+        {phase !== "day" && ms.last_result ? <p className="mt-[2vh] text-[clamp(20px,2vw,38px)] font-bold">{ms.last_result}</p> : null}
+        {phase === "day" && dayLeft !== null ? (
+          <p dir="ltr" key={dayLeft <= 10 ? dayLeft : "calm"} className={cx("mt-[2vh] font-display text-[clamp(56px,7vw,140px)] leading-none font-extrabold tabular-nums", dayLeft <= 10 ? "beat text-wrong" : "text-gold")}>
+            {mmss(dayLeft)}
+          </p>
+        ) : null}
       </Panel>
-      <Panel>
-        <ul className="grid grid-cols-2 gap-[1vw] sm:grid-cols-3 lg:grid-cols-5">
-          {rows.map((p, i) => (
-            <li
-              key={p.player_id}
-              className={cx(
-                "flex items-center gap-2 rounded-[clamp(12px,1vw,20px)] px-[1vw] py-[1vh] text-[clamp(16px,1.6vw,30px)] font-semibold",
-                !p.alive ? "bg-deep/50 text-faint line-through" : runoff?.includes(p.player_id) ? "bg-gold/15 ring-2 ring-gold" : runoff ? "bg-deep-2/40 text-mist" : "bg-deep-2/70",
-              )}
-            >
-              <Egg name={p.player_name} index={i + 1} size="sm" className={cx("w-[clamp(28px,2.4vw,46px)]!", !p.alive && "opacity-40")} />
-              <span className="min-w-0 truncate">{p.player_name}</span>
-            </li>
-          ))}
-        </ul>
-        <p className="mt-[1.5vh] text-center text-[clamp(14px,1.3vw,24px)] text-mist">الأحياء: {rows.filter((p) => p.alive).length}</p>
-      </Panel>
+
+      {phase === "over" ? (
+        <Panel className="relative">
+          <MafiaSummary state={ms} rows={list} big />
+        </Panel>
+      ) : (
+        <div className={cx("relative grid gap-[2vw]", votes.length > 0 && "lg:grid-cols-[1.4fr_1fr]")}>
+          <Panel>
+            <ul className="grid grid-cols-2 gap-[1vw] sm:grid-cols-3 lg:grid-cols-4">
+              {list.map((p, i) => (
+                <li
+                  key={p.player_id}
+                  className={cx(
+                    "flex items-center gap-2 rounded-[clamp(12px,1vw,20px)] px-[1vw] py-[1vh] text-[clamp(16px,1.6vw,30px)] font-semibold",
+                    !p.alive ? "bg-deep/50 text-faint line-through" : runoff?.includes(p.player_id) ? "bg-gold/15 ring-2 ring-gold" : runoff ? "bg-deep-2/40 text-mist" : "bg-deep-2/70",
+                  )}
+                >
+                  <Egg name={p.player_name} index={i + 1} size="sm" className={cx("w-[clamp(28px,2.4vw,46px)]!", !p.alive && "opacity-40")} />
+                  <span className="min-w-0 truncate">
+                    {p.is_mayor ? "👑 " : ""}
+                    {p.player_name}
+                    {!p.alive && p.player_role ? <span className="block text-[0.7em] font-normal no-underline">{ROLE_NAMES[p.player_role] ?? ""}</span> : null}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-[1.5vh] text-center text-[clamp(14px,1.3vw,24px)] text-mist">الأحياء: {list.filter((p) => p.alive).length}</p>
+          </Panel>
+          {votes.length > 0 ? (
+            <Panel>
+              <VotesView votes={votes} big />
+            </Panel>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
@@ -783,19 +833,13 @@ function Results({ slug, ranking, state, mafia }: { slug: string; ranking: Playe
     );
   }
   if (slug === "social-mafia") {
+    const ms = state as unknown as MafiaPublicState;
     return (
       <div className="grid flex-1 content-center gap-[3vh]">
-        <Winner text={state.winner === "mafia" ? "فازت المافيا" : state.winner ? "فاز المواطنون" : "انتهت الغرفة"} />
+        <Winner text={WINNERS[ms.winner ?? ""] ?? "انتهت الغرفة"} />
         {mafia.length > 0 ? (
           <Panel>
-            <ul className="grid grid-cols-2 gap-[1vw] sm:grid-cols-3 lg:grid-cols-5">
-              {mafia.map((p) => (
-                <li key={p.player_id} className="rounded-[clamp(12px,1vw,20px)] bg-deep-2/70 px-[1vw] py-[1vh] text-[clamp(16px,1.6vw,30px)] font-semibold">
-                  {p.player_name}
-                  {p.player_role ? <span className="block text-[0.75em] font-normal text-mist">{MAFIA_ROLE_LABELS[p.player_role] ?? ""}</span> : null}
-                </li>
-              ))}
-            </ul>
+            <MafiaSummary state={ms} rows={mafia as MafiaPlayerRow[]} big />
           </Panel>
         ) : null}
       </div>
