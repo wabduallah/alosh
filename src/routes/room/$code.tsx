@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { rememberRoom } from "@/lib/prefs";
 import { useEffect, useMemo, useState } from "react";
 import { Shell } from "@/components/shell";
 import { Button, cx } from "@/components/ui";
@@ -201,6 +202,12 @@ function PlayerBoard() {
   const answered = new Set(stateData.answered ?? []);
   const active = questions.find((q) => q.id === activeId) ?? null;
   const me = players.find((p) => p.user_id && p.user_id === myUserId) ?? null;
+  const rememberKey = me && room && room.status !== "finished" ? `${room.room_code}:${me.is_host}` : null;
+  useEffect(() => {
+    if (!rememberKey) return;
+    const [code, host] = rememberKey.split(":");
+    rememberRoom(code, host === "true");
+  }, [rememberKey]);
   const buzzer = stateData.buzzer ?? null;
   const canBuzz = !!active && !!stateData.buzzer_open && !buzzer && !!me && !me.is_host && !buzzing;
   const ranking = [...players].filter((p) => !p.is_host).sort((a, b) => b.score - a.score);

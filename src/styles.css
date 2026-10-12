@@ -443,3 +443,16 @@
     width: 0%;
   }
 }
+
+/* The visitor's own "تقليل الحركة" choice (settings page): the same as the OS setting, for every animation. */
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+html.reduce-motion .gcard:hover {
+  transform: none;
+}

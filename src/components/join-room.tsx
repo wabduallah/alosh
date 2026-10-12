@@ -1,4 +1,6 @@
 import { Link } from "@tanstack/react-router";
+import { insertPlayer } from "@/lib/players";
+import { getAvatar, rememberRoom } from "@/lib/prefs";
 import { useEffect, useState, type FormEvent } from "react";
 import { Button, Field, buttonBase, buttonTone, cx, inputClass } from "@/components/ui";
 import { CodeCells, Cradle, Egg, Glyph, Mark } from "@/components/brand";
@@ -8,7 +10,7 @@ import { ensureSession, supabase } from "@/lib/supabase";
 const CODE_PATTERN = /^[A-HJ-NP-Z2-9]{5}$/;
 
 type RoomRow = { id: string; room_code: string; status: string };
-type PlayerRow = { id: string; player_name: string; is_host: boolean };
+type PlayerRow = { id: string; player_name: string; is_host: boolean; avatar?: { c?: number; e?: string | null } | null };
 
 /**
  * Join a room from a phone. Works with a typed code or a code prefilled from
@@ -33,7 +35,7 @@ export function JoinRoom({ initialCode = "" }: { initialCode?: string }) {
     async function loadPlayers() {
       const { data } = await client
         .from("room_players")
-        .select("id, player_name, is_host")
+        .select("*")
         .eq("room_id", roomId)
         .order("joined_at");
       if (!cancelled) setPlayers((data ?? []) as PlayerRow[]);
@@ -120,19 +122,17 @@ export function JoinRoom({ initialCode = "" }: { initialCode?: string }) {
       if (existing) {
         setMe(existing as PlayerRow);
         setRoom(target);
+        rememberRoom(target.room_code, !!(existing as PlayerRow).is_host);
         return;
       }
 
       // 3) Join. The database checks capacity, room status and duplicate names.
-      const { data: joined, error: joinError } = await supabase
-        .from("room_players")
-        .insert({ room_id: target.id, user_id: userId, player_name: cleanName })
-        .select("id, player_name, is_host")
-        .single();
+      const { data: joined, error: joinError } = await insertPlayer({ room_id: target.id, user_id: userId, player_name: cleanName });
       if (joinError) throw joinError;
 
-      setMe(joined as PlayerRow);
+      setMe(joined as unknown as PlayerRow);
       setRoom(target);
+      rememberRoom(target.room_code, false);
     } catch (err) {
       setError(friendlyJoinError(err));
     } finally {
@@ -149,7 +149,7 @@ export function JoinRoom({ initialCode = "" }: { initialCode?: string }) {
           <p className="room-code text-[34px] leading-[44px] text-gold">{room.room_code}</p>
         </div>
         <Cradle hold style={{ padding: "0 26px" }}>
-          <Egg name={me.player_name} index={myIndex} size="xl" me />
+          <Egg name={me.player_name} index={myIndex} avatar={players.find((p) => p.id === me.id)?.avatar ?? getAvatar()} size="xl" me />
         </Cradle>
         <p className="font-display text-[26px] font-extrabold leading-9 text-ivory">مرحبًا {me.player_name}</p>
         {room.status === "playing" ? (
@@ -180,7 +180,7 @@ export function JoinRoom({ initialCode = "" }: { initialCode?: string }) {
                   p.id === me.id ? "border-gold/50 bg-gold/10" : "border-line bg-deep-2/50",
                 )}
               >
-                <Egg name={p.player_name} index={i + 1} size="sm" />
+                <Egg name={p.player_name} index={i + 1} avatar={p.avatar} size="sm" />
                 <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-ivory">{p.player_name}</span>
                 {p.is_host ? <span className="rounded-full bg-violet/25 px-2.5 py-0.5 text-[13px] font-semibold text-violet-text">المضيف</span> : null}
               </li>

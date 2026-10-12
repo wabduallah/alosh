@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { rememberRoom } from "@/lib/prefs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Shell } from "@/components/shell";
 import { Button, buttonBase, buttonTone, cx } from "@/components/ui";
@@ -81,6 +82,7 @@ function HostBoard() {
         if (cancelled) return;
         setRoom(r);
         setIsHost(r.host_id === session.user.id);
+        if (r.host_id === session.user.id && r.status !== "finished") rememberRoom(r.room_code, true);
 
         const { data: game } = await client.from("games").select("slug").eq("id", r.game_id).single();
         if (!cancelled) setGameSlug(game?.slug ?? null);

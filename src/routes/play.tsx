@@ -1,4 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { insertPlayer } from "@/lib/players";
+import { rememberRoom } from "@/lib/prefs";
 import { useEffect, useState, type FormEvent } from "react";
 import { Shell } from "@/components/shell";
 import { Button, Field, buttonBase, buttonTone, inputClass, cx, joinLink } from "@/components/ui";
@@ -39,6 +41,7 @@ type PlayerRow = {
   id: string;
   player_name: string;
   is_host: boolean;
+  avatar?: { c?: number; e?: string | null } | null;
 };
 
 function CreatePage() {
@@ -92,7 +95,7 @@ function CreatePage() {
       try {
         const { data, error } = await client
           .from("room_players")
-          .select("id, player_name, is_host")
+          .select("*")
           .eq("room_id", roomId)
           .order("joined_at");
         if (cancelled) return;
@@ -203,12 +206,7 @@ function CreatePage() {
       const newRoom = created as RoomRow;
 
       // 2) Add the visitor as the host player.
-      const { error: playerError } = await supabase.from("room_players").insert({
-        room_id: newRoom.id,
-        user_id: userId,
-        player_name: name,
-        is_host: true,
-      });
+      const { error: playerError } = await insertPlayer({ room_id: newRoom.id, user_id: userId, player_name: name, is_host: true }, "id");
       if (playerError) {
         // Don't leave an empty room behind (for example when the name is not allowed).
         await supabase.from("game_rooms").delete().eq("id", newRoom.id);
@@ -216,6 +214,7 @@ function CreatePage() {
       }
 
       setRoom(newRoom);
+      rememberRoom(newRoom.room_code, true);
     } catch (err) {
       setFormError(friendlyError(err));
     } finally {
@@ -309,7 +308,7 @@ function CreatePage() {
               <ul className="grid gap-2 sm:grid-cols-2">
                 {players.map((p, i) => (
                   <li key={p.id} className="rise flex min-h-14 items-center gap-3 rounded-[14px] border border-line bg-deep-2/50 px-3 py-2 tv:min-h-20">
-                    <Egg name={p.player_name} index={i + 1} size="sm" className="tv:w-11 tv:text-lg" />
+                    <Egg name={p.player_name} index={i + 1} avatar={p.avatar} size="sm" className="tv:w-11 tv:text-lg" />
                     <span className="min-w-0 flex-1 truncate text-[16px] font-semibold text-ivory tv:text-2xl">{p.player_name}</span>
                     {p.is_host ? <span className="rounded-full bg-violet/25 px-2.5 py-0.5 text-[13px] font-semibold text-violet-text tv:text-base">المضيف</span> : null}
                   </li>
