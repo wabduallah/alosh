@@ -4,6 +4,7 @@ import { Shell } from "@/components/shell";
 import { Button, buttonBase, buttonTone, cx } from "@/components/ui";
 import { Glyph } from "@/components/brand";
 import { ShareRoom } from "@/components/share";
+import { HalbaHostPanel } from "@/components/halba";
 import { ensureSession, supabase } from "@/lib/supabase";
 
 /**
@@ -54,6 +55,7 @@ function HostBoard() {
   const isOutsider = gameSlug === "outsider";
   const isHeads = gameSlug === "heads-up";
   const isMafia = gameSlug === "social-mafia";
+  const isHalba = gameSlug === "alhalba";
 
   // Load the room, its questions, its live state, and its players.
   useEffect(() => {
@@ -401,6 +403,16 @@ function HostBoard() {
         <ShareRoom code={room.room_code} />
         <TvLink code={room.room_code} />
         <MafiaHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
+      </Shell>
+    );
+  }
+
+  if (isHalba) {
+    return (
+      <Shell play>
+        <ShareRoom code={room.room_code} />
+        <TvLink code={room.room_code} />
+        <HalbaHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
       </Shell>
     );
   }

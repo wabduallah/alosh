@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><linearGradient id="ahG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff5a7a"/><stop offset="1" stop-color="#c21d4f"/></linearGradient><linearGradient id="ahCuff" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4f2ff"/><stop offset="1" stop-color="#b9bbe3"/></linearGradient><radialGradient id="ahGlow" cx="50%" cy="50%" r="70%"><stop offset="0" stop-color="#ff5a7a55"/><stop offset="1" stop-color="#ff5a7a00"/></radialGradient></defs>
+<circle cx="64" cy="54" r="44" fill="url(#ahGlow)"/>
+<path d="M30 46 C30 24 48 12 68 12 C90 12 104 28 104 50 C104 70 92 82 78 84 L48 84 C38 84 30 76 30 66Z" fill="url(#ahG)"/>
+<path d="M30 52 C20 52 14 60 16 70 C18 80 28 82 36 78" fill="url(#ahG)"/>
+<path d="M44 40 C56 34 74 34 88 42" fill="none" stroke="#7a0f3a" stroke-width="4" stroke-linecap="round" opacity=".55"/>
+<rect x="42" y="82" width="46" height="26" rx="7" fill="url(#ahCuff)"/>
+<path d="M46 92 h38 M46 100 h38" stroke="#fff3" stroke-width="3"/>
+<ellipse cx="54" cy="26" rx="14" ry="6" transform="rotate(-20 54 26)" fill="#fff" opacity="0.55"/>
+<path d="M12 18 l8 8 M6 36 h10 M22 6 v10" stroke="#ffd34d" stroke-width="4" stroke-linecap="round"/></svg>
