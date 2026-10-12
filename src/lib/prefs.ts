@@ -59,18 +59,31 @@ export function applyMotion() {
 
 /* ---- Avatar ---- */
 
-/** The egg a visitor chose: a colour (1–8, the brand egg colours) and an optional emoji. */
-export type Avatar = { c: number; e?: string | null };
+/**
+ * The egg a visitor chose. Each part is optional; a missing part follows join order.
+ * c: egg colour 1–8 (the brand egg colours).
+ * e: a bird from BIRD_IDS, or NO_AVATAR for the first letter of the name only.
+ * (Older saves held an emoji in e; those now fall back to the automatic bird.)
+ */
+export type Avatar = { c?: number | null; e?: string | null };
 
-export const AVATAR_EMOJIS = ["🦊", "🐼", "🦁", "🐯", "🐸", "🐵", "🦄", "🐙", "🐢", "🦉", "🐧", "🐨", "🐰", "🦋", "🐳", "🌵", "🌙", "⭐", "🔥", "⚽", "🎮", "🎩", "👑", "🍉"];
+/** The bird avatars, in the order they are handed out automatically. Drawings: components/bird-art.ts. */
+export const BIRD_IDS = ["chick", "falcon", "hoopoe", "owl", "parrot", "penguin", "flamingo", "dove", "peacock", "duck", "toucan", "canary", "crow", "eagle", "bulbul", "kingfisher"] as const;
+export const NO_AVATAR = "none";
+
+export const isBird = (e: unknown): e is string => typeof e === "string" && (BIRD_IDS as readonly string[]).includes(e);
 
 export function cleanAvatar(value: unknown): Avatar | null {
   if (!value || typeof value !== "object") return null;
   const v = value as { c?: unknown; e?: unknown };
-  const c = Number(v.c);
-  if (!Number.isInteger(c) || c < 1 || c > 8) return null;
-  const e = typeof v.e === "string" && AVATAR_EMOJIS.includes(v.e) ? v.e : null;
-  return { c, e };
+  const n = Number(v.c);
+  const c = v.c != null && Number.isInteger(n) && n >= 1 && n <= 8 ? n : null;
+  const e = isBird(v.e) || v.e === NO_AVATAR ? (v.e as string) : null;
+  if (c === null && e === null) return null;
+  const out: Avatar = {};
+  if (c !== null) out.c = c;
+  if (e !== null) out.e = e;
+  return out;
 }
 export function getAvatar(): Avatar | null {
   try {

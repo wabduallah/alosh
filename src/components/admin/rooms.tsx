@@ -7,7 +7,7 @@ import { loadGames, type AdminGame } from "./games";
 import { Loading, Notice, Sheet, Toggle, dbMessage } from "./common";
 
 type Room = { id: string; room_code: string; status: string; game_id: string; created_at: string; current_round: number };
-type Player = { id: string; room_id: string; player_name: string; is_host: boolean; score: number; joined_at: string };
+type Player = { id: string; room_id: string; player_name: string; is_host: boolean; score: number; joined_at: string; avatar?: { c?: number | null; e?: string | null } | null };
 type State = { room_id: string; updated_at: string | null; state_data: { phase?: string; round?: number; max_rounds?: number } | null };
 
 /** Game phases in words (what the TV shows), across games. */
@@ -92,7 +92,7 @@ export function RoomsTab() {
     const ids = list.map((r) => r.id);
     const [{ data: playerRows }, { data: stateRows }] = ids.length
       ? await Promise.all([
-          supabase.from("room_players").select("id, room_id, player_name, is_host, score, joined_at").in("room_id", ids).order("joined_at"),
+          supabase.from("room_players").select("id, room_id, player_name, is_host, score, joined_at, avatar").in("room_id", ids).order("joined_at"),
           supabase.from("room_game_state").select("room_id, updated_at, state_data").in("room_id", ids),
         ])
       : [{ data: [] }, { data: [] }];
@@ -267,7 +267,7 @@ function RoomSheet({
             <ul className="grid gap-1.5">
               {ranked.map((p, i) => (
                 <li key={p.id} className="flex min-h-12 items-center gap-2 rounded-[14px] border border-line bg-deep-2/50 px-3 py-1.5">
-                  <Egg name={p.player_name} index={i + 1} size="sm" />
+                  <Egg name={p.player_name} index={i + 1} avatar={p.avatar} size="sm" />
                   <span className="min-w-0 flex-1 truncate text-[15px] text-ivory">
                     {p.player_name}
                     {p.is_host ? <span className="ms-1.5 text-[12px] text-mist">(المضيف)</span> : null}
@@ -375,7 +375,7 @@ function RoomCard({
           <ul className="flex flex-wrap gap-1.5">
             {guests.map((p, i) => (
               <li key={p.id} className="inline-flex items-center gap-1.5 rounded-full border border-line bg-deep-2/60 py-0.5 ps-1 pe-3 text-[13px] text-ivory">
-                <Egg name={p.player_name} index={i + 1} size="sm" className="w-6! text-[11px]!" />
+                <Egg name={p.player_name} index={i + 1} avatar={p.avatar} size="sm" className="w-6! text-[11px]!" />
                 {p.player_name}
                 <span className="tabular-nums text-gold">{p.score}</span>
               </li>
