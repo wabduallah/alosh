@@ -3,6 +3,7 @@ import { rememberRoom } from "@/lib/prefs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Shell } from "@/components/shell";
 import { NextGame } from "@/components/next-game";
+import { GridHostPanel } from "@/components/grid";
 import { useRoomSession } from "@/lib/room-session";
 import { Button, buttonBase, buttonTone, cx } from "@/components/ui";
 import { Glyph } from "@/components/brand";
@@ -60,6 +61,7 @@ function HostBoard() {
   const isHeads = gameSlug === "heads-up";
   const isMafia = gameSlug === "social-mafia";
   const isHalba = gameSlug === "alhalba";
+  const isGrid = gameSlug === "tactical-grid";
 
   // Load the room, its questions, its live state, and its players.
   useEffect(() => {
@@ -413,6 +415,17 @@ function HostBoard() {
         <ShareRoom code={room.room_code} />
         <TvLink code={room.room_code} />
         <MafiaHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
+        {nextGame}
+      </Shell>
+    );
+  }
+
+  if (isGrid) {
+    return (
+      <Shell play>
+        <ShareRoom code={room.room_code} />
+        <TvLink code={room.room_code} />
+        <GridHostPanel roomId={room.id} />
         {nextGame}
       </Shell>
     );

@@ -5,6 +5,7 @@ import { QrCode } from "@/components/qr-code";
 import { buttonBase, buttonTone, cx, joinLink } from "@/components/ui";
 import { ensureSession, supabase } from "@/lib/supabase";
 import { useRoomSession } from "@/lib/room-session";
+import { GridTv } from "@/components/grid";
 import {
   AnswersList,
   Hearts,
@@ -99,7 +100,8 @@ function TvScreen() {
   const isHeads = slug === "heads-up";
   const isMafia = slug === "social-mafia";
   const isHalba = slug === "alhalba";
-  const isBoard = !isOutsider && !isHeads && !isMafia && !isHalba;
+  const isGrid = slug === "tactical-grid";
+  const isBoard = !isOutsider && !isHeads && !isMafia && !isHalba && !isGrid;
 
   // Load the room once, then its game and its public questions (no answers).
   useEffect(() => {
@@ -280,7 +282,7 @@ function TvScreen() {
     >
       {room.status === "lobby" ? (
         <Lobby code={room.room_code} link={link} game={game} players={guests} />
-      ) : finished ? (
+      ) : finished && !isGrid ? (
         <Results slug={slug} ranking={ranking} state={state} mafia={mafia} />
       ) : isHeads ? (
         <Heads state={state} players={players} now={now} />
@@ -288,6 +290,8 @@ function TvScreen() {
         <Outsider state={state} counts={counts} />
       ) : isMafia ? (
         <Mafia state={state} rows={mafia} players={players} />
+      ) : isGrid ? (
+        <GridTv roomId={room.id} />
       ) : isHalba ? (
         <Halba state={state as unknown as HalbaState} players={players} />
       ) : (
