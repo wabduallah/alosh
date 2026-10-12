@@ -723,11 +723,12 @@ function Mafia({ state, rows }: { state: StateData; rows: MafiaRow[] }) {
     : phase === "day" ? "النهار: ناقشوا من تظنون أنه مافيا."
     : phase === "vote" ? "صوّتوا من جوالاتكم لإقصاء لاعب."
     : "";
+  const runoff = phase === "vote" && Array.isArray(state.runoff) ? (state.runoff as string[]) : null;
   return (
     <div className="grid flex-1 content-center gap-[3vh]">
       <Panel className="text-center">
         <Glyph name={phase === "night" ? "shield" : "users"} className="mx-auto size-[clamp(40px,4vw,80px)] text-gold" />
-        <p className="mt-[1vh] font-display text-[clamp(36px,4.6vw,92px)] font-extrabold">{headline}</p>
+        <p className="mt-[1vh] font-display text-[clamp(36px,4.6vw,92px)] font-extrabold">{runoff ? "إعادة التصويت" : headline}</p>
         {hint ? <p className="mt-[1vh] text-[clamp(18px,1.8vw,34px)] text-mist">{hint}</p> : null}
         {state.last_result ? <p className="mt-[2vh] text-[clamp(20px,2vw,38px)] font-bold">{state.last_result}</p> : null}
       </Panel>
@@ -738,7 +739,7 @@ function Mafia({ state, rows }: { state: StateData; rows: MafiaRow[] }) {
               key={p.player_id}
               className={cx(
                 "flex items-center gap-2 rounded-[clamp(12px,1vw,20px)] px-[1vw] py-[1vh] text-[clamp(16px,1.6vw,30px)] font-semibold",
-                p.alive ? "bg-deep-2/70" : "bg-deep/50 text-faint line-through",
+                !p.alive ? "bg-deep/50 text-faint line-through" : runoff?.includes(p.player_id) ? "bg-gold/15 ring-2 ring-gold" : runoff ? "bg-deep-2/40 text-mist" : "bg-deep-2/70",
               )}
             >
               <Egg name={p.player_name} index={i + 1} size="sm" className={cx("w-[clamp(28px,2.4vw,46px)]!", !p.alive && "opacity-40")} />

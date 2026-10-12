@@ -1167,7 +1167,7 @@ function HeadsHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
   );
 }
 
-type MafiaState = { phase?: string; round?: number; winner?: string | null; last_result?: string | null };
+type MafiaState = { phase?: string; round?: number; winner?: string | null; last_result?: string | null; runoff?: string[] | null };
 
 const MAFIA_HOST_ERRORS: Record<string, string> = {
   ROOM_NOT_PLAYING: "ابدأ الغرفة أولًا.",
@@ -1180,28 +1180,36 @@ const MAFIA_HOST_ERRORS: Record<string, string> = {
 
 const MAFIA_ROLE_LABELS: Record<string, string> = { mafia: "مافيا", citizen: "مواطن", doctor: "طبيب", detective: "محقق" };
 
+/** mafia_progress(): votes for everyone, night actions for the host only (mafia_v2.sql). */
+type MafiaProgress = { phase?: string; done?: number; total?: number; mafia_split?: boolean };
+
 function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; roomCode: string; roomStatus: string }) {
   const [state, setState] = useState<MafiaState>({});
   const [rows, setRows] = useState<{ player_id: string; player_name: string; alive: boolean; player_role: string | null }[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ended, setEnded] = useState(roomStatus === "finished");
+  const [progress, setProgress] = useState<MafiaProgress | null>(null);
+  const [auto, setAuto] = useState(true);
+  const [countdown, setCountdown] = useState<number | null>(null);
 
   useEffect(() => {
     if (!supabase) return;
     const client = supabase;
     let cancelled = false;
     async function load() {
-      const [{ data: gs }, { data: list }] = await Promise.all([
+      const [{ data: gs }, { data: list }, { data: prog }] = await Promise.all([
         client.from("room_game_state").select("state_data").eq("room_id", roomId).maybeSingle(),
         client.rpc("mafia_players", { p_room_id: roomId }),
+        client.rpc("mafia_progress", { p_room_id: roomId }),
       ]);
       if (cancelled) return;
       if (gs) setState((gs.state_data ?? {}) as MafiaState);
       if (list) setRows(list as typeof rows);
+      setProgress((prog ?? null) as MafiaProgress | null);
     }
     load();
-    const poll = window.setInterval(load, 2000);
+    const poll = window.setInterval(load, 1500);
     return () => {
       cancelled = true;
       window.clearInterval(poll);
@@ -1245,6 +1253,28 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
   const round = state.round ?? 1;
   const over = phase === "over";
   const alive = rows.filter((p) => p.alive).length;
+  const runoff = Array.isArray(state.runoff) ? state.runoff : null;
+  const complete = !!progress && progress.phase === phase && (phase === "night" || phase === "vote") && (progress.total ?? 0) > 0 && (progress.done ?? 0) >= (progress.total ?? 0);
+  const stepKey = `${phase}:${round}:${runoff ? "r" : ""}`;
+
+  // Everyone has chosen: move on by itself after 5 seconds, unless the host turns it off.
+  useEffect(() => {
+    if (!auto || !complete) {
+      setCountdown(null);
+      return;
+    }
+    setCountdown(5);
+    const t = window.setInterval(() => setCountdown((c) => (c === null ? null : c - 1)), 1000);
+    return () => window.clearInterval(t);
+  }, [auto, complete, stepKey]);
+  useEffect(() => {
+    if (countdown !== 0) return;
+    setCountdown(null);
+    if (phase === "night") void step("mafia_resolve_night");
+    else if (phase === "vote") void step("mafia_close_vote");
+    // step is stable for this one-shot call.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countdown]);
   const headline =
     phase === "" ? "جاهزون للبدء؟"
     : phase === "night" ? `ليل الجولة ${round}`
@@ -1277,6 +1307,31 @@ function MafiaHostPanel({ roomId, roomCode, roomStatus }: { roomId: string; room
           ))}
         </div>
         <p className="mt-3 text-xs text-muted">الأحياء: {alive}</p>
+
+        {runoff && phase === "vote" ? (
+          <p className="mt-4 rounded-2xl border border-gold/40 bg-gold/10 p-3 text-sm font-bold text-ivory">
+            إعادة التصويت بين: {rows.filter((p) => runoff.includes(p.player_id)).map((p) => p.player_name).join(" و")}
+          </p>
+        ) : null}
+
+        {progress && progress.phase === phase && (phase === "night" || phase === "vote") ? (
+          <div className="mt-4 grid justify-items-center gap-2">
+            <p className="text-lg font-extrabold text-ivory">
+              {phase === "night" ? "اختار" : "صوّت"} <span className="tabular-nums text-gold">{progress.done ?? 0}</span> من{" "}
+              <span className="tabular-nums">{progress.total ?? 0}</span>
+            </p>
+            {phase === "night" && progress.mafia_split ? <p className="text-xs text-muted">المافيا لم تتفق بعد على ضحية واحدة.</p> : null}
+            {countdown !== null ? (
+              <p className="text-sm font-bold text-gold">
+                الكل اختار. {phase === "night" ? "يطلع الفجر" : "يُغلق التصويت"} بعد {countdown}…
+              </p>
+            ) : null}
+            <label className="inline-flex items-center gap-2 text-xs text-muted">
+              <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="size-4 accent-[var(--color-gold)]" />
+              انتقل تلقائيًا عندما يختار الجميع
+            </label>
+          </div>
+        ) : null}
 
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           {phase === "" ? (
