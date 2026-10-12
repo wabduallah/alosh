@@ -3,6 +3,13 @@ import { GameIcon, Glyph } from "@/components/brand";
 import { Button, Field, cx, inputClass } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { Loading, Notice, Toggle, dbMessage, textareaClass } from "./common";
+import { PLAYABLE_SLUGS } from "@/lib/catalog";
+
+const HOME_STATUS: Array<{ key: "live" | "soon" | "hidden"; label: string }> = [
+  { key: "live", label: "متاحة" },
+  { key: "soon", label: "قريبًا" },
+  { key: "hidden", label: "مخفية" },
+];
 
 export type AdminGame = {
   id: string;
@@ -12,15 +19,17 @@ export type AdminGame = {
   min_players: number;
   max_players: number;
   is_active: boolean;
+  /** Home page status and order, once supabase/polish_v1.sql has run. */
+  home_status?: "live" | "soon" | "hidden";
+  sort_order?: number;
 };
 
 /** Reads every game, active or not (admins see all rows). */
 export async function loadGames() {
   if (!supabase) return { data: [] as AdminGame[], error: null };
-  const { data, error } = await supabase
-    .from("games")
-    .select("id, slug, title_ar, description_ar, min_players, max_players, is_active")
-    .order("title_ar");
+  const base = "id, slug, title_ar, description_ar, min_players, max_players, is_active";
+  const full = await supabase.from("games").select(`${base}, home_status, sort_order`).order("sort_order").order("title_ar");
+  const { data, error } = full.error ? await supabase.from("games").select(base).order("title_ar") : full;
   return { data: (data ?? []) as AdminGame[], error };
 }
 
@@ -44,7 +53,8 @@ export function GamesTab() {
     <div className="grid grid-cols-1 gap-4">
       {error ? <Notice tone="error">{error}</Notice> : null}
       <p className="text-[14px] leading-6 text-mist">
-        اللعبة الموقوفة تختفي من صفحة إنشاء الغرفة، ولا تفتح غرفها الجارية بشكل صحيح. أوقفها حين لا توجد غرف تُلعب بها.
+        اللعبة الموقوفة تختفي من صفحة إنشاء الغرفة، ولا تفتح غرفها الجارية بشكل صحيح. أوقفها حين لا توجد غرف تُلعب بها. الرئيسية وصفحة الألعاب
+        تتبعان «الحالة في الرئيسية» والترتيب هنا: اللعبة تظهر متاحة فقط إذا كانت مفعّلة وحالتها «متاحة» ولها غرفة في الموقع.
       </p>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {games.map((g) => (
@@ -64,7 +74,11 @@ function GameEditor({ game, onSaved }: { game: AdminGame; onSaved: () => Promise
     draft.description_ar !== game.description_ar ||
     draft.min_players !== game.min_players ||
     draft.max_players !== game.max_players ||
-    draft.is_active !== game.is_active;
+    draft.is_active !== game.is_active ||
+    draft.home_status !== game.home_status ||
+    draft.sort_order !== game.sort_order;
+  const managed = game.home_status !== undefined;
+  const hasRoom = PLAYABLE_SLUGS.has(game.slug);
 
   async function save() {
     if (!supabase) return;
@@ -83,6 +97,7 @@ function GameEditor({ game, onSaved }: { game: AdminGame; onSaved: () => Promise
         min_players: draft.min_players,
         max_players: draft.max_players,
         is_active: draft.is_active,
+        ...(managed ? { home_status: draft.home_status, sort_order: Math.round(Number(draft.sort_order) || 0) } : {}),
       })
       .eq("id", game.id);
     setBusy(false);
@@ -111,6 +126,42 @@ function GameEditor({ game, onSaved }: { game: AdminGame; onSaved: () => Promise
       </div>
 
       <Toggle checked={draft.is_active} onChange={(v) => setDraft({ ...draft, is_active: v })} label="متاحة في إنشاء الغرفة" />
+      {!hasRoom ? <Notice tone="info">لا توجد لهذه اللعبة غرفة في الموقع بعد، فتظهر «قريبًا» مهما كانت حالتها.</Notice> : null}
+
+      {managed ? (
+        <div className="grid grid-cols-[1fr_auto] items-end gap-3">
+          <Field label="الحالة في الرئيسية">
+            <div role="radiogroup" aria-label="الحالة في الرئيسية" className="flex flex-wrap gap-1.5">
+              {HOME_STATUS.map((o) => (
+                <button
+                  key={o.key}
+                  type="button"
+                  role="radio"
+                  aria-checked={draft.home_status === o.key}
+                  onClick={() => setDraft({ ...draft, home_status: o.key })}
+                  className={cx(
+                    "min-h-10 rounded-full border px-3.5 text-[14px] font-semibold",
+                    draft.home_status === o.key ? "border-gold bg-gold/15 text-gold" : "border-line-strong/70 text-mist hover:text-ivory",
+                  )}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <Field label="الترتيب">
+            <input
+              type="number"
+              inputMode="numeric"
+              className={cx(inputClass, "w-24")}
+              value={draft.sort_order ?? 100}
+              onChange={(e) => setDraft({ ...draft, sort_order: Number(e.target.value) })}
+            />
+          </Field>
+        </div>
+      ) : (
+        <p className="text-[13px] text-mist">شغّل supabase/polish_v1.sql لتتحكم بظهور اللعبة وترتيبها في الرئيسية من هنا.</p>
+      )}
 
       <Field label="الاسم">
         <input className={inputClass} value={draft.title_ar} maxLength={80} onChange={(e) => setDraft({ ...draft, title_ar: e.target.value })} />

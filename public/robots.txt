@@ -1,4 +1,9 @@
 User-agent: *
 Allow: /
+Disallow: /admin
+Disallow: /host/
+Disallow: /room/
+Disallow: /tv/
+Disallow: /pad/
 
-Sitemap: /sitemap.xml
+Sitemap: https://www.al3sh.app/sitemap.xml

@@ -13,6 +13,8 @@ export const Route = createRootRoute({
       { title: "العش" },
       { name: "description", content: "العش: ألعاب جماعية عائلية. التلفزيون يعرض، والجوالات تتحكم." },
       { name: "theme-color", content: "#060b26" },
+      // Name on the phone's home screen. Set here so it stays «العش» on every page (share titles follow each page's title).
+      { name: "apple-mobile-web-app-title", content: "العش" },
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
