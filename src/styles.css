@@ -400,6 +400,24 @@
   animation: cheer-rise 3.4s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
 }
 
+/* Last seconds of a countdown: a heartbeat, once per second. */
+@keyframes beat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  15% {
+    transform: scale(1.22);
+  }
+  30% {
+    transform: scale(1);
+  }
+}
+.beat {
+  display: inline-block;
+  animation: beat 1s ease-out infinite;
+}
+
 /* Respect the OS "reduce motion" setting: keep final states, drop movement. */
 @media (prefers-reduced-motion: reduce) {
   .rise,
@@ -407,6 +425,7 @@
   .sheet-up,
   .cheer-rise,
   .drain,
+  .beat,
   .code-caret::after,
   .buzz-ring::before {
     animation: none;
