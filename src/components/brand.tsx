@@ -103,6 +103,7 @@ export function Egg({
   buzz = false,
   host = false,
   empty = false,
+  avatar = null,
   className,
 }: {
   name?: string;
@@ -112,9 +113,12 @@ export function Egg({
   buzz?: boolean;
   host?: boolean;
   empty?: boolean;
+  /** The player's chosen egg (settings page): colour 1–8 and an optional emoji. */
+  avatar?: { c?: number; e?: string | null } | null;
   className?: string;
 }) {
-  const n = ((Math.max(1, index) - 1) % 8) + 1;
+  const chosen = avatar && Number.isInteger(avatar.c) && (avatar.c as number) >= 1 && (avatar.c as number) <= 8 ? (avatar.c as number) : null;
+  const n = chosen ?? ((Math.max(1, index) - 1) % 8) + 1;
   const label = empty ? "مكان فارغ" : `${name}${host ? " (المضيف)" : ""}${me ? " (أنت)" : ""}`;
   return (
     <span
@@ -123,14 +127,14 @@ export function Egg({
       className={cx(
         "egg relative",
         EGG_SIZES[size],
-        empty ? "border-2 border-dashed border-line-strong bg-transparent" : index > 8 && "egg-speckled",
+        empty ? "border-2 border-dashed border-line-strong bg-transparent" : !chosen && index > 8 && "egg-speckled",
         me && "shadow-[0_0_0_3px_var(--color-night),0_0_0_5px_var(--color-gold)]",
         buzz && "shadow-[0_0_0_3px_var(--color-night),0_0_0_5px_var(--color-violet-text),0_0_28px_#663ade88]",
         className,
       )}
       style={empty ? undefined : { backgroundColor: `var(--color-egg-${n})` }}
     >
-      {empty ? "" : initialOf(name)}
+      {empty ? "" : avatar?.e ? <span className="text-[1.15em] leading-none">{avatar.e}</span> : initialOf(name)}
       {host ? (
         <span aria-hidden="true" className="absolute -top-1.5 -end-2 grid size-[22px] place-items-center rounded-full border border-line-strong bg-night text-gold">
           <Glyph name="tv" className="size-[13px]" />

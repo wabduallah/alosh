@@ -5,6 +5,7 @@ import { Button, cx, inputClass } from "@/components/ui";
 import { playCue } from "@/lib/sfx";
 import { supabase } from "@/lib/supabase";
 import { useSiteSettings } from "@/lib/site-settings";
+import { vibrate } from "@/lib/prefs";
 
 /**
  * «الحلبة»: shared state shape, helpers, and the host and player panels.
@@ -73,7 +74,7 @@ export type HalbaState = {
   result?: HalbaResult | null;
 };
 export type HalbaAnswer = { n: number; text: string; status: "pending" | "ok" | "no"; by?: string | null; steal?: boolean; auto?: boolean };
-export type HalbaPlayer = { id: string; player_name: string; score: number; is_host: boolean; team_color?: string | null };
+export type HalbaPlayer = { id: string; player_name: string; score: number; is_host: boolean; team_color?: string | null; avatar?: { c?: number; e?: string | null } | null };
 
 export const HALBA_ERRORS: Record<string, string> = {
   NOT_ENOUGH_PLAYERS: "تحتاج الحلبة لاعبين اثنين على الأقل.",
@@ -267,7 +268,7 @@ export function useHalbaLive(roomId: string) {
     if (!supabase) return;
     const [{ data: gs }, { data: ps }] = await Promise.all([
       supabase.from("room_game_state").select("state_data").eq("room_id", roomId).maybeSingle(),
-      supabase.from("room_players").select("id, player_name, score, is_host, team_color").eq("room_id", roomId).order("joined_at"),
+      supabase.from("room_players").select("*").eq("room_id", roomId).order("joined_at"),
     ]);
     if (gs) setState((gs.state_data ?? {}) as HalbaState);
     if (ps) setPlayers(ps as HalbaPlayer[]);
@@ -292,11 +293,7 @@ export function useHalbaLive(roomId: string) {
 }
 
 function buzz(pattern: number[]) {
-  try {
-    navigator.vibrate?.(pattern);
-  } catch {
-    // No vibration on this device.
-  }
+  vibrate(pattern);
 }
 
 /**
@@ -422,7 +419,7 @@ export function Ring({ state, players }: { state: HalbaState; players: HalbaPlay
               out ? "border-line/60 bg-deep/40 text-faint" : inDuel ? "border-[#ff5a7a88] bg-[#83184333]" : "border-line bg-deep-2/50",
             )}
           >
-            <Egg name={p.player_name} index={i + 1} size="sm" className={cx(out && "opacity-40")} />
+            <Egg name={p.player_name} index={i + 1} avatar={p.avatar} size="sm" className={cx(out && "opacity-40")} />
             <span className={cx("min-w-0 flex-1 truncate text-[15px] font-semibold", out && "line-through")}>
               {p.player_name}
               {p.is_host ? <span className="ms-1.5 text-[12px] font-normal text-mist">(المضيف)</span> : null}

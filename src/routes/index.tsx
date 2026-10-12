@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { RejoinCard } from "@/components/rejoin";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Shell } from "@/components/shell";
 import { ShareSite } from "@/components/share";
@@ -219,6 +220,7 @@ const FEATURES = [
 function Home() {
   return (
     <Shell>
+      <RejoinCard />
       <Hero />
       <HowItWorks />
       <Games />

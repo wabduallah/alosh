@@ -3,6 +3,7 @@ import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { I18nProvider } from "@/lib/i18n";
 import appCss from "../styles.css?url";
+import { PrefsBoot } from "@/components/prefs-boot";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -35,6 +36,7 @@ export const Route = createRootRoute({
       </head>
       <body>
         <PreviewHostBridge />
+        <PrefsBoot />
         <AuthProvider>
           <I18nProvider>
             <Outlet />

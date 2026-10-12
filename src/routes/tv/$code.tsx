@@ -42,7 +42,7 @@ export const Route = createFileRoute("/tv/$code")({
 type Room = { id: string; room_code: string; game_id: string; status: string };
 type Game = { slug: string; title_ar: string };
 type Question = { id: string; category_ar: string; question_text: string; options: string[]; points: number };
-type Player = { id: string; player_name: string; score: number; is_host: boolean; team_color: string | null };
+type Player = { id: string; player_name: string; score: number; is_host: boolean; team_color: string | null; avatar?: { c?: number; e?: string | null } | null };
 type Buzzer = { player_id: string; player_name: string } | null;
 type RevealOption = { key: string; text: string; is_correct: boolean; owner: string | null; votes: number };
 type OutsiderReveal = {
@@ -155,7 +155,7 @@ function TvScreen() {
     async function refresh() {
       const [{ data: st }, { data: ps }, { data: rm }] = await Promise.all([
         client.from("room_game_state").select("active_question_id, state_data").eq("room_id", roomId).maybeSingle(),
-        client.from("room_players").select("id, player_name, score, is_host, team_color").eq("room_id", roomId).order("joined_at"),
+        client.from("room_players").select("*").eq("room_id", roomId).order("joined_at"),
         client.from("game_rooms").select("status").eq("id", roomId).maybeSingle(),
       ]);
       if (cancelled) return;
@@ -379,7 +379,7 @@ function Lobby({ code, link, game, players }: { code: string; link: string; game
             <ul className="flex flex-wrap justify-center gap-[1.2vw] lg:justify-start">
               {players.map((p, i) => (
                 <li key={p.id} className="rise grid justify-items-center gap-1.5" style={{ animationDelay: `${i * 40}ms` }}>
-                  <Egg name={p.player_name} index={i + 1} size="lg" className="w-[clamp(52px,4.6vw,88px)]! text-[clamp(20px,2vw,38px)]!" />
+                  <Egg name={p.player_name} index={i + 1} avatar={p.avatar} size="lg" className="w-[clamp(52px,4.6vw,88px)]! text-[clamp(20px,2vw,38px)]!" />
                   <span className="max-w-[10vw] truncate text-[clamp(14px,1.3vw,24px)] font-semibold">{p.player_name}</span>
                 </li>
               ))}
