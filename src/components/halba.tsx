@@ -73,8 +73,15 @@ export type HalbaState = {
   powers?: Record<string, string[]>;
   stats?: HalbaStats;
   result?: HalbaResult | null;
+  /** alhalba_v5.sql: how answers are matched, the host's times, the check after typing, duels per player. */
+  judge?: "auto" | "manual" | "both";
+  answer_seconds?: number;
+  bid_seconds?: number;
+  checking?: boolean;
+  duels?: Record<string, number>;
 };
-export type HalbaAnswer = { n: number; text: string; status: "pending" | "ok" | "no"; by?: string | null; steal?: boolean; auto?: boolean };
+/** wait = typed, not checked yet; pending = waits for the judge. */
+export type HalbaAnswer = { n: number; text: string; status: "wait" | "pending" | "ok" | "no"; by?: string | null; steal?: boolean; auto?: boolean };
 export type HalbaPlayer = { id: string; player_name: string; score: number; is_host: boolean; team_color?: string | null; avatar?: { c?: number; e?: string | null } | null };
 
 export const HALBA_ERRORS: Record<string, string> = {
@@ -102,6 +109,9 @@ export const HALBA_ERRORS: Record<string, string> = {
   TOO_LATE: "فات وقتها.",
   FIGHTING: "التوقع للمتفرجين فقط، وأنت في الحلبة هذه الجولة.",
   NOT_CHALLENGER: "السرقة للمتحدي فقط.",
+  CHECKING: "اكتملت الإجابات، وجاري مطابقتها.",
+  ENOUGH: "كتبت العدد المطلوب. انتظر المطابقة.",
+  NOT_CHECKED: "تُطابَق الإجابات بعد اكتمالها أو انتهاء الوقت.",
 };
 
 export const TEAMS: Record<string, { name: string; short: string; color: string; fill: string }> = {
@@ -204,6 +214,24 @@ export const goalOf = (state: HalbaState) => (state.phase === "steal" ? (state.s
 
 /** Answers of the running phase only (a steal starts a fresh list). */
 export const phaseAnswers = (state: HalbaState) => (state.answers ?? []).filter((a) => !!a.steal === (state.phase === "steal"));
+
+/** Checked answers that wait for the judge. */
+export const pendingOf = (state: HalbaState) => phaseAnswers(state).filter((a) => a.status === "pending").length;
+
+/** Typed answers not checked yet. */
+export const waitingOf = (state: HalbaState) => phaseAnswers(state).filter((a) => a.status === "wait").length;
+
+/** Progress toward the goal: accepted (and spoken) answers, plus typed ones waiting for the check. */
+export const progressOf = (state: HalbaState) => (state.count ?? 0) + waitingOf(state);
+
+/** "الجولة 3 من 7", or an extra duel round that lets everyone fight. */
+export function roundLabel(round?: number, maxRounds?: number) {
+  if (!round) return "";
+  if (maxRounds && round > maxRounds) return `الجولة ${round} (إضافية ليلعب الجميع)`;
+  return `الجولة ${round}${maxRounds ? ` من ${maxRounds}` : ""}`;
+}
+
+export const JUDGE_NAMES: Record<string, string> = { auto: "مطابقة تلقائية", manual: "مطابقة يدوية", both: "تلقائية ويدوية" };
 
 /** Everyone who takes part: guests, plus the host when they play; in team mode, the team members. */
 export function participants(state: HalbaState, players: HalbaPlayer[]) {
@@ -328,7 +356,7 @@ export function TopicCard({ topic, round, maxRounds }: { topic: HalbaTopic; roun
   return (
     <div className="rounded-[22px] border border-[#ff5a7a55] bg-[linear-gradient(160deg,#831843cc,#1e1b4bcc)] p-5 text-center shadow-[0_0_40px_-12px_#ff5a7a]">
       <p className="text-[13px] font-semibold text-[#ffb3c4]">
-        {[round ? `الجولة ${round}${maxRounds ? ` من ${maxRounds}` : ""}` : "", topic.category ?? ""].filter(Boolean).join(" · ")}
+        {[roundLabel(round, maxRounds), topic.category ?? ""].filter(Boolean).join(" · ")}
       </p>
       <p className="mt-2 font-display text-[26px] leading-10 font-extrabold text-ivory">{topic.text}</p>
     </div>
@@ -529,6 +557,7 @@ export function MatchSummary({ state, players, big = false }: { state: HalbaStat
 /* ---------------- Typed answers ---------------- */
 
 const STATUS_STYLE: Record<HalbaAnswer["status"], string> = {
+  wait: "border-line-strong/40 bg-deep-2/50 text-ivory",
   pending: "border-line-strong/60 bg-deep-2/70 text-ivory",
   ok: "border-correct/60 bg-correct-fill/20 text-ivory",
   no: "border-wrong/50 bg-wrong-fill/15 text-faint line-through",
@@ -550,7 +579,7 @@ export function AnswersList({ answers, big = false }: { answers: HalbaAnswer[]; 
 }
 
 /** Answers are typed one by one; the box stays focused for the next one. */
-function AnswerInput({ roomId, reload }: { roomId: string; reload: () => Promise<void> }) {
+function AnswerInput({ roomId, state, reload }: { roomId: string; state: HalbaState; reload: () => Promise<void> }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -570,8 +599,21 @@ function AnswerInput({ roomId, reload }: { roomId: string; reload: () => Promise
     box.current?.focus();
   }
 
+  const goal = goalOf(state);
+  const done = progressOf(state);
+  if (state.checking || done >= goal) {
+    return (
+      <p className="rounded-[14px] border border-gold/40 bg-gold/10 p-3 text-[15px] font-semibold text-ivory">
+        {state.checking ? (pendingOf(state) > 0 ? "تمت المطابقة، والحَكَم يراجع الباقي…" : "تمت المطابقة.") : "اكتملت إجاباتك، وجاري المطابقة…"}
+      </p>
+    );
+  }
+
   return (
     <form onSubmit={send} className="grid gap-2">
+      <p className="text-[14px] text-mist">
+        كتبت <b className="tabular-nums text-gold">{done}</b> من <b className="tabular-nums">{goal}</b>. عند الإجابة رقم {goal} تتوقف الكتابة وتُطابَق كلها.
+      </p>
       <div className="flex gap-2">
         <input
           ref={box}
@@ -838,10 +880,17 @@ function FighterControls({
       <div className="grid gap-3">
         <p className="rounded-[18px] border border-gold/50 bg-gold/10 p-4 font-display text-[22px] font-extrabold text-ivory">
           {phase === "steal" ? "اسرقها! " : teams ? "دور فريقك! " : "دورك! "}
-          اكتب{teams ? "وا" : ""} {goal} إجابات، أو قول{teams ? "وها" : "ها"} بصوت عالٍ
-          <span className="block text-[15px] font-semibold text-mist">{judge ? `${judge} يحكم على الإجابات` : "الحَكَم يحكم على الإجابات"}</span>
+          اكتب{teams ? "وا" : ""} {goal} إجابات
+          {state.judge === "manual" ? <>، أو قول{teams ? "وها" : "ها"} بصوت عالٍ</> : null}
+          <span className="block text-[15px] font-semibold text-mist">
+            {state.judge === "auto"
+              ? "يطابقها النظام تلقائيًا بعد اكتمالها"
+              : judge
+                ? `${judge} يحكم على ما لا يطابقه النظام`
+                : "الحَكَم يحكم على ما لا يطابقه النظام"}
+          </span>
         </p>
-        <AnswerInput roomId={roomId} reload={reload} />
+        <AnswerInput roomId={roomId} state={state} reload={reload} />
       </div>
     );
   }
@@ -855,6 +904,9 @@ function JudgeControls({ roomId, state, reload, compact = false }: { roomId: str
   const finishing = useRef(false);
   const answers = phaseAnswers(state);
   const pending = answers.filter((a) => a.status === "pending").length;
+  const checking = !!state.checking;
+  // Spoken answers (+1) only when the host chose manual judging (and in rooms started before v5).
+  const spoken = !state.judge || state.judge === "manual";
 
   // After the clock: a moment for the last answer to land, then close by itself, once nothing waits for a ✓/✗.
   useEffect(() => {
@@ -867,7 +919,15 @@ function JudgeControls({ roomId, state, reload, compact = false }: { roomId: str
 
   return (
     <div className="grid gap-3 rounded-[22px] border border-gold/40 bg-gold/5 p-4">
-      <p className="text-[14px] font-semibold text-gold">أنت الحَكَم: ✓ للإجابة الصحيحة، ✗ للخاطئة. «تلقائي» قُبلت من قائمة الموضوع، وتقدر ترفضها.</p>
+      <p className="text-[14px] font-semibold text-gold">
+        {checking
+          ? pending > 0
+            ? `أنت الحَكَم: احكم على ${pending === 1 ? "الإجابة التي لم يطابقها" : `الإجابات (${pending}) التي لم يطابقها`} النظام، ✓ صحيحة أو ✗ خاطئة.`
+            : "تمت المطابقة."
+          : !state.judge
+            ? "أنت الحَكَم: ✓ للإجابة الصحيحة، ✗ للخاطئة."
+            : `أنت الحَكَم. الإجابات تُطابَق كلها عند اكتمال ${goalOf(state)} أو انتهاء الوقت${state.judge ? ` (${JUDGE_NAMES[state.judge]})` : ""}.`}
+      </p>
       {answers.length > 0 ? (
         <ul className="grid gap-2">
           {answers.map((a) => (
@@ -876,6 +936,9 @@ function JudgeControls({ roomId, state, reload, compact = false }: { roomId: str
                 {a.text}
                 {a.auto ? <span className="ms-2 text-[12px] font-normal text-correct">تلقائي</span> : null}
               </span>
+              {a.status === "wait" ? <span className="shrink-0 text-[12px] text-mist">بانتظار المطابقة</span> : null}
+              {a.status === "wait" ? null : (
+              <>
               <button
                 type="button"
                 onClick={() => act("halba_mark", { p_n: a.n, p_ok: true })}
@@ -894,27 +957,34 @@ function JudgeControls({ roomId, state, reload, compact = false }: { roomId: str
               >
                 <Glyph name="x" className="size-5" />
               </button>
+              </>
+              )}
             </li>
           ))}
         </ul>
       ) : (
-        <p className="text-[13px] text-mist">الإجابات المكتوبة تظهر هنا. إذا قالها بصوت عالٍ، استخدم +1.</p>
+        <p className="text-[13px] text-mist">الإجابات المكتوبة تظهر هنا.{spoken ? " إذا قالها بصوت عالٍ، استخدم +1." : ""}</p>
       )}
       {pending > 0 && left === 0 ? <p className="text-[13px] font-semibold text-gold">احكم على الإجابات الباقية ({pending}) لتنتهي الجولة.</p> : null}
       <div className="flex items-center justify-center gap-4">
-        <Button tone="quiet" className="size-14 rounded-full p-0 text-[24px]" onClick={() => act("halba_count", { p_delta: -1 })} disabled={busy || left === 0} aria-label="إنقاص إجابة">
-          −
-        </Button>
+        {spoken ? (
+          <Button tone="quiet" className="size-14 rounded-full p-0 text-[24px]" onClick={() => act("halba_count", { p_delta: -1 })} disabled={busy || left === 0} aria-label="إنقاص إجابة">
+            −
+          </Button>
+        ) : null}
         <p className={cx("min-w-28 font-display leading-none font-extrabold tabular-nums text-ivory", compact ? "text-[52px]" : "text-[64px]")}>
-          {state.count ?? 0}
+          {checking ? (state.count ?? 0) : progressOf(state)}
           <span className="text-[0.45em] text-mist">/{goalOf(state)}</span>
+          <span className="mt-1 block font-sans text-[13px] font-normal text-mist">{checking || !state.judge ? "صحيحة" : "مكتوبة"}</span>
         </p>
-        <Button tone="primary" className="size-16 rounded-full p-0 text-[26px]" onClick={() => act("halba_count", { p_delta: 1 })} disabled={busy || left === 0} aria-label="إجابة صحيحة منطوقة">
-          <span dir="ltr">+1</span>
-        </Button>
+        {spoken ? (
+          <Button tone="primary" className="size-16 rounded-full p-0 text-[26px]" onClick={() => act("halba_count", { p_delta: 1 })} disabled={busy || left === 0} aria-label="إجابة صحيحة منطوقة">
+            <span dir="ltr">+1</span>
+          </Button>
+        ) : null}
       </div>
       <Button tone="quiet" className="mx-auto" onClick={() => act("halba_finish")} disabled={busy}>
-        أنهِ الجولة الآن
+        {checking || answers.length === 0 ? "أنهِ الجولة الآن" : "طابِق الآن وأنهِ الكتابة"}
       </Button>
       {message ? <p className="text-[14px] font-semibold text-wrong">{message}</p> : null}
     </div>
@@ -928,9 +998,19 @@ function ProofView({ state }: { state: HalbaState }) {
     <div className="grid gap-3">
       <AnswersList answers={phaseAnswers(state)} />
       <p className="font-display text-[56px] leading-none font-extrabold tabular-nums text-ivory">
-        {state.count ?? 0}
+        {state.checking ? (state.count ?? 0) : progressOf(state)}
         <span className="text-[24px] text-mist">/{goalOf(state)}</span>
-        <span className="mt-2 block font-sans text-[14px] font-normal text-mist">{judge ? `يحكم ${judge}` : "يحكم الحَكَم"}</span>
+        <span className="mt-2 block font-sans text-[14px] font-normal text-mist">
+          {state.checking
+            ? pendingOf(state) > 0
+              ? `صحيحة · ${judge ? `${judge} يراجع الباقي` : "الحَكَم يراجع الباقي"}`
+              : "صحيحة"
+            : state.judge
+              ? "مكتوبة · تُطابَق عند الاكتمال"
+              : judge
+                ? `يحكم ${judge}`
+                : "يحكم الحَكَم"}
+        </span>
       </p>
     </div>
   );
@@ -956,6 +1036,9 @@ export function HalbaHostPanel({ roomId, roomCode, roomStatus }: { roomId: strin
   const [rounds, setRounds] = useState(7);
   const [lives, setLives] = useState(2);
   const [hostPlays, setHostPlays] = useState(true);
+  const [judge, setJudge] = useState<"auto" | "manual" | "both">("both");
+  const [answerSeconds, setAnswerSeconds] = useState(0);
+  const [bidSeconds, setBidSeconds] = useState(20);
   const [categories, setCategories] = useState<Array<{ category: string; topics: number }>>([]);
   const [picked, setPicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -976,6 +1059,7 @@ export function HalbaHostPanel({ roomId, roomCode, roomStatus }: { roomId: strin
     if (typeof d.rounds === "number" && [3, 5, 7, 10].includes(d.rounds)) setRounds(d.rounds);
     if (typeof d.lives === "number" && d.lives >= 1 && d.lives <= 3) setLives(d.lives);
     if (typeof d.host_plays === "boolean") setHostPlays(d.host_plays);
+    if (typeof d.bid_seconds === "number" && [10, 20, 30, 45].includes(d.bid_seconds)) setBidSeconds(d.bid_seconds);
   }, [site]);
 
   // Topic categories for the setup (needs alhalba_v4.sql; hidden until it is applied).
@@ -1014,6 +1098,28 @@ export function HalbaHostPanel({ roomId, roomCode, roomStatus }: { roomId: strin
     }
   }, [phase, bidLeft, step]);
 
+  // The first round, with the host's settings. Before alhalba_v5.sql the function has no
+  // judge/time parameters: start without them.
+  async function startMatch() {
+    const base = {
+      p_mode: mode,
+      p_rounds: rounds,
+      p_host_plays: hostPlays,
+      p_lives: lives,
+      ...(categories.length > 0 ? { p_categories: picked.length > 0 ? picked : null } : {}),
+    };
+    if (!supabase) return;
+    setBusy(true);
+    setError(null);
+    const probe = await supabase.rpc("halba_start_round", { p_room_id: roomId, ...base, p_judge: judge, p_answer_seconds: answerSeconds || null, p_bid_seconds: bidSeconds });
+    setBusy(false);
+    if (probe.error && (probe.error.code === "PGRST202" || /function/i.test(probe.error.message))) return step("halba_start_round", base);
+    if (probe.error) return setError("تعذّر تنفيذ الخطوة، حاول مرة أخرى.");
+    const result = probe.data as { ok: boolean; reason?: string };
+    if (!result?.ok) setError(HALBA_ERRORS[result?.reason ?? ""] ?? "تعذّر تنفيذ الخطوة.");
+    await reload();
+  }
+
   async function endGame() {
     if (!supabase) return;
     setBusy(true);
@@ -1027,7 +1133,12 @@ export function HalbaHostPanel({ roomId, roomCode, roomStatus }: { roomId: strin
   const winner = phase === "over" ? halbaWinner(state, players) : null;
   const iJudge = canJudge(state, players, hostId, true);
   const guests = players.filter((p) => !p.is_host).length;
-  const modeName = state.mode === "teams" ? "فريقان" : state.mode === "duel" ? "نزال ثنائي" : state.mode ? "الكل ضد الكل" : "";
+  const modeName = [
+    state.mode === "teams" ? "فريقان" : state.mode === "duel" ? "نزال ثنائي" : state.mode ? "الكل ضد الكل" : "",
+    state.judge ? JUDGE_NAMES[state.judge] : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const tally = predictionTally(state);
 
   return (
@@ -1086,6 +1197,44 @@ export function HalbaHostPanel({ roomId, roomCode, roomStatus }: { roomId: strin
                 onChange={(v) => setRounds(Number(v))}
                 options={[3, 5, 7, 10].map((n) => ({ value: String(n), label: String(n) }))}
               />
+              {mode === "duel" ? (
+                <p className="-mt-1 text-start text-[13px] text-mist">
+                  كل جولة نزال بين لاعبَين، ويدخل كل لاعب نزالاته بالدور حتى يلعب الجميع. إذا انتهت الجولات قبل أن يلعب الكل بالتساوي، تُضاف جولات حتى يكتملوا.
+                </p>
+              ) : null}
+              <Choice
+                label="مطابقة الإجابات"
+                value={judge}
+                onChange={(v) => setJudge(v as "auto" | "manual" | "both")}
+                options={[
+                  { value: "both", label: "الاثنان" },
+                  { value: "auto", label: "تلقائي" },
+                  { value: "manual", label: "يدوي" },
+                ]}
+              />
+              <p className="-mt-1 text-start text-[13px] text-mist">
+                {judge === "auto"
+                  ? "يطابق النظام الإجابات مع قائمة الموضوع ويرفض ما لا يطابقها، بدون حَكَم. الموضوع الذي ليس له قائمة يحكم فيه الحَكَم."
+                  : judge === "manual"
+                    ? "الحَكَم يحكم على كل إجابة بـ ✓ أو ✗، ويقدر يحسب الإجابات المنطوقة بـ +1."
+                    : "يقبل النظام ما يطابق قائمة الموضوع، والحَكَم يحكم على الباقي."}{" "}
+                في كل الطرق يكتب صاحب المزايدة عدد إجاباته بالضبط، ثم تُطابَق كلها مرة واحدة.
+              </p>
+              <Choice
+                label="وقت المزايدة"
+                value={String(bidSeconds)}
+                onChange={(v) => setBidSeconds(Number(v))}
+                options={[10, 20, 30, 45].map((n) => ({ value: String(n), label: `${n} ث` }))}
+              />
+              <Choice
+                label="وقت الإجابة"
+                value={String(answerSeconds)}
+                onChange={(v) => setAnswerSeconds(Number(v))}
+                options={[
+                  { value: "0", label: "حسب الموضوع" },
+                  ...[30, 45, 60, 90].map((n) => ({ value: String(n), label: `${n} ث` })),
+                ]}
+              />
               {categories.length > 1 ? (
                 <div className="grid gap-1.5 text-start">
                   <span className="text-[14px] font-semibold text-ivory">التصنيفات</span>
@@ -1109,15 +1258,7 @@ export function HalbaHostPanel({ roomId, roomCode, roomStatus }: { roomId: strin
             <Button
               tone="primary"
               className="mx-auto min-h-14 px-10 text-[17px]"
-              onClick={() =>
-                step("halba_start_round", {
-                  p_mode: mode,
-                  p_rounds: rounds,
-                  p_host_plays: hostPlays,
-                  p_lives: lives,
-                  ...(categories.length > 0 ? { p_categories: picked.length > 0 ? picked : null } : {}),
-                })
-              }
+              onClick={() => void startMatch()}
               disabled={busy}
             >
               ابدأ الجولة الأولى
@@ -1300,7 +1441,7 @@ export function HalbaPlayerPanel({ roomId, meId }: { roomId: string; meId: strin
   return (
     <section className="glass-card mb-5 grid gap-4 rounded-[28px] p-5 text-center">
       <p className="text-xs font-bold text-violet-text">
-        الحلبة{state.round ? ` · الجولة ${state.round}` : ""}
+        الحلبة{state.round ? ` · ${roundLabel(state.round, state.max_rounds)}` : ""}
         {state.mode === "teams" && mySide ? (
           <span style={{ color: TEAMS[mySide]?.color }}> · {TEAMS[mySide]?.name}</span>
         ) : null}

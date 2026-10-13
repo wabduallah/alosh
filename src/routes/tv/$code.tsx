@@ -22,6 +22,8 @@ import {
   participants,
   performerLabel,
   phaseAnswers,
+  progressOf,
+  roundLabel,
   predictionTally,
   sideName,
   useHalbaCues,
@@ -942,8 +944,7 @@ function Halba({ state, players }: { state: HalbaState; players: Player[] }) {
             {state.topic ? (
               <>
                 <p className="mx-auto inline-flex rounded-full bg-[#83184366] px-[1.4vw] py-[0.6vh] text-[clamp(16px,1.5vw,30px)] font-bold text-[#ffb3c4]">
-                  الجولة {state.round}
-                  {state.max_rounds ? ` من ${state.max_rounds}` : ""}
+                  {roundLabel(state.round, state.max_rounds)}
                   {state.topic.category ? ` · ${state.topic.category}` : ""}
                 </p>
                 <p className="font-display text-[clamp(34px,4.4vw,92px)] leading-[1.35] font-extrabold">{state.topic.text}</p>
@@ -979,10 +980,11 @@ function Halba({ state, players }: { state: HalbaState; players: Player[] }) {
                   <b>{performerLabel(state, players)}</b> {phase === "steal" ? "يسرق ويذكر" : "يذكر"} {goalOf(state)} إجابات
                   {phase === "prove" && state.challenger_name ? <span className="text-mist"> · تحدّاه {state.challenger_name}</span> : null}
                 </p>
-                <p key={state.count ?? 0} className="rise font-display text-[clamp(80px,12vw,240px)] leading-none font-extrabold tabular-nums">
-                  {state.count ?? 0}
+                <p key={progressOf(state)} className="rise font-display text-[clamp(80px,12vw,240px)] leading-none font-extrabold tabular-nums">
+                  {state.checking ? (state.count ?? 0) : progressOf(state)}
                   <span className="text-[0.4em] text-mist">/{goalOf(state)}</span>
                 </p>
+                <p className="text-[clamp(16px,1.5vw,30px)] text-mist">{state.checking ? "إجابات صحيحة" : "إجابات مكتوبة · تُطابَق كلها عند الاكتمال"}</p>
                 <AnswersList answers={phaseAnswers(state)} big />
                 <Clock seconds={proveLeft} label={proveLeft === 0 ? "انتهى الوقت" : "الوقت"} />
               </div>
