@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { FeedbackButton } from "@/components/feedback";
 import { Glyph } from "@/components/brand";
 import { halbaAwards, halbaWinner, TEAMS, type HalbaPlayer, type HalbaState } from "@/components/halba";
 import { buttonBase, buttonTone, cx } from "@/components/ui";
@@ -170,6 +171,7 @@ export function HalbaShare({ state, players }: { state: HalbaState; players: Hal
         </a>
       </div>
       {note ? <p className="text-[13px] text-mist">{note}</p> : null}
+      <FeedbackButton />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { FeedbackButton } from "@/components/feedback";
 import { Glyph, gameStyle } from "@/components/brand";
 import { buttonBase, buttonTone, cx } from "@/components/ui";
 
@@ -199,6 +200,7 @@ export function ResultShare({ result, fileName = "al3sh-result.png", className }
         </a>
       </div>
       {note ? <p className="text-[13px] text-mist">{note}</p> : null}
+      <FeedbackButton />
     </div>
   );
 }

@@ -19,8 +19,31 @@ export type Announcement = {
 };
 
 export type GameDefaults = {
-  alhalba?: { mode?: "ffa" | "duel" | "teams"; rounds?: number; lives?: number; host_plays?: boolean; bid_seconds?: number };
+  alhalba?: {
+    mode?: "ffa" | "duel" | "teams";
+    rounds?: number;
+    lives?: number;
+    host_plays?: boolean;
+    bid_seconds?: number;
+    judge?: "auto" | "manual" | "both";
+    pace?: number;
+    win_rule?: "score" | "last";
+    auto_next?: boolean;
+    group_every?: number;
+    levels?: number[];
+  };
   "heads-up"?: { turn_seconds?: number };
+  /** Used when the narrator has no settings saved from an earlier match in the room. */
+  "social-mafia"?: {
+    random_narrator?: boolean;
+    mafia_count?: number;
+    reveal?: boolean;
+    day_seconds?: number;
+    vote_seconds?: number;
+    roles?: Partial<Record<"jester" | "mayor" | "bodyguard" | "sniper" | "seer" | "spy" | "lovers", boolean>>;
+    dead_see_roles?: boolean;
+  };
+  "tactical-grid"?: { seconds?: number };
 };
 
 type Settings = { announcement?: Announcement; game_defaults?: GameDefaults };

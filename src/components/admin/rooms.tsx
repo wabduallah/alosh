@@ -1,12 +1,12 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Egg, GameIcon, Glyph } from "@/components/brand";
-import { Button, buttonBase, buttonTone, cx } from "@/components/ui";
+import { Button, buttonBase, buttonTone, cx, inputClass } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { loadGames, type AdminGame } from "./games";
-import { Loading, Notice, Sheet, Toggle, dbMessage } from "./common";
+import { Loading, Notice, Sheet, Toggle, dbMessage, selectClass } from "./common";
 
-type Room = { id: string; room_code: string; status: string; game_id: string; created_at: string; current_round: number };
+type Room = { id: string; room_code: string; status: string; game_id: string; created_at: string; current_round: number; host_id?: string | null };
 type Player = { id: string; room_id: string; player_name: string; is_host: boolean; score: number; joined_at: string; avatar?: { c?: number | null; e?: string | null } | null };
 type State = { room_id: string; updated_at: string | null; state_data: { phase?: string; round?: number; max_rounds?: number } | null };
 
@@ -29,6 +29,7 @@ const PHASES: Record<string, string> = {
   guess: "تخمين",
   discuss: "نقاش",
   turn_over: "انتهى الدور",
+  group: "جولة جماعية",
   between: "بين الأدوار",
   done: "انتهت",
 };
@@ -71,16 +72,30 @@ export function RoomsTab() {
   const [live, setLive] = useState(true);
   const [now, setNow] = useState(() => Date.now());
   const [openId, setOpenId] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [gameFilter, setGameFilter] = useState("");
+  const [realOnly, setRealOnly] = useState(false);
+  // Hosts marked as test devices (admin_v4.sql); null before that file runs.
+  const [testHosts, setTestHosts] = useState<Set<string> | null>(null);
   const busy = useRef(false);
+  const filters = useRef({ code: "", game: "" });
+  filters.current = { code, game: gameFilter };
 
   async function refresh(quiet = false) {
     if (!supabase || busy.current) return;
     busy.current = true;
     if (!quiet) setLoading(true);
-    const [{ data: roomRows, error: roomError }, { data: gameRows }] = await Promise.all([
-      supabase.from("game_rooms").select("id, room_code, status, game_id, created_at, current_round").order("created_at", { ascending: false }).limit(60),
+    // Search by code and filter by game in the database, so older rooms are found too.
+    let query = supabase.from("game_rooms").select("id, room_code, status, game_id, created_at, current_round, host_id").order("created_at", { ascending: false }).limit(100);
+    const q = filters.current.code.trim().toUpperCase();
+    if (q) query = query.ilike("room_code", `%${q}%`);
+    if (filters.current.game) query = query.eq("game_id", filters.current.game);
+    const [{ data: roomRows, error: roomError }, { data: gameRows }, tests] = await Promise.all([
+      query,
       loadGames(),
+      supabase.from("admin_test_hosts").select("user_id"),
     ]);
+    setTestHosts(tests.error ? null : new Set(((tests.data ?? []) as Array<{ user_id: string }>).map((t) => t.user_id)));
     if (roomError) {
       setError(dbMessage(roomError, "تعذّر تحميل الغرف."));
       setRooms([]);
@@ -107,8 +122,23 @@ export function RoomsTab() {
   }
 
   useEffect(() => {
-    void refresh();
-  }, []);
+    const t = window.setTimeout(() => void refresh(), code ? 350 : 0);
+    return () => window.clearTimeout(t);
+    // refresh reads the filters from a ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, gameFilter]);
+
+  async function markTest(hostId: string, on: boolean) {
+    if (!supabase) return;
+    const { error: e } = on
+      ? await supabase.from("admin_test_hosts").upsert({ user_id: hostId, label: "علّمه المدير من الغرف" })
+      : await supabase.from("admin_test_hosts").delete().eq("user_id", hostId);
+    if (e) return setError(dbMessage(e, "تعذّر الحفظ."));
+    await refresh(true);
+  }
+
+  /** A real room: 3 people or more, not from a test device. */
+  const isReal = (r: Room) => players.filter((p) => p.room_id === r.id).length >= 3 && !(r.host_id && testHosts?.has(r.host_id));
 
   // Live: refresh every 5 seconds while the page is visible.
   useEffect(() => {
@@ -127,7 +157,7 @@ export function RoomsTab() {
     return c;
   }, [rooms]);
 
-  const visible = (rooms ?? []).filter((r) => filter === "all" || r.status === filter);
+  const visible = (rooms ?? []).filter((r) => (filter === "all" || r.status === filter) && (!realOnly || isReal(r)));
 
   return (
     <div className="grid grid-cols-1 gap-4">
@@ -155,7 +185,26 @@ export function RoomsTab() {
           تحديث
         </Button>
       </div>
-      <p className="text-[13px] text-mist">آخر 60 غرفة، الأحدث أولًا.{live ? " تتحدث كل 5 ثوانٍ." : ""}</p>
+      <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
+        <label className="relative min-w-0 sm:w-56">
+          <span className="sr-only">ابحث برمز الغرفة</span>
+          <input dir="ltr" className={cx(inputClass, "min-h-11 ps-10 text-start uppercase")} value={code} onChange={(e) => setCode(e.target.value)} placeholder="رمز الغرفة" maxLength={8} />
+          <Glyph name="search" className="pointer-events-none absolute start-3 top-1/2 size-5 -translate-y-1/2 text-faint" />
+        </label>
+        <select className={cx(selectClass, "min-h-11 py-1 sm:w-52")} value={gameFilter} onChange={(e) => setGameFilter(e.target.value)} aria-label="اللعبة">
+          <option value="">كل الألعاب</option>
+          {games.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.title_ar}
+            </option>
+          ))}
+        </select>
+        <Toggle checked={realOnly} onChange={setRealOnly} label="غرف حقيقية فقط" />
+      </div>
+      <p className="text-[13px] text-mist">
+        آخر 100 غرفة{code || gameFilter ? " تطابق البحث" : ""}، الأحدث أولًا.{live ? " تتحدث كل 5 ثوانٍ." : ""}
+        {realOnly ? " الحقيقية: 3 أشخاص أو أكثر، ومن غير أجهزة التجربة." : ""}
+      </p>
 
       {error ? <Notice tone="error">{error}</Notice> : null}
 
@@ -175,6 +224,8 @@ export function RoomsTab() {
               now={now}
               onOpen={() => setOpenId(room.id)}
               onChanged={() => refresh(true)}
+              testHost={room.host_id && testHosts ? testHosts.has(room.host_id) : null}
+              onMarkTest={room.host_id && testHosts ? (on) => markTest(room.host_id!, on) : undefined}
             />
           ))}
         </div>
@@ -318,6 +369,8 @@ function RoomCard({
   now,
   onOpen,
   onChanged,
+  testHost = null,
+  onMarkTest,
 }: {
   room: Room;
   game: AdminGame | null;
@@ -326,6 +379,9 @@ function RoomCard({
   now: number;
   onOpen: () => void;
   onChanged: () => Promise<void>;
+  /** null: unknown (before admin_v4.sql). */
+  testHost?: boolean | null;
+  onMarkTest?: (on: boolean) => Promise<void>;
 }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -352,6 +408,7 @@ function RoomCard({
           <p className="flex flex-wrap items-center gap-2">
             <span className="room-code text-[20px] text-gold">{room.room_code}</span>
             <span className={cx("rounded-full px-2.5 py-0.5 text-[13px] font-semibold", status.className)}>{status.label}</span>
+            {testHost ? <span className="rounded-full bg-violet/25 px-2.5 py-0.5 text-[12px] font-semibold text-violet-text">جهاز تجربة</span> : null}
           </p>
           <p className="truncate text-[13px] text-mist">
             {game?.title_ar ?? "لعبة غير معروفة"} · {when.format(new Date(room.created_at))}
@@ -397,6 +454,12 @@ function RoomCard({
           <Glyph name="tv" className="size-[18px]" />
           شاشة التلفزيون
         </Link>
+        {onMarkTest ? (
+          <Button tone="quiet" className="min-h-10 px-4" onClick={() => onMarkTest(!testHost)} title="كل غرف هذا المضيف (جهازه) تُستبعد من الإحصاءات">
+            <Glyph name="shield" className="size-[18px]" />
+            {testHost ? "ليس جهاز تجربة" : "جهاز المضيف للتجربة"}
+          </Button>
+        ) : null}
         {room.status !== "finished" ? (
           confirming ? (
             <>

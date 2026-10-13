@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Button, buttonBase, buttonTone, cx } from "@/components/ui";
-import { GameIcon, Glyph, gameStyle, gameVars } from "@/components/brand";
+import { GameArt, GameIcon, Glyph, gameStyle, gameVars } from "@/components/brand";
 import { FILTERS, useGames, type Category, type GameEntry } from "@/lib/catalog";
 
 /**
@@ -69,7 +69,7 @@ export function GamesGrid({ titleAs = "h2" }: { titleAs?: "h1" | "h2" }) {
                   params={{ slug: game.id }}
                   className="inline-flex min-h-12 items-center gap-2.5 rounded-full border border-line-strong/70 bg-deep-2/50 py-1.5 ps-1.5 pe-4 text-[15px] font-semibold text-mist transition hover:border-glow hover:text-ivory"
                 >
-                  <GameIcon id={game.id} size="sm" soon className="size-9! rounded-full!" />
+                  <GameIcon id={game.id} icon={game.icon} size="sm" soon className="size-9! rounded-full!" />
                   {game.title}
                 </Link>
               </li>
@@ -96,7 +96,7 @@ function GameTile({ game, index, onHowTo }: { game: GameEntry; index: number; on
       <span aria-hidden="true" className="pointer-events-none absolute -top-10 -end-10 size-36 rounded-full bg-white/10 blur-2xl" />
       <div className="flex items-center gap-3">
         <span className="gcard-icon grid size-14 shrink-0 place-items-center rounded-full sm:size-[72px]">
-          <img src={`/brand/games/game-${game.id}.svg`} alt="" className="size-12 sm:size-16" />
+          <GameArt id={game.id} icon={game.icon} className="size-12 text-[22px] sm:size-16 sm:text-[28px]" />
         </span>
         <div className="grid min-w-0 gap-1">
           <h3 className={cx("text-[19px] leading-7 sm:text-[21px] sm:leading-8", ink)}>
@@ -153,7 +153,7 @@ function HowToSheet({ game, onClose }: { game: GameEntry | null; onClose: () => 
       >
         <div aria-hidden="true" className="mx-auto mb-4 h-[5px] w-10 rounded-full bg-line-strong sm:hidden" />
         <div className="flex items-center gap-3">
-          <GameIcon id={game.id} />
+          <GameIcon id={game.id} icon={game.icon} />
           <h3 id="howto-title" className="min-w-0 text-2xl leading-9">
             {game.title}
           </h3>

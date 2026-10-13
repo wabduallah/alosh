@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { FeedbackButton } from "@/components/feedback";
 import { Glyph } from "@/components/brand";
 import { buttonBase, buttonTone, cx } from "@/components/ui";
 import { playCue } from "@/lib/sfx";
@@ -612,6 +613,7 @@ export function MafiaShare({ state, rows, recap = null }: { state: MafiaPublicSt
         </a>
       </div>
       {note ? <p className="text-[13px] text-mist">{note}</p> : null}
+      <FeedbackButton />
     </div>
   );
 }

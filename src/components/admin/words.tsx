@@ -6,7 +6,9 @@ import { BulkBar, Check, Loading, Notice, SetupNotice, Sheet, dbMessage, needsSe
 
 type HeadsWord = { id: string; word: string; category_ar: string | null };
 type Topic = { id: string; title_ar: string; words: string[] };
-type HalbaTopic = { id: string; topic_ar: string; min_answers: number; time_limit_sec: number; category: string | null; answers?: string[] };
+type HalbaTopic = { id: string; topic_ar: string; min_answers: number; time_limit_sec: number; category: string | null; answers?: string[]; difficulty?: number | null; open_ended?: boolean };
+/** Topic levels (alhalba_v6.sql). An empty level plays as medium. */
+const HALBA_LEVELS: Record<number, string> = { 1: "سهل", 2: "متوسط", 3: "صعب" };
 
 /** Words for «على راسك» and topics for «برة السالفة». Both need supabase/admin_panel.sql. */
 export function WordsTab() {
@@ -360,12 +362,17 @@ function HalbaTopics() {
   const [query, setQuery] = useState("");
   const [cat, setCat] = useState("");
   const [onlyMissing, setOnlyMissing] = useState(false);
+  const [level, setLevel] = useState("");
+  const [hasLevels, setHasLevels] = useState(true);
   const sel = useSelection();
 
   async function refresh() {
     if (!supabase) return;
     const base = "id, topic_ar, min_answers, time_limit_sec, category";
-    const first = await supabase.from("alhalba_topics").select(`${base}, answers`).order("category").order("topic_ar");
+    // Newest columns first: level and open (alhalba_v6.sql), then answers (admin_v2.sql).
+    const withLevels = await supabase.from("alhalba_topics").select(`${base}, answers, difficulty, open_ended`).order("category").order("topic_ar");
+    setHasLevels(!withLevels.error);
+    const first = withLevels.error ? await supabase.from("alhalba_topics").select(`${base}, answers`).order("category").order("topic_ar") : withLevels;
     // Before supabase/admin_v2.sql there is no answers column: load the rest.
     const noColumn = first.error?.code === "42703";
     setHasAnswers(!noColumn);
@@ -402,11 +409,12 @@ function HalbaTopics() {
       (t) =>
         (!q || t.topic_ar.includes(q) || (t.answers ?? []).some((a) => a.includes(q))) &&
         (!cat || (t.category ?? "") === cat) &&
-        (!onlyMissing || (t.answers ?? []).length === 0),
+        (!onlyMissing || (t.answers ?? []).length === 0) &&
+        (!level || (level === "none" ? !t.difficulty : level === "open" ? !!t.open_ended : String(t.difficulty ?? "") === level)),
     );
-  }, [topics, query, cat, onlyMissing]);
+  }, [topics, query, cat, onlyMissing, level]);
 
-  async function bulk(change: { category: string } | "delete") {
+  async function bulk(change: { category: string } | { difficulty: number } | { open_ended: boolean } | "delete") {
     if (!supabase) return;
     const ids = [...sel.ids];
     const { error: bulkError } =
@@ -454,6 +462,16 @@ function HalbaTopics() {
               </option>
             ))}
           </select>
+          {hasLevels ? (
+            <select className={cx(selectClass, "min-h-11 py-1 sm:w-40")} value={level} onChange={(e) => setLevel(e.target.value)} aria-label="المستوى">
+              <option value="">كل المستويات</option>
+              <option value="1">سهل</option>
+              <option value="2">متوسط</option>
+              <option value="3">صعب</option>
+              <option value="none">بدون مستوى</option>
+              <option value="open">المفتوحة</option>
+            </select>
+          ) : null}
           {hasAnswers ? (
             <label className="inline-flex min-h-11 items-center gap-2 text-[14px] text-ivory">
               <input type="checkbox" className="size-5 accent-[var(--color-gold)]" checked={onlyMissing} onChange={(e) => setOnlyMissing(e.target.checked)} />
@@ -482,6 +500,10 @@ function HalbaTopics() {
                   {hasAnswers ? (
                     <span className={(t.answers ?? []).length === 0 ? "text-gold" : ""}>{(t.answers ?? []).length ? `${(t.answers ?? []).length} إجابة مرجعية` : "بدون إجابات"}</span>
                   ) : null}
+                  {hasLevels ? (
+                    <span className={t.difficulty ? "" : "text-gold"}>{t.difficulty ? HALBA_LEVELS[t.difficulty] : "بدون مستوى"}</span>
+                  ) : null}
+                  {t.open_ended ? <span className="rounded-full bg-gold/15 px-2 py-0.5 text-[12px] text-gold">مفتوح</span> : null}
                 </p>
               </div>
               <span className="flex shrink-0 gap-1">
@@ -506,9 +528,30 @@ function HalbaTopics() {
         categories={categories}
         onMove={(category) => bulk({ category })}
         onDelete={() => bulk("delete")}
-      />
+      >
+        {hasLevels ? (
+          <select
+            className={cx(selectClass, "min-h-10 !w-36 shrink-0 py-1")}
+            aria-label="المستوى"
+            value=""
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "open" || v === "closed") void bulk({ open_ended: v === "open" });
+              else if (v) void bulk({ difficulty: Number(v) });
+            }}
+          >
+            <option value="">المستوى…</option>
+            <option value="1">سهل</option>
+            <option value="2">متوسط</option>
+            <option value="3">صعب</option>
+            <option value="open">اجعلها مفتوحة</option>
+            <option value="closed">ليست مفتوحة</option>
+          </select>
+        ) : null}
+      </BulkBar>
       {editing ? (
         <HalbaTopicEditor
+          hasLevels={hasLevels}
           hasAnswers={hasAnswers}
           topic={editing === "new" ? null : editing}
           categories={categories}
@@ -524,12 +567,14 @@ function HalbaTopics() {
 }
 
 function HalbaTopicEditor({
+  hasLevels,
   hasAnswers,
   topic,
   categories,
   onClose,
   onSaved,
 }: {
+  hasLevels: boolean;
   hasAnswers: boolean;
   topic: HalbaTopic | null;
   categories: string[];
@@ -541,6 +586,8 @@ function HalbaTopicEditor({
   const [seconds, setSeconds] = useState(topic?.time_limit_sec ?? 30);
   const [category, setCategory] = useState(topic?.category ?? "");
   const [answers, setAnswers] = useState((topic?.answers ?? []).join("\n"));
+  const [difficulty, setDifficulty] = useState<number>(topic?.difficulty ?? 2);
+  const [open, setOpen] = useState<boolean>(!!topic?.open_ended);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -554,6 +601,7 @@ function HalbaTopicEditor({
       time_limit_sec: Math.round(seconds),
       category: category.trim() || null,
       ...(hasAnswers ? { answers: list } : {}),
+      ...(hasLevels ? { difficulty, open_ended: open } : {}),
     };
     if (list.length > 400) return setError("الإجابات حدها 400.");
     if (row.topic_ar.length < 3) return setError("اكتب الموضوع.");
@@ -591,6 +639,33 @@ function HalbaTopicEditor({
             <option key={c} value={c} />
           ))}
         </datalist>
+        {hasLevels ? (
+          <div className="grid gap-3">
+            <Field label="المستوى">
+              <div role="radiogroup" aria-label="المستوى" className="flex flex-wrap gap-1.5">
+                {[1, 2, 3].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    role="radio"
+                    aria-checked={difficulty === n}
+                    onClick={() => setDifficulty(n)}
+                    className={cx("min-h-10 rounded-full border px-4 text-[14px] font-semibold", difficulty === n ? "border-gold bg-gold/15 text-gold" : "border-line-strong/70 text-mist hover:text-ivory")}
+                  >
+                    {HALBA_LEVELS[n]}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            <label className="flex items-start gap-3 rounded-[14px] border border-line bg-deep-2/40 p-3">
+              <input type="checkbox" className="mt-1 size-5 accent-[var(--color-gold)]" checked={open} onChange={(e) => setOpen(e.target.checked)} />
+              <span>
+                <b className="text-[14px] text-ivory">موضوع مفتوح</b>
+                <span className="block text-[13px] text-mist">للآراء والأمثلة التي لا تنتهي (مثل «أعذار للتأخر»): ما لا يطابق القائمة يحكم فيه الحَكَم ولا يُرفض تلقائيًا.</span>
+              </span>
+            </label>
+          </div>
+        ) : null}
         {hasAnswers ? (
           <Field label={`الإجابات المرجعية (${toList(answers).length})`} hint="إجابة في كل سطر. ما يكتبه اللاعب ويطابق إحداها يُقبل تلقائيًا (بدون تشكيل أو «ال»)، والباقي يحكم عليه الحَكَم. لا تظهر للاعبين.">
             <textarea className={textareaClass} value={answers} onChange={(e) => setAnswers(e.target.value)} rows={8} />

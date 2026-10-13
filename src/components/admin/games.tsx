@@ -3,6 +3,7 @@ import { GameIcon, Glyph } from "@/components/brand";
 import { Button, Field, cx, inputClass } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { Loading, Notice, Toggle, dbMessage, textareaClass } from "./common";
+import { NewGames } from "./newgame";
 import { PLAYABLE_SLUGS } from "@/lib/catalog";
 
 const HOME_STATUS: Array<{ key: "live" | "soon" | "hidden"; label: string }> = [
@@ -52,6 +53,7 @@ export function GamesTab() {
   return (
     <div className="grid grid-cols-1 gap-4">
       {error ? <Notice tone="error">{error}</Notice> : null}
+      <NewGames onChanged={refresh} />
       <p className="text-[14px] leading-6 text-mist">
         اللعبة الموقوفة تختفي من صفحة إنشاء الغرفة، ولا تفتح غرفها الجارية بشكل صحيح. أوقفها حين لا توجد غرف تُلعب بها. الرئيسية وصفحة الألعاب
         تتبعان «الحالة في الرئيسية» والترتيب هنا: اللعبة تظهر متاحة فقط إذا كانت مفعّلة وحالتها «متاحة» ولها غرفة في الموقع.

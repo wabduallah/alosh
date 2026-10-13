@@ -1322,6 +1322,12 @@ export function HalbaHostPanel({ roomId, roomCode, roomStatus }: { roomId: strin
     if (typeof d.lives === "number" && d.lives >= 1 && d.lives <= 3) setLives(d.lives);
     if (typeof d.host_plays === "boolean") setHostPlays(d.host_plays);
     if (typeof d.bid_seconds === "number" && [10, 20, 30, 45].includes(d.bid_seconds)) setBidSeconds(d.bid_seconds);
+    if (d.judge === "auto" || d.judge === "manual" || d.judge === "both") setJudge(d.judge);
+    if (typeof d.pace === "number" && [4, 6, 8].includes(d.pace)) setPace(d.pace);
+    if (d.win_rule === "score" || d.win_rule === "last") setWinRule(d.win_rule);
+    if (typeof d.auto_next === "boolean") setAutoNext(d.auto_next);
+    if (typeof d.group_every === "number" && [0, 3, 4, 5].includes(d.group_every)) setGroupEvery(d.group_every);
+    if (Array.isArray(d.levels)) setLevels(d.levels.filter((n) => n === 1 || n === 2 || n === 3).sort());
   }, [site]);
 
   // Topic categories for the setup (needs alhalba_v4.sql; hidden until it is applied).

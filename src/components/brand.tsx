@@ -199,15 +199,27 @@ export function gameVars(id: string): CSSProperties {
 
 const GAME_ICON_SIZES = { sm: "size-12 rounded-[14px]", md: "size-14 rounded-[16px]", lg: "size-[72px] rounded-[20px]" } as const;
 
+const EMOJI_SIZES = { sm: "text-[24px]", md: "text-[28px]", lg: "text-[36px]" } as const;
+
 /** A small coloured tile with the game's icon, for lists and pickers. */
-export function GameIcon({ id, size = "md", soon = false, className }: { id: string; size?: keyof typeof GAME_ICON_SIZES; soon?: boolean; className?: string }) {
+export function GameIcon({ id, icon, size = "md", soon = false, className }: { id: string; icon?: string; size?: keyof typeof GAME_ICON_SIZES; soon?: boolean; className?: string }) {
   return (
     <span
       aria-hidden="true"
       className={cx("gcard grid shrink-0 place-items-center", GAME_ICON_SIZES[size], soon && "opacity-60 saturate-50", className)}
       style={gameVars(id)}
     >
-      <img src={`/brand/games/game-${id}.svg`} alt="" className="h-auto w-[72%]" />
+      <GameArt id={id} icon={icon} className={id in GAME_STYLE ? "h-auto w-[72%]" : EMOJI_SIZES[size]} />
+    </span>
+  );
+}
+
+/** A game's drawn icon; a game added from the admin panel (no drawing yet) shows its emoji. */
+export function GameArt({ id, icon, className }: { id: string; icon?: string; className?: string }) {
+  if (id in GAME_STYLE) return <img src={`/brand/games/game-${id}.svg`} alt="" className={className} />;
+  return (
+    <span aria-hidden="true" className={cx("grid place-items-center leading-none", className)}>
+      {icon || "🎲"}
     </span>
   );
 }
