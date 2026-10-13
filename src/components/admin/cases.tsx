@@ -12,8 +12,21 @@ import { Loading, Notice, Sheet, Toggle, dbMessage, selectClass, textareaClass }
  */
 
 type RoleKind = Exclude<CourtKind, "juror">;
-type Role = { key: string; kind: RoleKind; name: string; brief?: string; secret: string; later?: string; later_stage?: number; optional?: boolean };
-type Evidence = { stage: number; icon?: string; title: string; text: string };
+type Role = {
+  key: string;
+  kind: RoleKind;
+  name: string;
+  brief?: string;
+  secret: string;
+  later?: string;
+  later_stage?: number;
+  optional?: boolean;
+  /** For an optional role: what it knows, shown as evidence when nobody plays it. */
+  fallback?: string;
+  fallback_stage?: number;
+};
+type Evidence = { stage: number; icon?: string; title: string; text: string; time?: string };
+type Stat = { case_id: string; plays: number; correct: number; convicted: number; last: string };
 export type CourtCase = {
   id?: string;
   slug?: string | null;
@@ -100,6 +113,7 @@ function clean(c: CourtCase): CourtCase {
       while (keys.has(key)) key = `${key}-${i + 1}`;
       keys.add(key);
       const later = r.later?.trim() || undefined;
+      const fallback = r.optional ? r.fallback?.trim() || undefined : undefined;
       return {
         key,
         kind: r.kind,
@@ -108,9 +122,10 @@ function clean(c: CourtCase): CourtCase {
         secret: r.secret.trim(),
         ...(later ? { later, later_stage: r.later_stage ?? 2 } : {}),
         ...(r.optional ? { optional: true } : {}),
+        ...(fallback ? { fallback, fallback_stage: r.fallback_stage ?? 2 } : {}),
       };
     }),
-    evidence: c.evidence.map((e) => ({ stage: e.stage, icon: e.icon?.trim() || "📄", title: e.title.trim(), text: e.text.trim() })),
+    evidence: c.evidence.map((e) => ({ stage: e.stage, icon: e.icon?.trim() || "📄", title: e.title.trim(), text: e.text.trim(), ...(e.time?.trim() ? { time: e.time.trim() } : {}) })),
   };
 }
 
@@ -128,6 +143,8 @@ export function CasesTab() {
   const [editing, setEditing] = useState<CourtCase | null>(null);
   const [importing, setImporting] = useState(false);
   const [filter, setFilter] = useState<"all" | "guilty" | "innocent" | "off">("all");
+  const [stats, setStats] = useState<Record<string, Stat>>({});
+  const [preview, setPreview] = useState<CourtCase | null>(null);
 
   async function refresh() {
     if (!supabase) return;
@@ -140,6 +157,8 @@ export function CasesTab() {
       return;
     }
     setCases((data ?? []) as CourtCase[]);
+    const { data: st } = await supabase.rpc("court_case_stats");
+    if (Array.isArray(st)) setStats(Object.fromEntries((st as Stat[]).map((x) => [x.case_id, x])));
   }
 
   useEffect(() => {
@@ -245,6 +264,7 @@ export function CasesTab() {
                 <span className="rounded-full bg-deep-2 px-2.5 py-0.5 text-[12px] text-mist">{LEVELS.find((l) => l.value === c.difficulty)?.label}</span>
               </div>
               <p className="text-[13px] leading-6 text-mist">{c.summary || c.intro.slice(0, 120)}</p>
+              <CaseStat stat={c.id ? stats[c.id] : undefined} guilty={c.guilty} />
               <p className="text-[12px] text-faint">
                 {c.category ? `${c.category} · ` : ""}
                 {c.roles.length} أدوار ({Math.max(4, required)} لاعبين على الأقل) · {c.evidence.length} أدلة في {new Set(c.evidence.map((e) => e.stage)).size} جولات
@@ -252,6 +272,9 @@ export function CasesTab() {
               <div className="flex flex-wrap items-center gap-2">
                 <Toggle checked={c.is_active} onChange={() => void toggle(c)} label={c.is_active ? "متاحة" : "موقوفة"} />
                 <span className="flex-1" />
+                <Button tone="quiet" className="min-h-10 px-3" onClick={() => setPreview(c)}>
+                  ▶️ جرّب
+                </Button>
                 <Button tone="quiet" className="min-h-10 px-3" onClick={() => setEditing(c)}>
                   <Glyph name="edit" className="size-[18px]" />
                   تعديل
@@ -281,6 +304,7 @@ export function CasesTab() {
           }}
         />
       ) : null}
+      {preview ? <PreviewSheet c={preview} onClose={() => setPreview(null)} /> : null}
       {importing ? (
         <ImportSheet
           onClose={() => setImporting(false)}
@@ -309,6 +333,7 @@ function CaseEditor({ initial, onClose, onSaved }: { initial: CourtCase; onClose
   const [c, setC] = useState<CourtCase>(() => ({ ...initial, category: initial.category ?? "", roles: initial.roles.map((r) => ({ ...r })), evidence: initial.evidence.map((e) => ({ ...e })) }));
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
+  const [trying, setTrying] = useState(false);
   const set = <K extends keyof CourtCase>(k: K, v: CourtCase[K]) => setC((cur) => ({ ...cur, [k]: v }));
   const setRole = (i: number, patch: Partial<Role>) => setC((cur) => ({ ...cur, roles: cur.roles.map((r, j) => (j === i ? { ...r, ...patch } : r)) }));
   const setEv = (i: number, patch: Partial<Evidence>) => setC((cur) => ({ ...cur, evidence: cur.evidence.map((e, j) => (j === i ? { ...e, ...patch } : e)) }));
@@ -427,6 +452,25 @@ function CaseEditor({ initial, onClose, onSaved }: { initial: CourtCase; onClose
               <input className={inputClass} value={r.name} maxLength={60} onChange={(e) => setRole(i, { name: e.target.value })} placeholder="الاسم في القصة، مثل: نورة، موظفة الاستقبال" aria-label="الاسم" />
               <input className={inputClass} value={r.brief ?? ""} maxLength={160} onChange={(e) => setRole(i, { brief: e.target.value })} placeholder="وصف معلن يراه الجميع (اختياري)" aria-label="الوصف المعلن" />
               <textarea className={cx(textareaClass, "min-h-20")} value={r.secret} maxLength={800} onChange={(e) => setRole(i, { secret: e.target.value })} placeholder="🔒 المعلومة السرية: ما يعرفه، وما يخفيه، وكيف يتصرف." aria-label="المعلومة السرية" />
+              {r.optional ? (
+                <div className="grid grid-cols-[1fr_auto] gap-2">
+                  <textarea
+                    className={cx(textareaClass, "min-h-16")}
+                    value={r.fallback ?? ""}
+                    maxLength={600}
+                    onChange={(e) => setRole(i, { fallback: e.target.value })}
+                    placeholder="🗂️ إفادته إذا لم يلعبه أحد: تظهر دليلًا للجميع (مستحسن حتى لا تضيع معلوماته المهمة)"
+                    aria-label="إفادة بديلة"
+                  />
+                  <select className={cx(selectClass, "!w-28")} value={r.fallback_stage ?? 2} onChange={(e) => setRole(i, { fallback_stage: Number(e.target.value) })} aria-label="جولة الإفادة">
+                    {[1, 2, 3].map((n) => (
+                      <option key={n} value={n}>
+                        الجولة {n}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
               <div className="grid grid-cols-[1fr_auto] gap-2">
                 <textarea className={cx(textareaClass, "min-h-16")} value={r.later ?? ""} maxLength={600} onChange={(e) => setRole(i, { later: e.target.value })} placeholder="✉️ معلومة تصله لاحقًا (اختياري)" aria-label="معلومة لاحقة" />
                 <select className={cx(selectClass, "!w-28")} value={r.later_stage ?? 2} onChange={(e) => setRole(i, { later_stage: Number(e.target.value) })} aria-label="تصله في الجولة">
@@ -447,11 +491,19 @@ function CaseEditor({ initial, onClose, onSaved }: { initial: CourtCase; onClose
           ) : null}
         </Box>
 
-        <Box title={`الأدلة (${c.evidence.length})`} action={<p className="text-[13px] leading-6 text-mist">أدلة كل جولة تظهر معًا، وبعدها استجواب. ضع الدليل الذي يقلب القضية في الجولة الثانية.</p>}>
+        <Box
+          title={`الأدلة (${c.evidence.length})`}
+          action={
+            <p className="text-[13px] leading-6 text-mist">
+              أدلة كل جولة تظهر معًا، وبعدها استجواب. ضع الدليل الذي يقلب القضية في الجولة الثانية، وأضف دليلًا يضلل. اكتب الوقت (مثل 9:20) ليظهر الدليل على الخط الزمني.
+            </p>
+          }
+        >
           {c.evidence.map((e, i) => (
             <div key={i} className="grid gap-2 rounded-[16px] border border-line-strong/50 bg-night/40 p-3">
               <div className="flex items-center gap-2">
                 <input className={cx(inputClass, "!w-16 text-center text-[20px]")} value={e.icon ?? ""} maxLength={8} onChange={(ev) => setEv(i, { icon: ev.target.value })} aria-label="أيقونة" />
+                <input dir="ltr" className={cx(inputClass, "!w-24 text-center")} value={e.time ?? ""} maxLength={8} onChange={(ev) => setEv(i, { time: ev.target.value })} placeholder="9:20" aria-label="الوقت (للخط الزمني)" />
                 <select className={cx(selectClass, "!w-32")} value={e.stage} onChange={(ev) => setEv(i, { stage: Number(ev.target.value) })} aria-label="الجولة">
                   {[1, 2, 3].map((n) => (
                     <option key={n} value={n}>
@@ -485,10 +537,16 @@ function CaseEditor({ initial, onClose, onSaved }: { initial: CourtCase; onClose
             </span>
           </Notice>
         ) : null}
-        <Button tone="primary" className="min-h-14 text-[17px]" disabled={busy} onClick={save}>
-          {busy ? "جارٍ الحفظ…" : c.id ? "احفظ التعديل" : "أضف القضية"}
-        </Button>
+        <div className="grid grid-cols-[auto_1fr] gap-2">
+          <Button tone="quiet" className="min-h-14" onClick={() => setTrying(true)}>
+            ▶️ جرّب
+          </Button>
+          <Button tone="primary" className="min-h-14 text-[17px]" disabled={busy} onClick={save}>
+            {busy ? "جارٍ الحفظ…" : c.id ? "احفظ التعديل" : "أضف القضية"}
+          </Button>
+        </div>
       </div>
+      {trying ? <PreviewSheet c={clean(c)} onClose={() => setTrying(false)} /> : null}
     </Sheet>
   );
 }
@@ -553,6 +611,101 @@ function ImportSheet({ onClose, onDone }: { onClose: () => void; onDone: (n: num
         <Button tone="primary" className="min-h-12" disabled={busy || !text.trim()} onClick={run}>
           {busy ? "جارٍ الاستيراد…" : "استورد"}
         </Button>
+      </div>
+    </Sheet>
+  );
+}
+
+function CaseStat({ stat, guilty }: { stat?: Stat; guilty: boolean }) {
+  if (!stat || !stat.plays) return <p className="text-[12px] text-faint">لم تُلعب بعد.</p>;
+  const pct = Math.round((stat.correct / stat.plays) * 100);
+  const tone = stat.plays < 3 ? "text-mist" : pct >= 85 ? "text-gold" : pct <= 25 ? "text-wrong" : "text-correct";
+  const hint = stat.plays < 3 ? "" : pct >= 85 ? " · قد تكون سهلة" : pct <= 25 ? " · قد تكون صعبة أو مضللة" : "";
+  return (
+    <p className={cx("text-[13px] font-semibold", tone)}>
+      📊 لُعبت {stat.plays} {stat.plays > 2 && stat.plays < 11 ? "مرات" : "مرة"} · الحكم صحيح {pct}% · حكموا بالإدانة {stat.convicted} من {stat.plays}
+      {hint}
+      <span className="sr-only">{guilty ? "المتهم مذنب" : "المتهم بريء"}</span>
+    </p>
+  );
+}
+
+/** How a case plays with N players, as the server deals it: roles, jurors, evidence by round, the truth. */
+function PreviewSheet({ c, onClose }: { c: CourtCase; onClose: () => void }) {
+  const required = c.roles.filter((r) => !r.optional).length;
+  const min = Math.max(4, required);
+  const [n, setN] = useState(Math.min(12, Math.max(min, 6)));
+  let slots = n - required;
+  const dealt: Role[] = [];
+  const fallbacks: Evidence[] = [];
+  for (const r of c.roles) {
+    if (r.optional) {
+      if (slots <= 0) {
+        if (r.fallback?.trim()) fallbacks.push({ stage: r.fallback_stage ?? 2, icon: "🗂️", title: `إفادة ${r.name}`, text: r.fallback.trim() });
+        continue;
+      }
+      slots--;
+    }
+    dealt.push(r);
+  }
+  const jurors = Math.max(0, n - dealt.length);
+  const lost = c.roles.filter((r) => r.optional && !dealt.includes(r) && !r.fallback?.trim());
+  const evidence = [...c.evidence, ...fallbacks];
+  const stages = [...new Set(evidence.map((e) => e.stage))].sort();
+  return (
+    <Sheet title={`جرّب: ${c.title || "قضية بلا عنوان"}`} onClose={onClose}>
+      <div className="grid gap-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[14px] font-semibold text-ivory">عدد اللاعبين:</span>
+          {Array.from({ length: 12 - 4 + 1 }, (_, i) => i + 4).map((k) => (
+            <button
+              key={k}
+              type="button"
+              disabled={k < min}
+              aria-pressed={n === k}
+              onClick={() => setN(k)}
+              className={cx("grid size-10 place-items-center rounded-full border text-[15px] font-bold disabled:opacity-30", n === k ? "btn-gold border-transparent" : "border-line-strong/70 text-mist")}
+            >
+              {k}
+            </button>
+          ))}
+        </div>
+        <Notice tone={lost.length ? "error" : "info"}>
+          {dealt.length} أدوار و{jurors} {jurors === 1 ? "محلّف" : "محلّفين"}.
+          {lost.length ? ` لن يُلعب ${lost.map((r) => r.name).join("، ")} بلا إفادة بديلة، فتضيع معلوماته.` : fallbacks.length ? ` ${fallbacks.length} إفادة تظهر دليلًا بدل الأدوار غير الموزعة.` : ""}
+        </Notice>
+        <Box title="القصة (على الشاشة)">
+          <p className="text-[15px] leading-7 text-ivory">{c.intro}</p>
+        </Box>
+        <Box title="البطاقات (في الجوالات)">
+          {dealt.map((r, i) => (
+            <div key={i} className="grid gap-1 rounded-[14px] border border-line-strong/50 bg-night/40 p-3">
+              <p className="text-[15px] font-bold text-ivory">
+                {KINDS[r.kind].icon} {r.name} <span className="text-[12px] font-normal text-mist">· {KINDS[r.kind].label}</span>
+              </p>
+              {r.brief ? <p className="text-[13px] text-mist">{r.brief}</p> : null}
+              <p className="text-[14px] leading-6 text-ivory">🔒 {r.secret}</p>
+              {r.later ? <p className="text-[14px] leading-6 text-gold">✉️ في الجولة {r.later_stage ?? 2}: {r.later}</p> : null}
+            </div>
+          ))}
+          {jurors ? <p className="text-[13px] text-mist">🗳️ و{jurors} {jurors === 1 ? "محلّف" : "محلّفين"} ببطاقة عامة بلا معلومات.</p> : null}
+        </Box>
+        {stages.map((st) => (
+          <Box key={st} title={`أدلة الجولة ${st}، ثم استجواب`}>
+            {evidence
+              .filter((e) => e.stage === st)
+              .map((e, i) => (
+                <p key={i} className="text-[14px] leading-6 text-ivory">
+                  {e.icon || "📄"} <b>{e.title}</b>
+                  {e.time ? <span dir="ltr" className="mx-1 text-gold">({e.time})</span> : null}: {e.text}
+                </p>
+              ))}
+          </Box>
+        ))}
+        <Box title="ثم المرافعتان والتصويت، وبعد الحكم تُكشف الحقيقة">
+          <p className={cx("text-[15px] font-bold", c.guilty ? "text-wrong" : "text-correct")}>المتهم {c.guilty ? "مذنب" : "بريء"}</p>
+          <p className="text-[15px] leading-7 text-ivory">{c.truth}</p>
+        </Box>
       </div>
     </Sheet>
   );
