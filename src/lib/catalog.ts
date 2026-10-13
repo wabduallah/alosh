@@ -220,6 +220,10 @@ export type DbGame = {
   is_active: boolean;
   home_status?: "live" | "soon" | "hidden" | null;
   sort_order?: number | null;
+  /** Filled for games added from the admin panel (supabase/admin_v4.sql). */
+  icon?: string | null;
+  category?: Category | null;
+  how_to?: { goal?: string; minutes?: string; steps?: string[] } | null;
 };
 
 /** A game ready to show: the catalogue entry, with what the database says about it. */
@@ -259,6 +263,23 @@ export function mergeCatalog(rows: DbGame[] | null): GameEntry[] {
       order: row?.sort_order ?? 1000 + (index.get(card.id) ?? 0),
     });
   }
+  // Games added from the admin panel: no room on the site yet, so they show as «قريبًا».
+  for (const row of rows) {
+    if (index.has(row.slug) || row.home_status === undefined || row.home_status === "hidden" || !row.title_ar?.trim()) continue;
+    const steps = (row.how_to?.steps ?? []).filter((x) => typeof x === "string" && x.trim());
+    out.push({
+      id: row.slug,
+      title: row.title_ar.trim(),
+      icon: row.icon?.trim() || "🎲",
+      players: playersText(row.min_players, row.max_players, "2-10"),
+      category: row.category && FILTERS.some((f) => f.key === row.category) ? row.category : "talk",
+      blurb: row.description_ar?.trim() || "",
+      live: false,
+      howTo: steps.length ? { goal: row.how_to?.goal?.trim() || "", minutes: row.how_to?.minutes?.trim() || "", steps } : undefined,
+      soon: true,
+      order: row.sort_order ?? 2000,
+    });
+  }
   return out.sort((a, b) => Number(a.soon) - Number(b.soon) || a.order - b.order);
 }
 
@@ -271,6 +292,8 @@ export const findCard = (slug: string) => CATALOG.find((g) => g.id === slug) ?? 
 export async function loadDbGames(): Promise<DbGame[] | null> {
   if (!supabase) return null;
   const base = "slug, title_ar, description_ar, min_players, max_players, is_active";
+  const v4 = await supabase.from("games").select(`${base}, home_status, sort_order, icon, category, how_to`);
+  if (!v4.error) return (v4.data ?? []) as DbGame[];
   const full = await supabase.from("games").select(`${base}, home_status, sort_order`);
   if (!full.error) return (full.data ?? []) as DbGame[];
   const plain = await supabase.from("games").select(base);

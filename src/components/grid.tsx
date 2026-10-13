@@ -7,6 +7,7 @@ import { vibrate } from "@/lib/prefs";
 import { TEAMS, Timer, useSecondsLeft } from "@/components/halba";
 import { ResultShare, type ShareResult } from "@/components/result-share";
 import { useLivePoll } from "@/lib/live";
+import { useSiteSettings } from "@/lib/site-settings";
 
 /**
  * «تحديات العش»: two teams, up to six categories, a 200/400/600 board, aids and steals.
@@ -445,6 +446,15 @@ function GridSetup({
   const last = state.last_settings ?? null;
   const [picked, setPicked] = useState<string[]>(last?.categories ?? []);
   const [seconds, setSeconds] = useState<number>(last?.seconds ?? 60);
+  // The admin's default question time (admin panel → الموقع), when the room has no earlier match.
+  const site = useSiteSettings();
+  const appliedDefault = useRef(false);
+  useEffect(() => {
+    const d = site?.game_defaults?.["tactical-grid"]?.seconds;
+    if (appliedDefault.current || last?.seconds || typeof d !== "number" || !SECONDS.includes(d)) return;
+    appliedDefault.current = true;
+    setSeconds(d);
+  }, [site, last?.seconds]);
   const guests = useMemo(() => players.filter((p) => !p.is_host), [players]);
   const [teams, setTeams] = useState<Record<string, "red" | "blue">>({});
 

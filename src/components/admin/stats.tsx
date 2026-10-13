@@ -2,14 +2,19 @@ import { useEffect, useState, type ReactNode } from "react";
 import { GameIcon, Glyph } from "@/components/brand";
 import { Button, cx } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
-import { Loading, Notice, dbMessage, needsSetup } from "./common";
+import { Loading, Notice, Toggle, dbMessage, needsSetup } from "./common";
 
 type Stats = {
   days: number;
-  totals: { rooms: number; played: number; finished: number; people: number; avg_people: number };
+  /** admin_v4.sql: rooms from test devices or with fewer than 3 people left out. */
+  excluded?: boolean;
+  test_hosts?: number;
+  groups?: { now: number; before: number; people: number };
+  hosts?: { active: number; returning: number; ever: number };
+  totals: { rooms: number; played: number; finished: number; people: number; avg_people: number; test_rooms?: number };
   now: { lobby: number; playing: number; people: number };
   by_day: Array<{ day: string; rooms: number; people: number }>;
-  by_game: Array<{ slug: string; title: string; active: boolean; rooms: number; people: number }>;
+  by_game: Array<{ slug: string; title: string; active: boolean; rooms: number; people: number; groups?: number }>;
   by_hour: Array<{ hour: number; rooms: number }>;
   content: { questions: Record<string, number>; heads_words: number; outsider_topics: number; halba_topics: number; halba_with_answers: number };
 };
@@ -29,6 +34,15 @@ const dayLabel = new Intl.DateTimeFormat("ar-u-nu-latn", { day: "numeric", month
 /** Usage numbers, computed by admin_stats() from the rooms in the database. */
 export function StatsTab() {
   const [days, setDays] = useState(30);
+  // Leave out test rooms (fewer than 3 people, or a device marked as a test device). Kept for this visit.
+  const [exclude, setExclude] = useState(() => {
+    try {
+      return sessionStorage.getItem("alosh-admin-exclude") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const [canExclude, setCanExclude] = useState(true);
   const [stats, setStats] = useState<Stats | null>(null);
   const [setup, setSetup] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,13 +50,19 @@ export function StatsTab() {
   // null: not loaded yet; false: needs supabase/polish_v1.sql.
   const [funnel, setFunnel] = useState<Funnel | null | false>(null);
 
-  async function refresh(range = days) {
+  async function refresh(range = days, ex = exclude) {
     if (!supabase) return;
     setLoading(true);
-    const [{ data, error: rpcError }, f] = await Promise.all([
-      supabase.rpc("admin_stats", { p_days: range }),
-      supabase.rpc("admin_funnel", { p_days: range }),
+    let [{ data, error: rpcError }, f] = await Promise.all([
+      supabase.rpc("admin_stats", { p_days: range, p_exclude: ex }),
+      supabase.rpc("admin_funnel", { p_days: range, p_exclude: ex }),
     ]);
+    // Before admin_v4.sql the functions take only the number of days.
+    const missing = rpcError?.code === "PGRST202" || /function/i.test(rpcError?.message ?? "");
+    setCanExclude(!missing);
+    if (missing) {
+      [{ data, error: rpcError }, f] = await Promise.all([supabase.rpc("admin_stats", { p_days: range }), supabase.rpc("admin_funnel", { p_days: range })]);
+    }
     setLoading(false);
     setFunnel(f.error ? false : (f.data as Funnel));
     if (rpcError) {
@@ -57,10 +77,19 @@ export function StatsTab() {
   }
 
   useEffect(() => {
-    void refresh(days);
-    // refresh reads the range passed in.
+    void refresh(days, exclude);
+    // refresh reads the range and the filter passed in.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days]);
+  }, [days, exclude]);
+
+  function toggleExclude(next: boolean) {
+    setExclude(next);
+    try {
+      sessionStorage.setItem("alosh-admin-exclude", next ? "1" : "0");
+    } catch {
+      // Storage blocked: the choice lasts for this view.
+    }
+  }
 
   return (
     <div className="grid grid-cols-1 gap-4">
@@ -78,6 +107,7 @@ export function StatsTab() {
             </button>
           ))}
         </div>
+        {canExclude ? <Toggle checked={exclude} onChange={toggleExclude} label="استبعد غرف التجربة" /> : null}
         <Button tone="quiet" className="ms-auto" onClick={() => refresh()} disabled={loading}>
           <Glyph name="refresh" className={cx("size-[18px]", loading && "animate-spin motion-reduce:animate-none")} />
           تحديث
@@ -117,6 +147,15 @@ function StatsBody({ stats, funnel }: { stats: Stats; funnel: Funnel | null | fa
           في الغرف <b className="tabular-nums text-ivory">{num.format(stats.now.people)}</b> شخص
         </span>
       </section>
+
+      {stats.groups && stats.hosts ? <RealNumbers stats={stats} /> : null}
+
+      {stats.excluded ? (
+        <p className="text-[13px] text-mist">
+          الأرقام التالية بدون غرف التجربة ({num.format(stats.totals.test_rooms ?? 0)} غرفة مستبعدة: أقل من 3 أشخاص، أو من جهاز تجربة أو حساب المدير).{" "}
+          {stats.test_hosts ? `أجهزة التجربة: ${num.format(stats.test_hosts)}.` : "علّم أجهزتك من تبويب «الغرف»."}
+        </p>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Tile label="غرف أُنشئت" value={num.format(t.rooms)} />
@@ -164,6 +203,42 @@ function StatsBody({ stats, funnel }: { stats: Stats; funnel: Funnel | null | fa
         <Latency />
       </Panel>
     </>
+  );
+}
+
+/** The honest numbers: groups that really played (3 people or more, from real hosts), and hosts who came back. */
+function RealNumbers({ stats }: { stats: Stats }) {
+  const g = stats.groups!;
+  const h = stats.hosts!;
+  const diff = g.now - g.before;
+  const change = g.before > 0 ? Math.round((diff / g.before) * 100) : null;
+  return (
+    <section aria-label="المؤشرات الحقيقية" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="surface rounded-[22px] border border-gold/40 p-4">
+        <p className="text-[14px] font-semibold text-gold">مجموعات لعبت فعلًا</p>
+        <p className="mt-1 flex items-baseline gap-3">
+          <span className="font-display text-[44px] leading-[52px] font-extrabold tabular-nums text-ivory">{num.format(g.now)}</span>
+          <span dir="ltr" className={cx("text-[15px] font-bold tabular-nums", diff > 0 ? "text-correct" : diff < 0 ? "text-wrong" : "text-mist")}>
+            {diff > 0 ? "▲" : diff < 0 ? "▼" : "="} {diff > 0 ? "+" : ""}
+            {num.format(diff)}
+            {change !== null ? ` (${change > 0 ? "+" : ""}${change}%)` : ""}
+          </span>
+        </p>
+        <p className="text-[12px] leading-5 text-mist">
+          غرف فيها 3 أشخاص أو أكثر وبدأت اللعبة، من غير أجهزة التجربة. المدة السابقة ({stats.days} يومًا قبلها): {num.format(g.before)}. متوسط الأشخاص: {num.format(g.people)}.
+        </p>
+      </div>
+      <div className="surface rounded-[22px] border border-gold/40 p-4">
+        <p className="text-[14px] font-semibold text-gold">مضيفون رجعوا</p>
+        <p className="mt-1 flex items-baseline gap-2">
+          <span className="font-display text-[44px] leading-[52px] font-extrabold tabular-nums text-ivory">{num.format(h.returning)}</span>
+          <span className="text-[15px] text-mist">من {num.format(h.active)} مضيف</span>
+        </p>
+        <p className="text-[12px] leading-5 text-mist">
+          مضيفون لعبت مجموعاتهم في هذه المدة، وكانوا قد لعبوا قبلها. أصدق مقياس للنمو. منذ البداية: {num.format(h.ever)} مضيف لعبوا مع مجموعة. المضيف يُعرف بجهازه.
+        </p>
+      </div>
+    </section>
   );
 }
 
@@ -243,6 +318,7 @@ function GameBars({ games }: { games: Stats["by_game"] }) {
               {!g.active ? <span className="text-[11px] text-faint">(موقوفة)</span> : null}
               <span className="ms-auto shrink-0 tabular-nums text-mist">
                 <b className="text-ivory">{num.format(g.rooms)}</b> غرفة · {num.format(g.people)} شخص
+                {g.groups !== undefined ? <> · {num.format(g.groups)} مجموعة</> : null}
               </span>
             </p>
             <div className="mt-1 h-2 rounded-full bg-deep-2/80">

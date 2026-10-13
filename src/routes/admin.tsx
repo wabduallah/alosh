@@ -13,6 +13,8 @@ import { RoomsTab } from "@/components/admin/rooms";
 import { StatsTab } from "@/components/admin/stats";
 import { ContentTab } from "@/components/admin/content";
 import { SiteTab } from "@/components/admin/site";
+import { HealthTab } from "@/components/admin/health";
+import { MessagesTab, countNewFeedback } from "@/components/admin/messages";
 
 /**
  * Admin panel. Sign-in is a Supabase email/password account whose
@@ -25,14 +27,16 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-type Tab = "stats" | "games" | "questions" | "words" | "content" | "rooms" | "site";
+type Tab = "stats" | "games" | "questions" | "words" | "content" | "health" | "rooms" | "messages" | "site";
 const TABS: Array<{ key: Tab; label: string; icon: string }> = [
   { key: "stats", label: "الإحصاءات", icon: "fire" },
   { key: "rooms", label: "الغرف", icon: "tv" },
+  { key: "messages", label: "الرسائل", icon: "bell" },
   { key: "games", label: "الألعاب", icon: "gamepad" },
   { key: "questions", label: "بنك الأسئلة", icon: "question" },
   { key: "words", label: "الكلمات والمواضيع", icon: "edit" },
   { key: "content", label: "الاستيراد والجودة", icon: "copy" },
+  { key: "health", label: "صحة المحتوى", icon: "alert" },
   { key: "site", label: "الموقع", icon: "gear" },
 ];
 
@@ -161,6 +165,11 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => Prom
     }
   });
 
+  const [newMessages, setNewMessages] = useState(0);
+  useEffect(() => {
+    void countNewFeedback().then(setNewMessages);
+  }, []);
+
   function pick(next: Tab) {
     setTab(next);
     try {
@@ -188,7 +197,7 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => Prom
         </Button>
       </div>
 
-      <div role="tablist" aria-label="أقسام الإدارة" className="surface grid grid-cols-2 gap-1 rounded-[24px] p-1.5 sm:grid-cols-3 xl:flex xl:rounded-full">
+      <div role="tablist" aria-label="أقسام الإدارة" className="surface grid grid-cols-2 gap-1 rounded-[24px] p-1.5 sm:grid-cols-3 lg:grid-cols-5">
         {TABS.map((t) => (
           <button
             key={t.key}
@@ -203,6 +212,11 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => Prom
           >
             <Glyph name={t.icon} className="size-[18px]" />
             {t.label}
+            {t.key === "messages" && newMessages > 0 ? (
+              <span className="rounded-full bg-wrong-fill px-2 text-[12px] leading-5 text-white tabular-nums" aria-label={`${newMessages} جديدة`}>
+                {newMessages}
+              </span>
+            ) : null}
           </button>
         ))}
       </div>
@@ -214,6 +228,8 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => Prom
         {tab === "words" ? <WordsTab /> : null}
         {tab === "rooms" ? <RoomsTab /> : null}
         {tab === "content" ? <ContentTab /> : null}
+        {tab === "health" ? <HealthTab /> : null}
+        {tab === "messages" ? <MessagesTab onCount={setNewMessages} /> : null}
         {tab === "site" ? <SiteTab /> : null}
       </div>
     </div>

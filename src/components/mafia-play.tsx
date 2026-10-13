@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, cx } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { useLivePoll } from "@/lib/live";
+import { useSiteSettings } from "@/lib/site-settings";
 import {
   LOVERS_INFO,
   MafiaRecapView,
@@ -191,6 +192,28 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
     if (phase !== "") prefilled.current = false;
   }, [phase]);
 
+  // The first match in a room starts from the admin's defaults (admin panel → الموقع).
+  const site = useSiteSettings();
+  useEffect(() => {
+    const d = site?.game_defaults?.["social-mafia"];
+    if (!d || phase !== "" || state.last_settings || prefilled.current) return;
+    prefilled.current = true;
+    if (typeof d.random_narrator === "boolean") setRandomNarrator(d.random_narrator ? 1 : 0);
+    if (typeof d.mafia_count === "number" && [0, 1, 2, 3, 4].includes(d.mafia_count)) setMafiaCount(d.mafia_count);
+    if (typeof d.reveal === "boolean") setReveal(d.reveal);
+    if (typeof d.day_seconds === "number" && [0, 60, 120, 180, 300].includes(d.day_seconds)) setDaySeconds(d.day_seconds);
+    if (typeof d.vote_seconds === "number" && [0, 30, 45, 60, 90, 120].includes(d.vote_seconds)) setVoteSeconds(d.vote_seconds);
+    if (typeof d.dead_see_roles === "boolean") setDeadSee(d.dead_see_roles);
+    const r = d.roles ?? {};
+    setJester(!!r.jester);
+    setMayor(!!r.mayor);
+    setBodyguard(!!r.bodyguard);
+    setSniper(!!r.sniper);
+    setSeer(!!r.seer);
+    setSpy(!!r.spy);
+    setLovers(!!r.lovers);
+  }, [site, phase, state.last_settings]);
+
   const dayLeft = useCountdown(phase === "day" ? state.day_ends_at : null);
   const voteLeft = useCountdown(phase === "vote" ? state.vote_ends_at : null);
   const complete = !!progress && progress.phase === phase && (phase === "night" || phase === "vote") && (progress.total ?? 0) > 0 && (progress.done ?? 0) >= (progress.total ?? 0);
@@ -244,7 +267,8 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
 
   const maxMafia = Math.max(1, Math.floor((guests - 1) / 2));
   const autoMafia = guests >= 10 ? 3 : guests >= 7 ? 2 : 1;
-  const plannedMafia = mafiaCount || autoMafia;
+  // A chosen count larger than the room allows (a default, or players who left) falls back to automatic.
+  const plannedMafia = (mafiaCount <= maxMafia ? mafiaCount : 0) || autoMafia;
   const special = 2 + Number(jester) + Number(mayor) + Number(bodyguard) + Number(sniper) + Number(seer) + Number(spy);
   const fits = guests >= 5 && (plannedMafia + Number(spy)) * 2 < guests && plannedMafia + special < guests;
   const roundVotes = details.filter((d) => d.round === round);
@@ -286,7 +310,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
             ) : null}
             <MafiaChoice
               label="عدد المافيا"
-              value={mafiaCount}
+              value={mafiaCount <= maxMafia ? mafiaCount : 0}
               onChange={setMafiaCount}
               options={[{ value: 0, label: `تلقائي (${autoMafia})` }, ...[1, 2, 3, 4].filter((n) => n <= maxMafia).map((n) => ({ value: n, label: String(n) }))]}
             />
@@ -445,7 +469,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
               onClick={() =>
                 step("mafia_start", {
                   p_settings: {
-                    mafia: mafiaCount || null,
+                    mafia: (mafiaCount <= maxMafia ? mafiaCount : 0) || null,
                     reveal_roles: reveal,
                     day_seconds: daySeconds,
                     vote_seconds: voteSeconds,

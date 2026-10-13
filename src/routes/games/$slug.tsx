@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Shell } from "@/components/shell";
 import { EmptyState } from "@/components/empty-state";
-import { GameIcon, Glyph, gameStyle, gameVars } from "@/components/brand";
+import { GameArt, GameIcon, Glyph, gameStyle, gameVars } from "@/components/brand";
 import { buttonBase, buttonTone, cx } from "@/components/ui";
 import { findCard, useGames } from "@/lib/catalog";
 import { gameJsonLd, gameSeo } from "@/lib/seo";
@@ -14,7 +14,7 @@ import { gameJsonLd, gameSeo } from "@/lib/seo";
 export const Route = createFileRoute("/games/$slug")({
   head: ({ params }) => {
     const card = findCard(params.slug);
-    if (!card) return { meta: [{ title: "لعبة غير موجودة — العش" }] };
+    if (!card) return { meta: [{ title: "ألعاب العش" }] };
     const url = `https://www.al3sh.app/games/${card.id}`;
     return {
       meta: [
@@ -31,8 +31,9 @@ export const Route = createFileRoute("/games/$slug")({
 function GamePage() {
   const { slug } = Route.useParams();
   const games = useGames();
-  const card = findCard(slug);
   const game = games.find((g) => g.id === slug);
+  // A game added from the admin panel has no catalogue entry: its page is built from the table.
+  const card = findCard(slug) ?? game ?? null;
 
   if (!card || !game) {
     return (
@@ -65,7 +66,7 @@ function GamePage() {
           <span aria-hidden="true" className="pointer-events-none absolute -top-16 -end-16 size-56 rounded-full bg-white/10 blur-3xl" />
           <div className="flex items-center gap-4">
             <span className="gcard-icon grid size-20 shrink-0 place-items-center rounded-full sm:size-24">
-              <img src={`/brand/games/game-${game.id}.svg`} alt="" className="size-16 sm:size-20" />
+              <GameArt id={game.id} icon={game.icon} className="size-16 text-[30px] sm:size-20 sm:text-[36px]" />
             </span>
             <div className="grid min-w-0 gap-2">
               <h1 className={cx("text-[30px] leading-10 sm:text-[38px] sm:leading-[50px]", ink)}>{game.title}</h1>
@@ -74,7 +75,7 @@ function GamePage() {
                   <Glyph name="users" className="size-4" />
                   {game.players} لاعب
                 </span>
-                {rules ? (
+                {rules?.minutes ? (
                   <span className={cx("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[14px] font-semibold", dark ? "bg-white/30" : "bg-black/25", ink)}>
                     <Glyph name="clock" className="size-4" />
                     {rules.minutes}
@@ -100,7 +101,7 @@ function GamePage() {
               <Glyph name="question" className="size-6 text-gold" />
               طريقة اللعب
             </h2>
-            <p className="text-[16px] leading-[29px] text-ivory">{rules.goal}</p>
+            {rules.goal ? <p className="text-[16px] leading-[29px] text-ivory">{rules.goal}</p> : null}
             <ol className="grid gap-3">
               {rules.steps.map((step, index) => (
                 <li key={step} className="flex gap-3 text-[15px] leading-[27px] text-mist">
@@ -167,7 +168,7 @@ function GamePage() {
                     params={{ slug: g.id }}
                     className="inline-flex min-h-12 items-center gap-2.5 rounded-full border border-line-strong/70 bg-deep-2/50 py-1.5 ps-1.5 pe-4 text-[15px] font-semibold text-ivory transition hover:border-glow"
                   >
-                    <GameIcon id={g.id} size="sm" className="size-9! rounded-full!" />
+                    <GameIcon id={g.id} icon={g.icon} size="sm" className="size-9! rounded-full!" />
                     {g.title}
                   </Link>
                 </li>

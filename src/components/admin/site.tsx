@@ -197,66 +197,168 @@ function AnnouncementEditor({ initial }: { initial: Announcement }) {
 
 /* ---------------- الإعدادات الافتراضية ---------------- */
 
+type MafiaRole = "jester" | "mayor" | "bodyguard" | "sniper" | "seer" | "spy" | "lovers";
+const MAFIA_ROLES: Array<{ key: MafiaRole; label: string }> = [
+  { key: "spy", label: "الجاسوس" },
+  { key: "jester", label: "المهرّج" },
+  { key: "mayor", label: "العمدة" },
+  { key: "bodyguard", label: "الحارس" },
+  { key: "sniper", label: "القنّاص" },
+  { key: "seer", label: "العرّافة" },
+  { key: "lovers", label: "العاشقان" },
+];
+
+function GameBox({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+  return (
+    <div className="grid gap-4 rounded-[18px] border border-line bg-deep-2/40 p-4">
+      <h3 className="flex items-center gap-2 text-[17px]">
+        <img src={`/brand/games/game-${id}.svg`} alt="" className="size-7" />
+        {title}
+      </h3>
+      {children}
+    </div>
+  );
+}
+
 function DefaultsEditor({ initial }: { initial: GameDefaults }) {
   const h0 = initial.alhalba ?? {};
   const [mode, setMode] = useState<"ffa" | "duel" | "teams">(h0.mode ?? "ffa");
   const [rounds, setRounds] = useState(h0.rounds ?? 7);
   const [lives, setLives] = useState(h0.lives ?? 2);
   const [hostPlays, setHostPlays] = useState(h0.host_plays ?? true);
-  const [bidSeconds, setBidSeconds] = useState(h0.bid_seconds ?? 20);
+  const [bidSeconds, setBidSeconds] = useState([10, 20, 30, 45].includes(h0.bid_seconds ?? 0) ? (h0.bid_seconds as number) : 20);
+  const [judge, setJudge] = useState<"auto" | "manual" | "both">(h0.judge ?? "both");
+  const [pace, setPace] = useState(h0.pace ?? 6);
+  const [winRule, setWinRule] = useState<"score" | "last">(h0.win_rule ?? "score");
+  const [autoNext, setAutoNext] = useState(h0.auto_next ?? true);
+  const [groupEvery, setGroupEvery] = useState(h0.group_every ?? 3);
+  const [levels, setLevels] = useState<number[]>(h0.levels ?? []);
   const [turnSeconds, setTurnSeconds] = useState(initial["heads-up"]?.turn_seconds ?? 60);
+  const m0 = initial["social-mafia"] ?? {};
+  const [randomNarrator, setRandomNarrator] = useState(m0.random_narrator ?? false);
+  const [mafiaCount, setMafiaCount] = useState(m0.mafia_count ?? 0);
+  const [daySeconds, setDaySeconds] = useState(m0.day_seconds ?? 120);
+  const [voteSeconds, setVoteSeconds] = useState(m0.vote_seconds ?? 60);
+  const [reveal, setReveal] = useState(m0.reveal ?? false);
+  const [deadSee, setDeadSee] = useState(m0.dead_see_roles ?? true);
+  const [roles, setRoles] = useState<Partial<Record<MafiaRole, boolean>>>(m0.roles ?? {});
+  const [gridSeconds, setGridSeconds] = useState(initial["tactical-grid"]?.seconds ?? 60);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
 
   async function save() {
-    if (!(bidSeconds >= 10 && bidSeconds <= 60)) return setMessage({ tone: "error", text: "وقت المزايدة بين 10 و60 ثانية." });
     if (!(turnSeconds >= 20 && turnSeconds <= 180)) return setMessage({ tone: "error", text: "وقت الدور بين 20 و180 ثانية." });
     setBusy(true);
     const error = await saveSetting("game_defaults", {
       ...initial,
-      alhalba: { mode, rounds, lives, host_plays: hostPlays, bid_seconds: Math.round(bidSeconds) },
+      alhalba: {
+        mode,
+        rounds,
+        lives,
+        host_plays: hostPlays,
+        bid_seconds: bidSeconds,
+        judge,
+        pace,
+        win_rule: winRule,
+        auto_next: autoNext,
+        group_every: groupEvery,
+        levels,
+      },
       "heads-up": { turn_seconds: Math.round(turnSeconds) },
-    });
+      "social-mafia": {
+        random_narrator: randomNarrator,
+        mafia_count: mafiaCount,
+        day_seconds: daySeconds,
+        vote_seconds: voteSeconds,
+        reveal,
+        dead_see_roles: deadSee,
+        roles: Object.fromEntries(MAFIA_ROLES.map((r) => [r.key, !!roles[r.key]])),
+      },
+      "tactical-grid": { seconds: gridSeconds },
+    } satisfies GameDefaults);
     setBusy(false);
-    setMessage(error ? { tone: "error", text: error } : { tone: "ok", text: "حُفظت الإعدادات. تُطبَّق على الغرف والجولات الجديدة." });
+    setMessage(error ? { tone: "error", text: error } : { tone: "ok", text: "حُفظت الإعدادات. تُطبَّق على الغرف الجديدة." });
   }
 
   return (
-    <Card title="إعدادات الألعاب الافتراضية" icon="gear" note="الإعدادات التي تظهر مختارة للمضيف عند بداية اللعبة، والأوقات التي يحسبها الخادم. المضيف يقدر يغيّر اختياراته في كل غرفة.">
-      <div className="grid gap-4 rounded-[18px] border border-line bg-deep-2/40 p-4">
-        <h3 className="flex items-center gap-2 text-[17px]">
-          <img src="/brand/games/game-alhalba.svg" alt="" className="size-7" />
-          الحلبة
-        </h3>
-        <Chips
-          label="طريقة اللعب"
-          value={mode}
-          onChange={setMode}
-          options={[
-            { value: "ffa", label: "الكل ضد الكل" },
-            { value: "duel", label: "نزال ثنائي" },
-            { value: "teams", label: "فريقان" },
-          ]}
-        />
+    <Card title="إعدادات الألعاب الافتراضية" icon="gear" note="الإعدادات التي تظهر مختارة للمضيف عند بداية اللعبة. المضيف يقدر يغيّر اختياراته في كل غرفة، والمباراة الثانية في نفس الغرفة تبدأ من اختياراته السابقة.">
+      <GameBox id="alhalba" title="الحلبة">
+        <Chips label="طريقة اللعب" value={mode} onChange={setMode} options={[{ value: "ffa", label: "الكل ضد الكل" }, { value: "duel", label: "نزال ثنائي" }, { value: "teams", label: "فريقان" }]} />
         <div className="grid gap-4 sm:grid-cols-2">
           <Chips label="عدد الجولات" value={rounds} onChange={setRounds} options={[3, 5, 7, 10].map((n) => ({ value: n, label: String(n) }))} />
           <Chips label="المحاولات" value={lives} onChange={setLives} options={[1, 2, 3].map((n) => ({ value: n, label: String(n) }))} />
+          <Chips label="وقت المزايدة" value={bidSeconds} onChange={setBidSeconds} options={[10, 20, 30, 45].map((n) => ({ value: n, label: `${n} ث` }))} />
+          <Chips label="وقت الإجابة" value={pace} onChange={setPace} options={[{ value: 4, label: "سريع" }, { value: 6, label: "عادي" }, { value: 8, label: "مريح" }]} />
+          <Chips label="مطابقة الإجابات" value={judge} onChange={setJudge} options={[{ value: "both", label: "الاثنان" }, { value: "auto", label: "تلقائي" }, { value: "manual", label: "يدوي" }]} />
+          <Chips label="الفائز" value={winRule} onChange={setWinRule} options={[{ value: "score", label: "أعلى نقاط" }, { value: "last", label: "آخر من بقي" }]} />
+          <Chips label="جولة جماعية" value={groupEvery} onChange={setGroupEvery} options={[{ value: 0, label: "بدون" }, { value: 3, label: "كل 3" }, { value: 4, label: "كل 4" }, { value: 5, label: "كل 5" }]} />
+          <div className="grid gap-1.5">
+            <span className="text-[14px] font-semibold text-ivory">مستوى المواضيع</span>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { n: 0, label: "الكل" },
+                { n: 1, label: "سهل" },
+                { n: 2, label: "متوسط" },
+                { n: 3, label: "صعب" },
+              ].map((l) => {
+                const on = l.n === 0 ? levels.length === 0 : levels.includes(l.n);
+                return (
+                  <button
+                    key={l.n}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setLevels((v) => (l.n === 0 ? [] : v.includes(l.n) ? v.filter((x) => x !== l.n) : [...v, l.n].sort()))}
+                    className={cx("min-h-10 rounded-full border px-4 text-[14px] font-semibold transition", on ? "btn-gold border-transparent" : "border-line-strong/70 bg-deep-2/60 text-mist hover:text-ivory")}
+                  >
+                    {l.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
+        <p className="-mt-2 text-[13px] text-mist">وقت الإجابة يكبر مع المزايدة: 10 ثوانٍ + {pace} ثوانٍ لكل إجابة.</p>
         <Toggle checked={hostPlays} onChange={setHostPlays} label="المضيف يشارك في اللعب" />
-        <Field label="وقت المزايدة (ثانية)" hint="الحالي 20. يُمدَّد 8 ثوانٍ مع كل مزايدة جديدة قرب النهاية.">
-          <input type="number" inputMode="numeric" min={10} max={60} className={cx(inputClass, "max-w-40")} value={bidSeconds} onChange={(e) => setBidSeconds(Number(e.target.value))} />
-        </Field>
-      </div>
-      <div className="grid gap-4 rounded-[18px] border border-line bg-deep-2/40 p-4">
-        <h3 className="flex items-center gap-2 text-[17px]">
-          <img src="/brand/games/game-heads-up.svg" alt="" className="size-7" />
-          هل تعرف
-        </h3>
+        <Toggle checked={autoNext} onChange={setAutoNext} label="الجولة التالية تبدأ تلقائيًا" />
+      </GameBox>
+
+      <GameBox id="social-mafia" title="المافيا">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Chips label="من الراوي؟" value={randomNarrator ? 1 : 0} onChange={(v) => setRandomNarrator(v === 1)} options={[{ value: 0, label: "المضيف" }, { value: 1, label: "لاعب بالقرعة" }]} />
+          <Chips label="عدد المافيا" value={mafiaCount} onChange={setMafiaCount} options={[{ value: 0, label: "تلقائي" }, ...[1, 2, 3, 4].map((n) => ({ value: n, label: String(n) }))]} />
+          <Chips label="مؤقت النهار" value={daySeconds} onChange={setDaySeconds} options={[{ value: 0, label: "بدون" }, { value: 60, label: "دقيقة" }, { value: 120, label: "دقيقتان" }, { value: 180, label: "3 د" }, { value: 300, label: "5 د" }]} />
+          <Chips label="مؤقت التصويت" value={voteSeconds} onChange={setVoteSeconds} options={[{ value: 0, label: "بدون" }, { value: 30, label: "30 ث" }, { value: 45, label: "45 ث" }, { value: 60, label: "دقيقة" }, { value: 90, label: "90 ث" }, { value: 120, label: "دقيقتان" }]} />
+        </div>
+        <p className="-mt-2 text-[13px] text-mist">إذا كان عدد المافيا المختار أكبر مما تسمح به الغرفة، يصير تلقائيًا.</p>
+        <div className="grid gap-1.5">
+          <span className="text-[14px] font-semibold text-ivory">الأدوار الإضافية المختارة</span>
+          <div className="flex flex-wrap gap-1.5">
+            {MAFIA_ROLES.map((r) => (
+              <button
+                key={r.key}
+                type="button"
+                aria-pressed={!!roles[r.key]}
+                onClick={() => setRoles((cur) => ({ ...cur, [r.key]: !cur[r.key] }))}
+                className={cx("min-h-10 rounded-full border px-4 text-[14px] font-semibold transition", roles[r.key] ? "btn-gold border-transparent" : "border-line-strong/70 bg-deep-2/60 text-mist hover:text-ivory")}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <Toggle checked={reveal} onChange={setReveal} label="كشف دور من يخرج" />
+        <Toggle checked={deadSee} onChange={setDeadSee} label="من يخرج يرى أدوار الجميع" />
+      </GameBox>
+
+      <GameBox id="tactical-grid" title="تحديات العش">
+        <Chips label="وقت السؤال" value={gridSeconds} onChange={setGridSeconds} options={[30, 45, 60, 90].map((n) => ({ value: n, label: `${n} ث` }))} />
+      </GameBox>
+
+      <GameBox id="heads-up" title="هل تعرف">
         <Field label="وقت الدور (ثانية)" hint="الحالي 60.">
           <input type="number" inputMode="numeric" min={20} max={180} step={5} className={cx(inputClass, "max-w-40")} value={turnSeconds} onChange={(e) => setTurnSeconds(Number(e.target.value))} />
         </Field>
-      </div>
-      <p className="text-[13px] text-mist">باقي الألعاب ليس فيها إعدادات يختارها المضيف حاليًا.</p>
+      </GameBox>
       {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
       <Button tone="primary" className="min-h-12 w-fit px-8" onClick={save} disabled={busy}>
         {busy ? "جارٍ الحفظ…" : "احفظ الإعدادات"}
