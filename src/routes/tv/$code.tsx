@@ -7,6 +7,7 @@ import { adaptivePoll } from "@/lib/live";
 import { ensureSession, supabase } from "@/lib/supabase";
 import { useRoomSession } from "@/lib/room-session";
 import { GridTv } from "@/components/grid";
+import { CourtTv } from "@/components/court";
 import {
   Hearts,
   MatchSummary,
@@ -105,7 +106,8 @@ function TvScreen() {
   const isMafia = slug === "social-mafia";
   const isHalba = slug === "alhalba";
   const isGrid = slug === "tactical-grid";
-  const isBoard = !isOutsider && !isHeads && !isMafia && !isHalba && !isGrid;
+  const isCourt = slug === "court";
+  const isBoard = !isOutsider && !isHeads && !isMafia && !isHalba && !isGrid && !isCourt;
 
   // Load the room once, then its game and its public questions (no answers).
   useEffect(() => {
@@ -131,7 +133,7 @@ function TvScreen() {
         const r = found as Room;
         const { data: g } = await client.from("games").select("slug, title_ar").eq("id", r.game_id).maybeSingle();
         const gameRow = (g ?? null) as Game | null;
-        const noQuestions = gameRow?.slug === "heads-up" || gameRow?.slug === "social-mafia" || gameRow?.slug === "outsider" || gameRow?.slug === "alhalba";
+        const noQuestions = gameRow?.slug === "heads-up" || gameRow?.slug === "social-mafia" || gameRow?.slug === "outsider" || gameRow?.slug === "alhalba" || gameRow?.slug === "court";
         const { data: qs } = noQuestions
           ? { data: [] }
           : await client
@@ -286,7 +288,7 @@ function TvScreen() {
     >
       {room.status === "lobby" ? (
         <Lobby code={room.room_code} link={link} game={game} players={guests} />
-      ) : finished && !isGrid ? (
+      ) : finished && !isGrid && !isCourt ? (
         <Results slug={slug} ranking={ranking} state={state} mafia={mafia} />
       ) : isHeads ? (
         <Heads state={state} players={players} now={now} />
@@ -296,6 +298,8 @@ function TvScreen() {
         <Mafia roomId={room.id} state={state} rows={mafia} players={players} />
       ) : isGrid ? (
         <GridTv roomId={room.id} />
+      ) : isCourt ? (
+        <CourtTv roomId={room.id} />
       ) : isHalba ? (
         <Halba state={state as unknown as HalbaState} players={players} />
       ) : (

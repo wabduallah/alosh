@@ -7,6 +7,7 @@ import { Button, cx } from "@/components/ui";
 import { Cradle, Glyph } from "@/components/brand";
 import { HalbaPlayerPanel } from "@/components/halba";
 import { GridPlayerPanel } from "@/components/grid";
+import { CourtPlayerPanel } from "@/components/court";
 import { ResultShare, rankingShare } from "@/components/result-share";
 import { MafiaPlayerPanel } from "@/components/mafia-play";
 import { adaptivePoll } from "@/lib/live";
@@ -59,6 +60,7 @@ function PlayerBoard() {
   const isMafia = gameSlug === "social-mafia";
   const isHalba = gameSlug === "alhalba";
   const isGrid = gameSlug === "tactical-grid";
+  const isCourt = gameSlug === "court";
   const [error, setError] = useState<string | null>(null);
 
   // Load the room, its public questions, its state, and its players.
@@ -82,7 +84,7 @@ function PlayerBoard() {
 
       const { data: game } = await client.from("games").select("slug").eq("id", r.game_id).single();
       // Heads-up words are never loaded on phones: describers get the current word from the server.
-      const { data: qs } = game?.slug === "heads-up" || game?.slug === "social-mafia" || game?.slug === "alhalba" || game?.slug === "tactical-grid"
+      const { data: qs } = game?.slug === "heads-up" || game?.slug === "social-mafia" || game?.slug === "alhalba" || game?.slug === "tactical-grid" || game?.slug === "court"
         ? { data: [] }
         : await client
             .from("questions_public")
@@ -272,8 +274,8 @@ function PlayerBoard() {
           <h1 className="text-lg font-extrabold text-ivory">
             الغرفة <span className="room-code text-gold">{room.room_code}</span>
           </h1>
-          {isHalba || isMafia || isGrid ? (
-            <span className="text-sm text-muted">{isHalba ? "الحلبة" : isGrid ? "تحديات العش" : "المافيا"}</span>
+          {isHalba || isMafia || isGrid || isCourt ? (
+            <span className="text-sm text-muted">{isHalba ? "الحلبة" : isGrid ? "تحديات العش" : isCourt ? "المحكمة" : "المافيا"}</span>
           ) : (
             <span className="text-sm text-muted">
               أُجيب {answered.size} من {questions.length}
@@ -281,7 +283,7 @@ function PlayerBoard() {
           )}
         </div>
 
-        {gameOver && !isGrid ? (
+        {gameOver && !isGrid && !isCourt ? (
           <div className="glass-card mb-5 rounded-[28px] p-6 text-center">
             <p className="text-sm font-bold text-violet-text">انتهت اللعبة</p>
             {winners.length > 0 ? (
@@ -317,6 +319,8 @@ function PlayerBoard() {
 
         {isGrid && room.status !== "lobby" ? <GridPlayerPanel roomId={room.id} meId={me?.id ?? null} /> : null}
 
+        {isCourt && room.status !== "lobby" ? <CourtPlayerPanel roomId={room.id} meId={me?.id ?? null} /> : null}
+
         {isMafia ? (
           <MafiaPlayerPanel roomId={room.id} meId={me?.id ?? null} state={stateData} roomCode={room.room_code} roomStatus={room.status} />
         ) : null}
@@ -325,7 +329,7 @@ function PlayerBoard() {
           <HeadsPlayerPanel roomId={room.id} meId={me?.id ?? null} state={stateData} />
         ) : null}
 
-        {active && !isHeads && !isMafia ? (
+        {active && !isHeads && !isMafia && !isCourt ? (
           <div className="glass-card mb-5 rounded-[28px] p-5 text-center">
             <p className="text-xs font-bold text-violet-text">
               {active.category_ar} · {active.points} نقطة
@@ -382,11 +386,11 @@ function PlayerBoard() {
             </div>
             ) : null}
           </div>
-        ) : room.status === "playing" && !isOutsider && !isHeads && !isMafia && !isHalba && !isGrid ? (
+        ) : room.status === "playing" && !isOutsider && !isHeads && !isMafia && !isHalba && !isGrid && !isCourt ? (
           <p className="glass-card mb-5 rounded-2xl p-4 text-center text-sm text-muted">اختر المضيف سؤالاً من اللوحة.</p>
         ) : null}
 
-        {categories.length > 0 && !isHeads && !isMafia && !isHalba && !isGrid ? (
+        {categories.length > 0 && !isHeads && !isMafia && !isHalba && !isGrid && !isCourt ? (
           <div className="overflow-x-auto">
             <div
               className="grid min-w-[360px] gap-1.5"
@@ -423,7 +427,7 @@ function PlayerBoard() {
           </div>
         ) : null}
 
-        {ranking.length > 0 && !isHalba && !isMafia && !isGrid ? (
+        {ranking.length > 0 && !isHalba && !isMafia && !isGrid && !isCourt ? (
           <div className="glass-card mt-6 rounded-2xl p-4">
             <h2 className="mb-2 text-sm font-extrabold text-ivory">النتائج</h2>
             <ul className="space-y-2">
