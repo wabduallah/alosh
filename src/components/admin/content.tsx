@@ -15,7 +15,7 @@ import { downloadText, joinList, normAr, parseCsv, splitList, toCsv } from "./cs
 type KindKey = "questions" | "heads" | "outsider" | "halba";
 type Col = { field: string; ar: string; aliases: string[]; hint?: string };
 type Row = Record<string, unknown> & { id: string };
-type Parsed = { row?: Record<string, unknown>; key: string; label: string; error?: string; answers?: string[] };
+type Parsed = { row?: Record<string, unknown>; key: string; label: string; error?: string; answers?: string[]; extra?: Record<string, unknown> };
 type Kind = {
   key: KindKey;
   label: string;
@@ -109,20 +109,36 @@ const KINDS: Kind[] = [
       { field: "min", ar: "المزايدة تبدأ من", aliases: ["min", "min_answers", "أقل مزايدة"], hint: "افتراضي 3" },
       { field: "seconds", ar: "الوقت", aliases: ["seconds", "time_limit_sec", "الثواني"], hint: "بالثواني، افتراضي 30" },
       { field: "answers", ar: "الإجابات", aliases: ["answers", "الإجابات المرجعية"], hint: "مفصولة بـ |" },
+      { field: "level", ar: "المستوى", aliases: ["level", "difficulty", "الصعوبة"], hint: "سهل أو متوسط أو صعب (اختياري)" },
+      { field: "open", ar: "مفتوح", aliases: ["open", "open_ended"], hint: "نعم للمواضيع المفتوحة: ما لا يطابق القائمة يحكم فيه الحَكَم (اختياري)" },
     ],
     textOf: (r) => String(r.topic_ar ?? ""),
     categoryOf: (r) => (r.category as string) ?? null,
-    exportRow: (r) => [r.topic_ar as string, (r.category as string) ?? "", r.min_answers as number, r.time_limit_sec as number, joinList(r.answers as string[])],
+    exportRow: (r) => [
+      r.topic_ar as string,
+      (r.category as string) ?? "",
+      r.min_answers as number,
+      r.time_limit_sec as number,
+      joinList(r.answers as string[]),
+      DIFF_AR[["", "easy", "medium", "hard"][Number(r.difficulty ?? 0)] ?? ""] ?? "",
+      r.open_ended ? "نعم" : "",
+    ],
     parse: (rec) => {
       const answers = splitList(rec.answers);
+      // Level and open flag (alhalba_v6.sql): only when the file has them.
+      const extra: Record<string, unknown> = {};
+      const level = DIFF[(rec.level ?? "").trim().toLowerCase()] ?? { "1": "easy", "2": "medium", "3": "hard" }[(rec.level ?? "").trim()];
+      if (level) extra.difficulty = { easy: 1, medium: 2, hard: 3 }[level];
+      if ((rec.open ?? "").trim()) extra.open_ended = /^(نعم|yes|true|1)$/i.test((rec.open ?? "").trim());
       const row = {
         topic_ar: (rec.topic ?? "").trim(),
         category: (rec.category ?? "").trim() || null,
         min_answers: int(rec.min, 3),
         time_limit_sec: int(rec.seconds, 30),
         answers,
+        ...extra,
       };
-      const base = { key: normAr(row.topic_ar), label: row.topic_ar, answers };
+      const base = { key: normAr(row.topic_ar), label: row.topic_ar, answers, extra };
       if (row.topic_ar.length < 3 || row.topic_ar.length > 160) return { ...base, error: "الموضوع بين 3 و160 حرفًا" };
       if (!(row.min_answers >= 1 && row.min_answers <= 30)) return { ...base, error: "أقل مزايدة بين 1 و30" };
       if (!(row.time_limit_sec >= 10 && row.time_limit_sec <= 180)) return { ...base, error: "الوقت بين 10 و180 ثانية" };
@@ -190,11 +206,15 @@ async function loadRows(kind: Kind, slug: string): Promise<{ rows: Row[]; error:
   }
   const select =
     kind.key === "halba"
-      ? "id, topic_ar, category, min_answers, time_limit_sec, answers, created_at"
+      ? "id, topic_ar, category, min_answers, time_limit_sec, answers, difficulty, open_ended, created_at"
       : kind.key === "heads"
         ? "id, word, category_ar"
         : "id, title_ar, words";
-  const { data, error } = await supabase.from(kind.table).select(select).order(kind.key === "outsider" ? "title_ar" : kind.key === "heads" ? "word" : "topic_ar");
+  let { data, error } = await supabase.from(kind.table).select(select).order(kind.key === "outsider" ? "title_ar" : kind.key === "heads" ? "word" : "topic_ar");
+  // Before alhalba_v6.sql the level and open columns do not exist yet.
+  if (error && kind.key === "halba") {
+    ({ data, error } = await supabase.from(kind.table).select("id, topic_ar, category, min_answers, time_limit_sec, answers, created_at").order("topic_ar"));
+  }
   const rows = ((data ?? []) as unknown as Row[]).map((r) => (kind.key === "outsider" && !Array.isArray(r.words) ? { ...r, words: [] } : r));
   return { rows, error };
 }
@@ -424,7 +444,7 @@ function ImportPanel({ kind, slug, rows, onDone }: { kind: Kind; slug: string; r
         merged.push(a);
         have.add(normAr(a));
       }
-      const { error } = await supabase.from(kind.table).update({ answers: merged.slice(0, 400) }).eq("id", item.existingId);
+      const { error } = await supabase.from(kind.table).update({ answers: merged.slice(0, 400), ...(item.extra ?? {}) }).eq("id", item.existingId);
       if (!error) updated += 1;
     }
     setBusy(false);

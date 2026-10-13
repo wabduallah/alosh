@@ -35,7 +35,11 @@ export type HalbaStats = {
   bold?: { name: string | null; bid: number };
   correct?: Record<string, number>;
   cheers?: Record<string, number>;
+  steal?: { name: string | null; need: number };
+  group?: { side: string; points: number };
 };
+/** One side's answers in a group round: correct ones, and correct ones nobody else wrote. */
+export type HalbaGroupRow = { side: string; points: number; answers: Array<{ text: string; valid: boolean; unique: boolean }> };
 export type HalbaState = {
   phase?: string;
   mode?: "ffa" | "duel" | "teams";
@@ -79,9 +83,21 @@ export type HalbaState = {
   bid_seconds?: number;
   checking?: boolean;
   duels?: Record<string, number>;
+  /** alhalba_v6.sql: seconds per answer of the bid, the win rule, the automatic next round,
+   *  a group round every N rounds, topic levels, and the group round's state. */
+  pace?: number;
+  win_rule?: "score" | "last";
+  auto_next?: boolean;
+  group_every?: number;
+  levels?: number[] | null;
+  result_at?: string | null;
+  group_ends_at?: string | null;
+  group_counts?: Record<string, number>;
+  group_result?: HalbaGroupRow[] | null;
+  topic_open?: boolean;
 };
 /** wait = typed, not checked yet; pending = waits for the judge. */
-export type HalbaAnswer = { n: number; text: string; status: "wait" | "pending" | "ok" | "no"; by?: string | null; steal?: boolean; auto?: boolean };
+export type HalbaAnswer = { n: number; text: string; status: "wait" | "pending" | "ok" | "no"; by?: string | null; steal?: boolean; auto?: boolean; near?: boolean };
 export type HalbaPlayer = { id: string; player_name: string; score: number; is_host: boolean; team_color?: string | null; avatar?: { c?: number; e?: string | null } | null };
 
 export const HALBA_ERRORS: Record<string, string> = {
@@ -94,6 +110,8 @@ export const HALBA_ERRORS: Record<string, string> = {
   TIME_UP: "انتهى الوقت.",
   NOT_FIGHTING: "لست في الحلبة هذه الجولة.",
   BID_TOO_LOW: "سبقك أحد بمزايدة أعلى. زايد من جديد.",
+  BID_TOO_HIGH: "أعلى مزايدة 15 إجابة.",
+  PAUSED: "أوقف المضيف الانتقال التلقائي.",
   OWN_BID: "لا تقدر تتحدى مزايدتك أو مزايدة فريقك.",
   NO_BID: "ما فيه مزايدة تتحداها بعد.",
   NOT_YET: "المزايدة ما خلصت بعد.",
@@ -199,6 +217,15 @@ export function canJudge(state: HalbaState, players: HalbaPlayer[], meId: string
   return !!meId && !!mine && sideOf(state, hostId) === perf;
 }
 
+/** Same rule as halba_predict(): outside the ring while bidding; once answering, anyone but the two sides. */
+export function canPredict(state: HalbaState, meId: string | null | undefined) {
+  if (!meId) return false;
+  const side = sideOf(state, meId);
+  if (state.phase === "bid") return !canFight(state, meId);
+  if (state.phase === "prove") return side !== performerSide(state) && (!state.challenger_side || side !== state.challenger_side);
+  return false;
+}
+
 export function usedPower(state: HalbaState, playerId: string | null | undefined, power: string) {
   return !!playerId && (state.powers?.[playerId] ?? []).includes(power);
 }
@@ -242,14 +269,16 @@ export function participants(state: HalbaState, players: HalbaPlayer[]) {
 /** Winner text once the match is over: last one standing, else the top score. */
 export function halbaWinner(state: HalbaState, players: HalbaPlayer[]) {
   const fighters = state.fighters ?? [];
+  // «آخر من بقي» decides only with that rule (and in rooms from before the rule existed).
+  const lastWins = state.win_rule !== "score";
   if (state.mode === "teams") {
-    if (fighters.length === 1) return { name: sideName(state, players, fighters[0]), why: "آخر فريق بقي في الحلبة" };
+    if (lastWins && fighters.length === 1) return { name: sideName(state, players, fighters[0]), why: "آخر فريق بقي في الحلبة" };
     const red = state.team_scores?.red ?? 0;
     const blue = state.team_scores?.blue ?? 0;
     if (red === blue) return { name: "تعادل الفريقين", why: `${red} نقطة لكل فريق` };
     return red > blue ? { name: TEAMS.red.name, why: `${red} مقابل ${blue}` } : { name: TEAMS.blue.name, why: `${blue} مقابل ${red}` };
   }
-  if (fighters.length === 1) return { name: nameOf(players, fighters[0]), why: "آخر من بقي في الحلبة" };
+  if (lastWins && fighters.length === 1) return { name: nameOf(players, fighters[0]), why: "آخر من بقي في الحلبة" };
   const ranked = participants(state, players).sort((a, b) => b.score - a.score);
   const top = ranked[0];
   if (!top) return null;
@@ -275,6 +304,11 @@ export function halbaAwards(state: HalbaState, players: HalbaPlayer[]): HalbaAwa
   const correct = top(stats.correct);
   if (correct) out.push({ key: "correct", title: "أكثر من أجاب صح", name: correct.names, detail: `${correct.n} ${correct.n >= 3 && correct.n <= 10 ? "إجابات صحيحة" : "إجابة صحيحة"}` });
   if (stats.bold?.name) out.push({ key: "bold", title: "أجرأ تحدٍّ", name: stats.bold.name, detail: `أسقط مزايدة ${stats.bold.bid}` });
+  if (stats.steal?.name) out.push({ key: "steal", title: "أفضل سرقة", name: stats.steal.name, detail: `سرق ${stats.steal.need} ${stats.steal.need === 1 ? "إجابة" : stats.steal.need === 2 ? "إجابتين" : stats.steal.need <= 10 ? "إجابات" : "إجابة"}` });
+  if (stats.group?.side && stats.group.points > 0) {
+    const name = state.mode === "teams" ? (TEAMS[stats.group.side]?.name ?? "") : nameOf(players, stats.group.side);
+    if (name) out.push({ key: "group", title: "بطل الجولة الجماعية", name, detail: `${stats.group.points} نقطة بإجابات لم يكتبها غيره` });
+  }
   const cheers = top(stats.cheers);
   if (cheers) out.push({ key: "cheer", title: "أفضل مشجّع", name: cheers.names, detail: `${cheers.n} نقطة تشجيع` });
   return out;
@@ -450,7 +484,7 @@ export function Ring({ state, players }: { state: HalbaState; players: HalbaPlay
             ) : (
               <Hearts left={state.lives?.[p.id] ?? max} max={max} className="text-[13px]" />
             )}
-            <span className="font-bold tabular-nums text-gold">{p.score}</span>
+            <span dir="ltr" className="font-bold tabular-nums text-gold">{p.score}</span>
           </li>
         );
       })}
@@ -475,7 +509,7 @@ export function TeamsRing({ state, players, big = false }: { state: HalbaState; 
           >
             <p className={cx("flex items-center justify-between gap-2 font-extrabold", big ? "text-[clamp(18px,1.7vw,32px)]" : "text-[15px]")} style={{ color: TEAMS[team].color }}>
               <span className="truncate">{TEAMS[team].short}</span>
-              <span className="tabular-nums text-gold">{state.team_scores?.[team] ?? 0}</span>
+              <span dir="ltr" className="tabular-nums text-gold">{state.team_scores?.[team] ?? 0}</span>
             </p>
             <div className="mt-1">{out ? <span className="text-[12px] text-faint">خارج الحلبة</span> : <Hearts left={state.lives?.[team] ?? max} max={max} className="text-[13px]" />}</div>
             <ul className={cx("mt-2 grid gap-1 text-ivory", big ? "text-[clamp(14px,1.3vw,26px)]" : "text-[14px]")}>
@@ -538,7 +572,7 @@ function ResultCard({ state, players }: { state: HalbaState; players: HalbaPlaye
 export function MatchSummary({ state, players, big = false }: { state: HalbaState; players: HalbaPlayer[]; big?: boolean }) {
   const awards = halbaAwards(state, players);
   if (awards.length === 0) return null;
-  const icons: Record<string, string> = { bid: "🏆", correct: "🧠", bold: "🥊", cheer: "📣" };
+  const icons: Record<string, string> = { bid: "🏆", correct: "🧠", bold: "🥊", cheer: "📣", steal: "🦹", group: "👥" };
   return (
     <ul className={cx("grid gap-2", big ? "grid-cols-2 gap-[1vw]" : "sm:grid-cols-2")}>
       {awards.map((a) => (
@@ -759,12 +793,13 @@ function PredictBox({ roomId, meId, state, reload }: { roomId: string; meId: str
   const open =
     (state.phase === "bid" && !!state.bidder) ||
     (state.phase === "prove" && proveLeft !== null && (state.topic?.seconds ?? 30) - proveLeft < 10);
-  const eligible = !canFight(state, meId) && sideOf(state, meId) !== performerSide(state);
-  if (!open || !eligible) return null;
+  if (!open || !canPredict(state, meId)) return null;
+  const knockedOut = (state.knocked ?? []).includes(sideOf(state, meId) ?? "");
   const mine = state.predictions?.[meId];
   const who = state.phase === "bid" ? (state.mode === "teams" ? sideName(state, [], state.bidder_side) : state.bidder_name) : null;
   return (
     <div className="grid gap-2 rounded-[18px] border border-violet-text/40 bg-violet-fill/10 p-3">
+      {knockedOut ? <p className="text-[13px] font-semibold text-violet-text">📣 أنت مشجّع الآن: كل توقع صحيح يعطيك 50 نقطة.</p> : null}
       <p className="text-[15px] font-bold text-ivory">توقّع: {who ? `هل ينجح ${who}؟` : "هل ينجح في ذكر الإجابات؟"}</p>
       <div className="grid grid-cols-2 gap-2">
         <Button tone={mine === true ? "correct" : "quiet"} className="min-h-12" onClick={() => act("halba_predict", { p_success: true })} disabled={busy}>
@@ -812,7 +847,7 @@ function FighterControls({
   if (knocked && phase !== "over") {
     return (
       <p className="rounded-[14px] border border-wrong/40 bg-wrong-fill/10 p-3 text-[15px] text-ivory">
-        {teams ? "خرج فريقك من الحلبة." : "خرجت من الحلبة."} تابع النزالات وشجّع!
+        {teams ? "خرج فريقك من الحلبة." : "خرجت من الحلبة."} صرت مشجّعًا: توقّع نتيجة كل جولة واكسب 50 نقطة لكل توقع صحيح، وشارك في الجولات الجماعية.
       </p>
     );
   }
@@ -837,20 +872,13 @@ function FighterControls({
         </p>
         {fighting ? (
           <>
-            <div className="grid grid-cols-3 gap-2">
-              {[1, 2, 3].map((n) => (
-                <Button
-                  key={n}
-                  tone={n === 1 ? "primary" : "quiet"}
-                  className="min-h-16 flex-col gap-0 px-2 text-[22px] font-extrabold"
-                  onClick={() => act("halba_bid", { p_amount: current + n })}
-                  disabled={busy || bidLeft === 0}
-                >
-                  {current + n}
-                  <span className="text-[12px] font-semibold opacity-80">أزايد</span>
-                </Button>
-              ))}
-            </div>
+            <BidStepper
+              current={current}
+              disabled={busy || bidLeft === 0}
+              onBid={(n) => act("halba_bid", { p_amount: n })}
+              pace={state.pace ?? 6}
+              fixed={state.answer_seconds ?? 0}
+            />
             {state.bidder && !ourBid ? (
               <button
                 type="button"
@@ -897,6 +925,35 @@ function FighterControls({
   return null;
 }
 
+/** Choose any bid up to 15: the stepper starts one above the current bid. */
+export const MAX_BID = 15;
+function BidStepper({ current, disabled, onBid, pace, fixed }: { current: number; disabled: boolean; onBid: (n: number) => void; pace: number; fixed: number }) {
+  const min = current + 1;
+  const [value, setValue] = useState(min);
+  // A higher bid from someone else moves the stepper up with it.
+  useEffect(() => setValue((v) => Math.min(MAX_BID, Math.max(v, min))), [min]);
+  if (min > MAX_BID) return <p className="text-[14px] text-mist">وصلت المزايدة للحد الأعلى ({MAX_BID}). تقدر تتحدى فقط.</p>;
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-center justify-center gap-3">
+        <Button tone="quiet" className="size-14 rounded-full p-0 text-[26px]" onClick={() => setValue((v) => Math.max(min, v - 1))} disabled={disabled || value <= min} aria-label="أقل">
+          −
+        </Button>
+        <p className="min-w-20 font-display text-[44px] leading-none font-extrabold tabular-nums text-gold">{value}</p>
+        <Button tone="quiet" className="size-14 rounded-full p-0 text-[26px]" onClick={() => setValue((v) => Math.min(MAX_BID, v + 1))} disabled={disabled || value >= MAX_BID} aria-label="أكثر">
+          +
+        </Button>
+      </div>
+      <Button tone="primary" className="min-h-14 text-[19px] font-extrabold" onClick={() => onBid(value)} disabled={disabled}>
+        أزايد بـ {value} {value <= 10 && value >= 3 ? "إجابات" : value === 2 ? "إجابتين" : value === 1 ? "إجابة" : "إجابة"}
+      </Button>
+      <p className="text-[12px] text-mist">
+        {fixed > 0 ? `وقت الإجابة ${fixed} ثانية.` : `وقت الإجابة لـ ${value} ${value >= 3 && value <= 10 ? "إجابات" : "إجابة"}: ${Math.min(180, 10 + pace * value)} ثانية.`} أعلى مزايدة {MAX_BID}.
+      </p>
+    </div>
+  );
+}
+
 /** The answer counter, for whoever judges. Ends by itself when the clock runs out. */
 function JudgeControls({ roomId, state, reload, compact = false }: { roomId: string; state: HalbaState; reload: () => Promise<void>; compact?: boolean }) {
   const { busy, message, act } = useAct(roomId, reload);
@@ -935,6 +992,7 @@ function JudgeControls({ roomId, state, reload, compact = false }: { roomId: str
               <span className="min-w-0 flex-1 truncate text-start text-[17px] font-semibold">
                 {a.text}
                 {a.auto ? <span className="ms-2 text-[12px] font-normal text-correct">تلقائي</span> : null}
+                {a.near && !a.auto ? <span className="ms-2 text-[12px] font-normal text-gold">قريبة من القائمة</span> : null}
               </span>
               {a.status === "wait" ? <span className="shrink-0 text-[12px] text-mist">بانتظار المطابقة</span> : null}
               {a.status === "wait" ? null : (
@@ -1027,6 +1085,203 @@ function ProveHeadline({ state, players }: { state: HalbaState; players: HalbaPl
   );
 }
 
+/* ---------------- Group round and the automatic next round (alhalba_v6.sql) ---------------- */
+
+/** A side's name in a group round's result: the team, or the player. */
+export function groupSideName(state: HalbaState, players: HalbaPlayer[], side: string) {
+  return state.mode === "teams" ? (TEAMS[side]?.name ?? "") : nameOf(players, side);
+}
+
+/** Everyone types at once. My answers stay on my phone until the round ends. */
+export function GroupPlay({ roomId, state }: { roomId: string; state: HalbaState }) {
+  const [mine, setMine] = useState<string[]>([]);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const box = useRef<HTMLInputElement>(null);
+  const left = useSecondsLeft(state.group_ends_at);
+  const loadMine = useCallback(async () => {
+    if (!supabase) return;
+    const { data } = await supabase.rpc("halba_group_mine", { p_room_id: roomId });
+    if (Array.isArray(data)) setMine((data as Array<{ text: string }>).map((r) => r.text));
+  }, [roomId]);
+  useEffect(() => {
+    void loadMine();
+  }, [loadMine, state.round]);
+
+  async function send(event: FormEvent) {
+    event.preventDefault();
+    const value = text.trim();
+    if (!value || busy) return;
+    setBusy(true);
+    setMessage(null);
+    const { error } = await call("halba_group_answer", { p_room_id: roomId, p_text: value });
+    if (error) setMessage(error);
+    else setText("");
+    await loadMine();
+    setBusy(false);
+    box.current?.focus();
+  }
+
+  return (
+    <div className="grid gap-3">
+      <p className="rounded-[18px] border border-gold/50 bg-gold/10 p-3 text-[15px] font-semibold text-ivory">
+        👥 جولة جماعية: اكتبوا كل ما تعرفون. كل إجابة صحيحة <b>ما كتبها غيرك</b> = 100 نقطة.
+        {state.mode === "teams" ? " إجابات فريقك قائمة واحدة." : ""}
+      </p>
+      {left !== 0 ? (
+        <form onSubmit={send} className="flex gap-2">
+          <input
+            ref={box}
+            autoFocus
+            className={cx(inputClass, "min-h-14 text-[18px]")}
+            value={text}
+            maxLength={60}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="اكتب إجابة واضغط إرسال"
+            enterKeyHint="send"
+            autoComplete="off"
+          />
+          <Button type="submit" tone="primary" className="min-h-14 shrink-0 px-5" disabled={busy || !text.trim()}>
+            إرسال
+          </Button>
+        </form>
+      ) : (
+        <p className="text-[14px] text-mist">انتهى الوقت. ننتظر النتيجة…</p>
+      )}
+      {message ? <p className="text-[14px] font-semibold text-wrong">{message}</p> : null}
+      {mine.length > 0 ? (
+        <div className="grid gap-1.5">
+          <p className="text-[13px] text-mist">إجاباتك ({mine.length}):</p>
+          <ul className="flex flex-wrap justify-center gap-2">
+            {mine.map((t) => (
+              <li key={t} className="rounded-full border border-line-strong/60 bg-deep-2/70 px-3 py-1 text-[15px] font-semibold text-ivory">
+                {t}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** How many answers each player has written so far (not what). */
+export function GroupCounts({ state, players, big = false }: { state: HalbaState; players: HalbaPlayer[]; big?: boolean }) {
+  const counts = Object.entries(state.group_counts ?? {}).filter(([, n]) => n > 0);
+  if (counts.length === 0) return <p className={cx("text-mist", big ? "text-[clamp(16px,1.5vw,30px)]" : "text-[14px]")}>لم يكتب أحد بعد…</p>;
+  return (
+    <ul className={cx("flex flex-wrap justify-center gap-2", big ? "text-[clamp(16px,1.6vw,32px)]" : "text-[14px]")}>
+      {counts
+        .sort((a, b) => b[1] - a[1])
+        .map(([id, n]) => (
+          <li key={id} className="rounded-full border border-line bg-deep-2/60 px-3 py-1 font-semibold text-ivory">
+            {nameOf(players, id)} <span className="tabular-nums text-gold">{n}</span>
+          </li>
+        ))}
+    </ul>
+  );
+}
+
+/** The group round's result: each side's answers, unique ones in gold, wrong ones struck through. */
+export function GroupResult({ state, players, big = false }: { state: HalbaState; players: HalbaPlayer[]; big?: boolean }) {
+  const rows = state.group_result ?? [];
+  if (rows.length === 0) return <p className="text-[15px] text-mist">لم يكتب أحد إجابات في الجولة الجماعية.</p>;
+  return (
+    <ul className={cx("grid gap-2 text-start", big ? "text-[clamp(15px,1.4vw,28px)]" : "text-[14px]")}>
+      {rows.map((r) => (
+        <li key={r.side} className="rounded-[16px] border border-line bg-deep-2/50 px-3 py-2">
+          <p className="flex items-center justify-between gap-2 font-bold text-ivory">
+            <span style={state.mode === "teams" ? { color: TEAMS[r.side]?.color } : undefined}>{groupSideName(state, players, r.side)}</span>
+            <span className="tabular-nums text-gold" dir="ltr">
+              +{r.points}
+            </span>
+          </p>
+          <p className="mt-1 flex flex-wrap gap-1.5">
+            {r.answers.map((a) => (
+              <span
+                key={a.text}
+                className={cx(
+                  "rounded-full border px-2 py-0.5",
+                  a.unique ? "border-gold bg-gold/15 text-ivory" : a.valid ? "border-line text-mist" : "border-wrong/40 text-faint line-through",
+                )}
+              >
+                {a.text}
+              </span>
+            ))}
+          </p>
+        </li>
+      ))}
+      <li className="text-[12px] text-mist">بالذهبي: صحيحة وما كتبها غيره (100 نقطة). العادية: صحيحة لكن تكررت. المشطوبة: ليست في القائمة.</li>
+    </ul>
+  );
+}
+
+/** Ends the group round when its clock runs out: the host's device at once, players' a moment later. */
+export function useGroupFinish(roomId: string, state: HalbaState, isHost: boolean, reload: () => Promise<void>) {
+  const left = useSecondsLeft(state.phase === "group" ? state.group_ends_at : null);
+  const done = useRef("");
+  useEffect(() => {
+    if (state.phase !== "group" || left !== 0) return;
+    const key = String(state.round ?? 0);
+    if (done.current === key) return;
+    done.current = key;
+    const t = window.setTimeout(() => void call("halba_group_finish", { p_room_id: roomId }).then(reload), isHost ? 600 : 3000);
+    return () => window.clearTimeout(t);
+  }, [state.phase, state.round, left, isHost, roomId, reload]);
+  return left;
+}
+
+/** Seconds until the next round starts by itself (null when it won't). Starts it at zero. */
+export function useAutoNext(roomId: string, state: HalbaState, isHost: boolean, reload: () => Promise<void>) {
+  const target = state.phase === "result" && state.auto_next && state.result_at ? new Date((parseTime(state.result_at) ?? 0) + 8000).toISOString() : null;
+  const left = useSecondsLeft(target);
+  const done = useRef("");
+  useEffect(() => {
+    if (left !== 0 || !target) return;
+    if (done.current === target) return;
+    done.current = target;
+    // The host's device first; the players' phones a little later, in case it is asleep.
+    const t = window.setTimeout(() => void call("halba_auto_next", { p_room_id: roomId }).then(reload), isHost ? 200 : 2500 + Math.random() * 1500);
+    return () => window.clearTimeout(t);
+  }, [left, target, isHost, roomId, reload]);
+  return target ? left : null;
+}
+
+/**
+ * The big screen's answers: after the check, they appear one by one, each with its sound.
+ * Before the check (typing), they show as they come in.
+ */
+export function RevealAnswers({ state }: { state: HalbaState }) {
+  const answers = phaseAnswers(state);
+  const checked = answers.filter((a) => a.status !== "wait");
+  const key = `${state.round}-${state.phase}`;
+  const [shown, setShown] = useState(0);
+  const seen = useRef<{ key: string; n: number }>({ key: "", n: 0 });
+  useEffect(() => {
+    if (seen.current.key !== key) seen.current = { key, n: 0 };
+    if (checked.length <= seen.current.n) {
+      setShown(checked.length);
+      return;
+    }
+    let i = seen.current.n;
+    setShown(i);
+    const t = window.setInterval(() => {
+      const a = checked[i];
+      if (a) playCue(a.status === "ok" ? "correct" : a.status === "no" ? "wrong" : "tick");
+      i += 1;
+      setShown(i);
+      seen.current.n = i;
+      if (i >= checked.length) window.clearInterval(t);
+    }, 700);
+    return () => window.clearInterval(t);
+    // Re-run when answers get checked.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, checked.length, checked.map((a) => a.status).join()]);
+  const visible = answers.filter((a) => a.status === "wait" || checked.indexOf(a) < shown);
+  return <AnswersList answers={visible} big />;
+}
+
 /* ---------------- Host panel ---------------- */
 
 /** Host device: settings, rounds, judging, and the host's own bids when they play. */
@@ -1037,7 +1292,14 @@ export function HalbaHostPanel({ roomId, roomCode, roomStatus }: { roomId: strin
   const [lives, setLives] = useState(2);
   const [hostPlays, setHostPlays] = useState(true);
   const [judge, setJudge] = useState<"auto" | "manual" | "both">("both");
-  const [answerSeconds, setAnswerSeconds] = useState(0);
+  const [answerSeconds] = useState(0);
+  // v6: seconds per answer of the bid, the win rule, the automatic next round, the group round, topic levels.
+  const [pace, setPace] = useState(6);
+  const [winRule, setWinRule] = useState<"score" | "last">("score");
+  const [autoNext, setAutoNext] = useState(true);
+  const [groupEvery, setGroupEvery] = useState(3);
+  const [levels, setLevels] = useState<number[]>([]);
+  const [advanced, setAdvanced] = useState(false);
   const [bidSeconds, setBidSeconds] = useState(20);
   const [categories, setCategories] = useState<Array<{ category: string; topics: number }>>([]);
   const [picked, setPicked] = useState<string[]>([]);
@@ -1085,6 +1347,8 @@ export function HalbaHostPanel({ roomId, roomCode, roomStatus }: { roomId: strin
   const phase = state.phase ?? "";
   const bidLeft = useSecondsLeft(phase === "bid" ? state.bid_ends_at : null);
   const proveLeft = useSecondsLeft(isAnswering(state) ? state.prove_ends_at : null);
+  const groupLeft = useGroupFinish(roomId, state, true, reload);
+  const nextIn = useAutoNext(roomId, state, true, reload);
 
   // When bidding time runs out, move on by itself (once).
   useEffect(() => {
@@ -1111,9 +1375,14 @@ export function HalbaHostPanel({ roomId, roomCode, roomStatus }: { roomId: strin
     if (!supabase) return;
     setBusy(true);
     setError(null);
-    const probe = await supabase.rpc("halba_start_round", { p_room_id: roomId, ...base, p_judge: judge, p_answer_seconds: answerSeconds || null, p_bid_seconds: bidSeconds });
+    const v5 = { ...base, p_judge: judge, p_answer_seconds: answerSeconds || null, p_bid_seconds: bidSeconds };
+    const extra = { pace, win_rule: winRule, auto_next: autoNext, group_every: groupEvery, levels: levels.length > 0 && levels.length < 3 ? levels : null };
+    // Newest first; a database without alhalba_v6.sql (or v5) answers "function not found".
+    const missing = (e: { code?: string; message: string } | null) => !!e && (e.code === "PGRST202" || /function/i.test(e.message));
+    let probe = await supabase.rpc("halba_start_round", { p_room_id: roomId, ...v5, p_extra: extra });
+    if (missing(probe.error)) probe = await supabase.rpc("halba_start_round", { p_room_id: roomId, ...v5 });
     setBusy(false);
-    if (probe.error && (probe.error.code === "PGRST202" || /function/i.test(probe.error.message))) return step("halba_start_round", base);
+    if (missing(probe.error)) return step("halba_start_round", base);
     if (probe.error) return setError("تعذّر تنفيذ الخطوة، حاول مرة أخرى.");
     const result = probe.data as { ok: boolean; reason?: string };
     if (!result?.ok) setError(HALBA_ERRORS[result?.reason ?? ""] ?? "تعذّر تنفيذ الخطوة.");
@@ -1182,6 +1451,22 @@ export function HalbaHostPanel({ roomId, roomCode, roomStatus }: { roomId: strin
                 ]}
               />
               {mode === "teams" ? <p className="-mt-1 text-start text-[13px] text-mist">نقسّمكم عشوائيًا لفريقين. أي عضو يزايد ويتحدى ويكتب لفريقه.</p> : null}
+              <button
+                type="button"
+                aria-expanded={advanced}
+                onClick={() => setAdvanced((v) => !v)}
+                className="flex min-h-11 items-center justify-between rounded-[14px] border border-line-strong/60 bg-deep-2/50 px-4 text-[14px] font-semibold text-ivory"
+              >
+                <span>⚙️ إعدادات متقدمة</span>
+                <span className="text-mist">{advanced ? "إخفاء" : "عرض"}</span>
+              </button>
+              {!advanced ? (
+                <p className="-mt-1 text-start text-[13px] leading-6 text-mist">
+                  المقترح: {rounds} جولات، {lives === 1 ? "محاولة واحدة" : lives === 2 ? "محاولتان" : "3 محاولات"}، مطابقة تلقائية ويدوية، الوقت حسب المزايدة، جولة جماعية كل 3 جولات، والفائز صاحب أعلى نقاط.
+                </p>
+              ) : null}
+              {advanced ? (
+              <>
               <Choice
                 label={mode === "teams" ? "المحاولات لكل فريق" : "المحاولات لكل لاعب"}
                 value={String(lives)}
@@ -1228,13 +1513,65 @@ export function HalbaHostPanel({ roomId, roomCode, roomStatus }: { roomId: strin
               />
               <Choice
                 label="وقت الإجابة"
-                value={String(answerSeconds)}
-                onChange={(v) => setAnswerSeconds(Number(v))}
+                value={String(pace)}
+                onChange={(v) => setPace(Number(v))}
                 options={[
-                  { value: "0", label: "حسب الموضوع" },
-                  ...[30, 45, 60, 90].map((n) => ({ value: String(n), label: `${n} ث` })),
+                  { value: "4", label: "سريع" },
+                  { value: "6", label: "عادي" },
+                  { value: "8", label: "مريح" },
                 ]}
               />
+              <p className="-mt-1 text-start text-[13px] text-mist">
+                يكبر مع المزايدة: 10 ثوانٍ + {pace} ثوانٍ لكل إجابة. مزايدة 5 = {10 + pace * 5} ثانية، ومزايدة 10 = {10 + pace * 10} ثانية.
+              </p>
+              <Choice
+                label="الفائز"
+                value={winRule}
+                onChange={(v) => setWinRule(v as "score" | "last")}
+                options={[
+                  { value: "score", label: "أعلى نقاط" },
+                  { value: "last", label: "آخر من بقي" },
+                ]}
+              />
+              <p className="-mt-1 text-start text-[13px] text-mist">
+                {winRule === "score" ? "يفوز صاحب أعلى نقاط في النهاية، حتى لو خرج من الحلبة قبلها." : "إذا بقي لاعب (أو فريق) واحد في الحلبة يفوز فورًا، وإلا يفوز صاحب أعلى نقاط."}
+              </p>
+              <Choice
+                label="جولة جماعية"
+                value={String(groupEvery)}
+                onChange={(v) => setGroupEvery(Number(v))}
+                options={[
+                  { value: "0", label: "بدون" },
+                  { value: "3", label: "كل 3" },
+                  { value: "4", label: "كل 4" },
+                  { value: "5", label: "كل 5" },
+                ]}
+              />
+              <p className="-mt-1 text-start text-[13px] text-mist">الكل يكتب في نفس الوقت لمدة دقيقة، وكل إجابة صحيحة ما كتبها غيرك = 100 نقطة.</p>
+              <div className="grid gap-1.5 text-start">
+                <span className="text-[14px] font-semibold text-ivory">مستوى المواضيع</span>
+                <div className="flex flex-wrap gap-1.5">
+                  <Chip on={levels.length === 0} onClick={() => setLevels([])}>
+                    الكل
+                  </Chip>
+                  {[
+                    { n: 1, label: "سهل" },
+                    { n: 2, label: "متوسط" },
+                    { n: 3, label: "صعب" },
+                  ].map((l) => (
+                    <Chip key={l.n} on={levels.includes(l.n)} onClick={() => setLevels((v) => (v.includes(l.n) ? v.filter((x) => x !== l.n) : [...v, l.n].sort()))}>
+                      {l.label}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
+              <label className="flex items-start gap-3 rounded-[14px] border border-line bg-deep-2/50 p-3 text-start">
+                <input type="checkbox" checked={autoNext} onChange={(e) => setAutoNext(e.target.checked)} className="mt-1 size-5 accent-[var(--color-gold)]" />
+                <span>
+                  <b className="text-[14px] text-ivory">الجولة التالية تلقائيًا</b>
+                  <span className="block text-[13px] text-mist">بعد 8 ثوانٍ من النتيجة، وتقدر توقفها أثناء اللعب.</span>
+                </span>
+              </label>
               {categories.length > 1 ? (
                 <div className="grid gap-1.5 text-start">
                   <span className="text-[14px] font-semibold text-ivory">التصنيفات</span>
@@ -1254,6 +1591,8 @@ export function HalbaHostPanel({ roomId, roomCode, roomStatus }: { roomId: strin
                   </div>
                 </div>
               ) : null}
+              </>
+              ) : null}
             </div>
             <Button
               tone="primary"
@@ -1261,13 +1600,24 @@ export function HalbaHostPanel({ roomId, roomCode, roomStatus }: { roomId: strin
               onClick={() => void startMatch()}
               disabled={busy}
             >
-              ابدأ الجولة الأولى
+              {advanced ? "ابدأ المباراة" : "ابدأ بالإعدادات المقترحة"}
             </Button>
           </>
         ) : null}
 
-        {state.topic && ["bid", "prove", "steal_offer", "steal", "result"].includes(phase) ? (
+        {state.topic && ["bid", "prove", "steal_offer", "steal", "result", "group"].includes(phase) ? (
           <TopicCard topic={state.topic} round={state.round} maxRounds={state.max_rounds} />
+        ) : null}
+
+        {phase === "group" ? (
+          <>
+            <Timer seconds={groupLeft} label="الجولة الجماعية" sound />
+            {state.host_plays ? <GroupPlay roomId={roomId} state={state} /> : null}
+            <GroupCounts state={state} players={players} />
+            <Button tone="quiet" className="mx-auto" onClick={() => step("halba_group_finish")} disabled={busy}>
+              أنهِ الجولة الجماعية الآن
+            </Button>
+          </>
         ) : null}
         <RoundBadges state={state} />
 
@@ -1328,18 +1678,28 @@ export function HalbaHostPanel({ roomId, roomCode, roomStatus }: { roomId: strin
           </>
         ) : null}
 
-        {phase === "result" && state.result ? (
+        {phase === "result" && (state.result || state.group_result) ? (
           <>
-            <ResultCard state={state} players={players} />
-            <Button tone="primary" className="mx-auto min-h-14 px-10 text-[17px]" onClick={() => step("halba_start_round")} disabled={busy}>
-              الجولة التالية
-            </Button>
+            {state.group_result ? <GroupResult state={state} players={players} /> : <ResultCard state={state} players={players} />}
+            {nextIn !== null ? (
+              <p className="text-[15px] font-semibold text-gold">الجولة التالية بعد {nextIn}…</p>
+            ) : null}
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button tone="primary" className="min-h-14 px-10 text-[17px]" onClick={() => step("halba_start_round")} disabled={busy}>
+                الجولة التالية
+              </Button>
+              {state.auto_next !== undefined ? (
+                <Button tone="quiet" className="min-h-14" onClick={() => step("halba_set_auto", { p_on: !state.auto_next })} disabled={busy}>
+                  {state.auto_next ? "⏸ أوقف التلقائي" : "▶ شغّل التلقائي"}
+                </Button>
+              ) : null}
+            </div>
           </>
         ) : null}
 
         {phase === "over" ? (
           <>
-            {state.result ? <ResultCard state={state} players={players} /> : null}
+            {state.group_result ? <GroupResult state={state} players={players} /> : state.result ? <ResultCard state={state} players={players} /> : null}
             <Glyph name="trophy" className="mx-auto size-12 text-gold" />
             <p className="font-display text-[30px] font-extrabold text-ivory">{winner ? `الفائز: ${winner.name}` : "انتهت المباراة"}</p>
             {winner ? <p className="text-[15px] text-mist">{winner.why}</p> : null}
@@ -1424,6 +1784,9 @@ export function HalbaPlayerPanel({ roomId, meId }: { roomId: string; meId: strin
   const iJudge = canJudge(state, players, meId, false);
   const winner = phase === "over" ? halbaWinner(state, players) : null;
   const mySide = sideOf(state, meId);
+  const groupLeft = useGroupFinish(roomId, state, false, reload);
+  const nextIn = useAutoNext(roomId, state, false, reload);
+  const inGroup = !!meId && players.some((p) => p.id === meId && (!p.is_host || state.host_plays)) && (state.mode !== "teams" || !!state.teams?.[meId]);
 
   // A fighter's phone also closes the bidding when the clock hits zero (in case the host's screen is asleep).
   useEffect(() => {
@@ -1449,8 +1812,16 @@ export function HalbaPlayerPanel({ roomId, meId }: { roomId: string; meId: strin
 
       {phase === "" || phase === "idle" ? <p className="text-[15px] text-mist">انتظروا المضيف ليبدأ أول جولة.</p> : null}
 
-      {state.topic && ["bid", "prove", "steal_offer", "steal", "result"].includes(phase) ? <TopicCard topic={state.topic} /> : null}
+      {state.topic && ["bid", "prove", "steal_offer", "steal", "result", "group"].includes(phase) ? <TopicCard topic={state.topic} /> : null}
       <RoundBadges state={state} />
+
+      {phase === "group" ? (
+        <>
+          <Timer seconds={groupLeft} label="الجولة الجماعية" />
+          {inGroup ? <GroupPlay roomId={roomId} state={state} /> : null}
+          <GroupCounts state={state} players={players} />
+        </>
+      ) : null}
 
       {phase === "bid" ? <Timer seconds={bidLeft} label="وقت المزايدة" /> : null}
       {isAnswering(state) ? (
@@ -1480,7 +1851,9 @@ export function HalbaPlayerPanel({ roomId, meId }: { roomId: string; meId: strin
         </>
       ) : null}
 
-      {phase === "result" && state.result ? <ResultCard state={state} players={players} /> : null}
+      {phase === "result" && state.group_result ? <GroupResult state={state} players={players} /> : null}
+      {phase === "result" && !state.group_result && state.result ? <ResultCard state={state} players={players} /> : null}
+      {phase === "result" && nextIn !== null ? <p className="text-[14px] text-gold">الجولة التالية بعد {nextIn}…</p> : null}
 
       {phase === "over" ? (
         <>

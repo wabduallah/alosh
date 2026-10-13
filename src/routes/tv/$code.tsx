@@ -8,7 +8,6 @@ import { ensureSession, supabase } from "@/lib/supabase";
 import { useRoomSession } from "@/lib/room-session";
 import { GridTv } from "@/components/grid";
 import {
-  AnswersList,
   Hearts,
   MatchSummary,
   RoundBadges,
@@ -21,8 +20,10 @@ import {
   nameOf,
   participants,
   performerLabel,
-  phaseAnswers,
   progressOf,
+  RevealAnswers,
+  GroupCounts,
+  GroupResult,
   roundLabel,
   predictionTally,
   sideName,
@@ -594,7 +595,7 @@ function Scoreboard({ ranking }: { ranking: Player[] }) {
             >
               <span className="w-[1.6em] text-center font-bold tabular-nums text-mist">{i + 1}</span>
               <span className="min-w-0 flex-1 truncate font-semibold">{p.player_name}</span>
-              <span className="font-bold tabular-nums text-gold">{p.score}</span>
+              <span dir="ltr" className="font-bold tabular-nums text-gold">{p.score}</span>
             </li>
           ))}
         </ol>
@@ -917,6 +918,7 @@ function Halba({ state, players }: { state: HalbaState; players: Player[] }) {
   const bidLeft = useSecondsLeft(phase === "bid" ? state.bid_ends_at : null);
   const proveLeft = useSecondsLeft(isAnswering(state) ? state.prove_ends_at : null);
   const offerLeft = useSecondsLeft(phase === "steal_offer" ? state.offer_ends_at : null);
+  const groupLeft = useSecondsLeft(phase === "group" ? state.group_ends_at : null);
   const guests = participants(state, players);
   const knocked = state.knocked ?? [];
   const maxLives = state.max_lives ?? 1;
@@ -959,6 +961,20 @@ function Halba({ state, players }: { state: HalbaState; players: Player[] }) {
               </p>
             ) : null}
 
+            {phase === "group" ? (
+              <div className="grid justify-items-center gap-[2vh]">
+                <p className="font-display text-[clamp(26px,3vw,60px)] font-extrabold text-gold">👥 جولة جماعية: الكل يكتب الآن!</p>
+                <p className="text-[clamp(16px,1.6vw,32px)] text-mist">كل إجابة صحيحة ما كتبها غيرك = 100 نقطة</p>
+                <GroupCounts state={state} players={players} big />
+                <Clock seconds={groupLeft} label="الوقت" big />
+              </div>
+            ) : null}
+            {phase === "result" && state.group_result ? (
+              <div className="mx-auto w-full max-w-[60vw]">
+                <GroupResult state={state} players={players} big />
+              </div>
+            ) : null}
+
             {phase === "bid" ? (
               <div className="grid justify-items-center gap-[1.5vh]">
                 <p className="text-[clamp(18px,1.9vw,36px)] text-mist">{state.bidder_name ? "أعلى مزايدة" : `زايدوا من جوالاتكم · تبدأ من ${state.topic?.min ?? 1}`}</p>
@@ -987,8 +1003,8 @@ function Halba({ state, players }: { state: HalbaState; players: Player[] }) {
                   <span className="text-[0.4em] text-mist">/{goalOf(state)}</span>
                 </p>
                 <p className="text-[clamp(16px,1.5vw,30px)] text-mist">{state.checking ? "إجابات صحيحة" : "إجابات مكتوبة · تُطابَق كلها عند الاكتمال"}</p>
-                <AnswersList answers={phaseAnswers(state)} big />
-                <Clock seconds={proveLeft} label={proveLeft === 0 ? "انتهى الوقت" : "الوقت"} />
+                <RevealAnswers state={state} />
+                <Clock seconds={proveLeft} label={proveLeft === 0 ? "انتهى الوقت" : "الوقت"} big />
               </div>
             ) : null}
 
@@ -1056,7 +1072,7 @@ function Halba({ state, players }: { state: HalbaState; players: Player[] }) {
                   >
                     <span className="min-w-0 flex-1 truncate font-semibold">{p.player_name}</span>
                     {!out ? <Hearts left={state.lives?.[p.id] ?? maxLives} max={maxLives} className="text-[0.8em]" /> : null}
-                    <span className="font-bold tabular-nums text-gold">{p.score}</span>
+                    <span dir="ltr" className="font-bold tabular-nums text-gold">{p.score}</span>
                   </li>
                 );
               })}
@@ -1067,12 +1083,12 @@ function Halba({ state, players }: { state: HalbaState; players: Player[] }) {
   );
 }
 
-function Clock({ seconds, label }: { seconds: number | null; label: string }) {
+function Clock({ seconds, label, big = false }: { seconds: number | null; label: string; big?: boolean }) {
   useTicks(seconds, true);
   if (seconds === null) return null;
   const hot = seconds > 0 && seconds <= 5;
   return (
-    <p className="inline-flex items-center gap-3 text-[clamp(18px,1.9vw,36px)] text-mist">
+    <p className={cx("inline-flex items-center gap-3 text-mist", big ? "text-[clamp(24px,2.8vw,56px)]" : "text-[clamp(18px,1.9vw,36px)]")}>
       <Glyph name="clock" className="size-[1.1em] text-gold" />
       {label}
       <span dir="ltr" key={hot ? seconds : "calm"} className={cx("font-display text-[1.6em] font-extrabold tabular-nums", seconds <= 5 ? "text-wrong" : "text-gold", hot && "beat")}>
