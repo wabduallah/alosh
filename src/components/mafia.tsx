@@ -18,9 +18,14 @@ export type MafiaSettings = {
   bodyguard?: boolean;
   sniper?: boolean;
   seer?: boolean;
+  spy?: boolean;
+  vote_seconds?: number;
+  narrator?: "host" | "random";
 };
-export type MafiaVote = { voter: string; target: string; weight: number };
-export type MafiaLogEntry = { round: number; type: "night" | "vote" | "shot"; text: string; votes?: MafiaVote[] };
+export type MafiaVote = { voter: string; target: string; weight: number; auto?: boolean };
+/** What everyone sees after a vote: how many votes each player got, without who cast them. */
+export type MafiaTally = { target: string; votes: number };
+export type MafiaLogEntry = { round: number; type: "night" | "vote" | "shot"; text: string; votes?: MafiaVote[]; tally?: MafiaTally[] };
 export type MafiaPublicState = {
   phase?: string;
   round?: number;
@@ -30,7 +35,11 @@ export type MafiaPublicState = {
   settings?: MafiaSettings;
   mayor?: string | null;
   last_votes?: MafiaVote[] | null;
+  last_tally?: MafiaTally[] | null;
   day_ends_at?: string | null;
+  vote_ends_at?: string | null;
+  narrator_id?: string | null;
+  narrator_name?: string | null;
   log?: MafiaLogEntry[];
   last_shot?: { text: string; at: string } | null;
   last_settings?: MafiaSettings | null;
@@ -47,6 +56,7 @@ export const ROLE_NAMES: Record<string, string> = {
   bodyguard: "حارس",
   sniper: "قنّاص",
   seer: "عرّافة",
+  spy: "جاسوس",
 };
 export const ROLE_ICONS: Record<string, string> = {
   mafia: "🔪",
@@ -58,6 +68,7 @@ export const ROLE_ICONS: Record<string, string> = {
   bodyguard: "🛡️",
   sniper: "🎯",
   seer: "🔮",
+  spy: "🕶️",
 };
 export const ROLE_HINTS: Record<string, string> = {
   mafia: "كل ليلة اتفقوا مع زملائكم على ضحية. ترون اختيارات بعض هنا. نهارًا لا تكشفوا أنفسكم.",
@@ -69,6 +80,74 @@ export const ROLE_HINTS: Record<string, string> = {
   bodyguard: "كل ليلة احرس لاعبًا. إذا هاجمته المافيا تموت أنت بدلًا منه.",
   sniper: "معك رصاصة واحدة في المباراة، تطلقها في النهار على من تشكّ فيه. لا يعرف أحد من أطلقها.",
   seer: "مرة واحدة في المباراة تعرف دور لاعب خرج من اللعبة. استخدمها في الوقت المناسب.",
+  spy: "أنت حليف المافيا: تعرفهم ويعرفونك، لكنك لا تختار ضحية. نهارًا ضلّل المواطنين، ولو ادّعيت أنك مافيا.",
+};
+
+/**
+ * The full role card shown when roles are dealt: which side, what the role does,
+ * when it acts, and how it wins. Every role has one.
+ */
+export const ROLE_INFO: Record<string, { team: string; does: string; when: string; wins: string }> = {
+  mafia: {
+    team: "المافيا",
+    does: "تختارون مع زملائكم ضحية كل ليلة. ترون اختيارات بعضكم، والضحية من يختاره أكثركم.",
+    when: "في الليل من جوالك، وفي النهار تتظاهر أنك مواطن.",
+    wins: "تفوز المافيا إذا صار عددها (مع الجاسوس) مساويًا لعدد الباقين.",
+  },
+  citizen: {
+    team: "المواطنون",
+    does: "لا قدرة خاصة لك، لكن صوتك هو سلاح المواطنين.",
+    when: "في النهار: ناقش واتّهم وصوّت.",
+    wins: "يفوز المواطنون إذا أُقصيت المافيا كلها.",
+  },
+  doctor: {
+    team: "المواطنون",
+    does: "تحمي لاعبًا من القتل كل ليلة. لا تحمي نفس اللاعب ليلتين متتاليتين، وتحمي نفسك مرة واحدة فقط.",
+    when: "كل ليلة من جوالك.",
+    wins: "مع المواطنين.",
+  },
+  detective: {
+    team: "المواطنون",
+    does: "تحقق من لاعب واحد كل ليلة: هل هو مافيا أم لا. النتيجة تظهر لك وحدك بعد انتهاء الليل.",
+    when: "كل ليلة من جوالك. انتبه: الجاسوس يظهر لك «ليس مافيا».",
+    wins: "مع المواطنين.",
+  },
+  jester: {
+    team: "وحدك",
+    does: "هدفك أن يقصيك اللاعبون بالتصويت. تصرّف بطريقة تثير الشك… بدون أن تكشف أنك المهرّج.",
+    when: "في النهار أثناء النقاش.",
+    wins: "تفوز وحدك إذا أُقصيت بالتصويت (لا يكفي أن تُقتل ليلًا).",
+  },
+  mayor: {
+    team: "المواطنون",
+    does: "الجميع يعرف أنك العمدة، وصوتك في التصويت يُحسب بصوتين.",
+    when: "في التصويت. انتبه: المافيا تعرفك أيضًا.",
+    wins: "مع المواطنين.",
+  },
+  bodyguard: {
+    team: "المواطنون",
+    does: "تحرس لاعبًا كل ليلة. إذا هاجمته المافيا تموت أنت بدلًا منه وينجو هو.",
+    when: "كل ليلة من جوالك.",
+    wins: "مع المواطنين.",
+  },
+  sniper: {
+    team: "المواطنون",
+    does: "معك رصاصة واحدة في المباراة كلها، تقتل بها من تشكّ فيه. لا يعرف أحد من أطلقها.",
+    when: "في النهار فقط، من جوالك وفي أي لحظة.",
+    wins: "مع المواطنين. اختر جيدًا: إن أصبت مواطنًا خسر فريقك لاعبًا.",
+  },
+  seer: {
+    team: "المواطنون",
+    does: "مرة واحدة في المباراة تكشف الدور الحقيقي للاعب خرج من اللعبة (قُتل أو أُقصي).",
+    when: "بعد أن يخرج أحد، في أي وقت من جوالك.",
+    wins: "مع المواطنين.",
+  },
+  spy: {
+    team: "المافيا (حليف)",
+    does: "تفتح عينك مع المافيا: تعرفهم ويعرفونك، لكنك لا تختار ضحية معهم. مهمتك التضليل في النهار، حتى لو ادّعيت أنك أنت المافيا.",
+    when: "في الليل ترى المافيا في جوالك، وفي النهار تناقش وتصوّت.",
+    wins: "تفوز مع المافيا. المحقق يراك «ليس مافيا»، والمافيا لا تستطيع قتلك.",
+  },
 };
 
 export const WINNERS: Record<string, string> = {
@@ -100,7 +179,7 @@ export function narratorLine(state: MafiaPublicState, rows: MafiaPlayerRow[]) {
   if (phase === "night") {
     const parts = [
       state.round && state.round > 1 ? "حلّ الليل من جديد… أغمضوا أعينكم جميعًا." : "حلّ الليل… أغمضوا أعينكم جميعًا.",
-      "المافيا: افتحوا جوالاتكم بهدوء واختاروا ضحيتكم.",
+      s.spy ? "المافيا والجاسوس: افتحوا أعينكم وتعرّفوا على بعض. المافيا تختار ضحيتها من الجوال." : "المافيا: افتحوا جوالاتكم بهدوء واختاروا ضحيتكم.",
       "الطبيب: من تحمي الليلة؟",
       "المحقق: من تشكّ فيه؟",
     ];
@@ -191,8 +270,8 @@ export function useMafiaCues(state: MafiaPublicState, rows: MafiaPlayerRow[], vo
   }, [state.last_shot?.at, state.last_shot?.text, voice]);
 }
 
-/** Who voted for whom, grouped by the player they voted for. */
-export function VotesView({ votes, big = false }: { votes: MafiaVote[]; big?: boolean }) {
+/** Who voted for whom, grouped by the player they voted for. For the narrator only (mafia_vote_details). */
+export function VotesView({ votes, big = false, title = "من صوّت على من (للراوي فقط)" }: { votes: MafiaVote[]; big?: boolean; title?: string }) {
   if (votes.length === 0) return null;
   const groups = new Map<string, MafiaVote[]>();
   for (const v of votes) groups.set(v.target, [...(groups.get(v.target) ?? []), v]);
@@ -201,19 +280,67 @@ export function VotesView({ votes, big = false }: { votes: MafiaVote[]; big?: bo
     .sort((a, b) => b.total - a.total);
   return (
     <div className={cx("text-start", big ? "text-[clamp(16px,1.5vw,30px)]" : "text-[14px]")}>
-      <p className={cx("mb-2 font-bold text-mist", big ? "text-[clamp(14px,1.3vw,26px)]" : "text-[13px]")}>من صوّت على من</p>
+      <p className={cx("mb-2 font-bold text-mist", big ? "text-[clamp(14px,1.3vw,26px)]" : "text-[13px]")}>{title}</p>
       <ul className="grid gap-1.5">
         {rows.map((r) => (
           <li key={r.target} className="flex flex-wrap items-baseline gap-x-2 rounded-[12px] bg-deep-2/60 px-3 py-1.5">
             <b className="text-ivory">{r.target}</b>
             <span className="tabular-nums text-gold">{r.total}</span>
             <span className="min-w-0 flex-1 text-mist">
-              ← {r.list.map((v) => `${v.voter}${v.weight > 1 ? " (×2)" : ""}`).join("، ")}
+              ← {r.list.map((v) => `${v.voter}${v.weight > 1 ? " (×2)" : ""}${v.auto ? " (تلقائي)" : ""}`).join("، ")}
             </span>
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+/** What everyone sees after a vote: votes per player, without who cast them. */
+export function TallyView({ tally, big = false }: { tally: MafiaTally[]; big?: boolean }) {
+  if (tally.length === 0) return null;
+  return (
+    <div className={cx("text-start", big ? "text-[clamp(16px,1.5vw,30px)]" : "text-[14px]")}>
+      <p className={cx("mb-2 font-bold text-mist", big ? "text-[clamp(14px,1.3vw,26px)]" : "text-[13px]")}>نتيجة التصويت</p>
+      <ul className="flex flex-wrap gap-1.5">
+        {tally.map((t) => (
+          <li key={t.target} className="flex items-baseline gap-2 rounded-[12px] bg-deep-2/60 px-3 py-1.5">
+            <b className="text-ivory">{t.target}</b>
+            <span className="tabular-nums text-gold">{t.votes}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** The role card dealt to a player: name, side, what it does, when, and how it wins. */
+export function RoleCard({ role, open = true }: { role: string; open?: boolean }) {
+  const info = ROLE_INFO[role];
+  if (!info) return null;
+  const side = info.team.startsWith("المافيا") ? "border-wrong/50 bg-wrong-fill/10" : info.team === "وحدك" ? "border-gold/50 bg-gold/10" : "border-correct/40 bg-correct-fill/10";
+  return (
+    <details open={open} className={cx("group mt-3 rounded-[18px] border p-4 text-start", side)}>
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-[15px] font-bold text-ivory">
+        <span aria-hidden="true">{ROLE_ICONS[role]}</span>
+        بطاقة دورك: {ROLE_NAMES[role]}
+        <span className="ms-auto text-[12px] font-semibold text-mist">{info.team}</span>
+      </summary>
+      <dl className="mt-3 grid gap-2 text-[14px] leading-6">
+        <div>
+          <dt className="font-bold text-gold">ماذا تفعل</dt>
+          <dd className="text-ivory">{info.does}</dd>
+        </div>
+        <div>
+          <dt className="font-bold text-gold">متى</dt>
+          <dd className="text-ivory">{info.when}</dd>
+        </div>
+        <div>
+          <dt className="font-bold text-gold">متى تفوز</dt>
+          <dd className="text-ivory">{info.wins}</dd>
+        </div>
+      </dl>
+    </details>
   );
 }
 
@@ -225,7 +352,7 @@ export function MafiaSummary({ state, rows, big = false }: { state: MafiaPublicS
     <div className={cx("grid gap-4 text-start", big && "lg:grid-cols-2 lg:items-start")}>
       <ul className={cx("grid gap-1.5", big ? "grid-cols-2 text-[clamp(15px,1.4vw,28px)]" : "grid-cols-2 text-[14px]")}>
         {rows.map((p) => (
-          <li key={p.player_id} className={cx("flex min-w-0 items-center gap-2 rounded-[12px] px-3 py-1.5", p.player_role === "mafia" ? "bg-wrong-fill/20" : "bg-deep-2/60")}>
+          <li key={p.player_id} className={cx("flex min-w-0 items-center gap-2 rounded-[12px] px-3 py-1.5", p.player_role === "mafia" || p.player_role === "spy" ? "bg-wrong-fill/20" : "bg-deep-2/60")}>
             <span aria-hidden="true">{ROLE_ICONS[p.player_role ?? ""] ?? "•"}</span>
             <span className={cx("min-w-0 flex-1 truncate font-semibold", p.alive ? "text-ivory" : "text-mist line-through")}>{p.player_name}</span>
             <span className="shrink-0 text-mist">{ROLE_NAMES[p.player_role ?? ""] ?? ""}</span>
@@ -243,10 +370,8 @@ export function MafiaSummary({ state, rows, big = false }: { state: MafiaPublicS
                   <p key={i} className="leading-relaxed text-ivory">
                     <span aria-hidden="true">{l.type === "night" ? "🌙 " : l.type === "shot" ? "🎯 " : "🗳️ "}</span>
                     {l.text}
-                    {l.votes && l.votes.length > 0 ? (
-                      <span className="block text-mist">
-                        {l.votes.map((v) => `${v.voter}${v.weight > 1 ? "×2" : ""} ← ${v.target}`).join(" · ")}
-                      </span>
+                    {l.tally && l.tally.length > 0 ? (
+                      <span className="block text-mist">{l.tally.map((t) => `${t.target} ${t.votes}`).join(" · ")}</span>
                     ) : null}
                   </p>
                 ))}

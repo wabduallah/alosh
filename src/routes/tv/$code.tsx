@@ -29,7 +29,7 @@ import {
   useTicks,
   type HalbaState,
 } from "@/components/halba";
-import { MafiaSummary, ROLE_NAMES, VotesView, WINNERS, mmss, narratorLine, setVoicePreference, speak, useCountdown, useMafiaCues, voicePreference, type MafiaPlayerRow, type MafiaPublicState } from "@/components/mafia";
+import { MafiaSummary, ROLE_NAMES, TallyView, WINNERS, mmss, narratorLine, setVoicePreference, speak, useCountdown, useMafiaCues, voicePreference, type MafiaPlayerRow, type MafiaPublicState } from "@/components/mafia";
 
 /**
  * TV screen for a room (/tv/CODE): display only, for the big screen in the room.
@@ -737,7 +737,9 @@ function Mafia({ state, rows, players }: { state: StateData; rows: MafiaRow[]; p
     : phase === "day" ? `نهار الجولة ${round}`
     : phase === "vote" ? (runoff ? "إعادة التصويت" : "التصويت")
     : WINNERS[ms.winner ?? ""] ?? "انتهت اللعبة";
-  const votes = (night || runoff || phase === "over") && Array.isArray(ms.last_votes) ? ms.last_votes : [];
+  // Only how many votes each player got: who voted for whom is the narrator's alone.
+  const votes = (night || runoff) && Array.isArray(ms.last_tally) ? ms.last_tally : [];
+  const voteLeft = useCountdown(phase === "vote" ? ms.vote_ends_at : null);
 
   return (
     <div className="relative grid flex-1 content-center gap-[3vh]">
@@ -772,6 +774,12 @@ function Mafia({ state, rows, players }: { state: StateData; rows: MafiaRow[]; p
           <p className={cx("mt-[2vh] text-[clamp(20px,2vw,38px)] font-bold", phase === "day" && "rise rounded-[clamp(14px,1.2vw,24px)] border border-wrong/50 bg-wrong-fill/20 px-[2vw] py-[1vh]")}>
             {phase === "day" ? "🎯 " : ""}
             {ms.last_result}
+          </p>
+        ) : null}
+        {ms.narrator_name ? <p className="mt-[1vh] text-[clamp(14px,1.2vw,22px)] text-mist">🎙️ الراوي: {ms.narrator_name}</p> : null}
+        {phase === "vote" && voteLeft !== null ? (
+          <p dir="ltr" key={voteLeft <= 10 ? voteLeft : "calm-v"} className={cx("mt-[2vh] font-display text-[clamp(48px,6vw,120px)] leading-none font-extrabold tabular-nums", voteLeft <= 10 ? "beat text-wrong" : "text-gold")}>
+            {mmss(voteLeft)}
           </p>
         ) : null}
         {phase === "day" && dayLeft !== null ? (
@@ -816,7 +824,7 @@ function Mafia({ state, rows, players }: { state: StateData; rows: MafiaRow[]; p
           </Panel>
           {votes.length > 0 ? (
             <Panel>
-              <VotesView votes={votes} big />
+              <TallyView tally={votes} big />
             </Panel>
           ) : null}
         </div>
