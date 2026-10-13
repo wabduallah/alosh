@@ -243,6 +243,12 @@ function DefaultsEditor({ initial }: { initial: GameDefaults }) {
   const [deadSee, setDeadSee] = useState(m0.dead_see_roles ?? true);
   const [roles, setRoles] = useState<Partial<Record<MafiaRole, boolean>>>(m0.roles ?? {});
   const [gridSeconds, setGridSeconds] = useState(initial["tactical-grid"]?.seconds ?? 60);
+  const c0 = initial.court ?? {};
+  const [courtHost, setCourtHost] = useState(c0.host_plays ?? true);
+  const [courtAuto, setCourtAuto] = useState(c0.auto ?? false);
+  const [courtQ, setCourtQ] = useState(c0.question_seconds ?? 180);
+  const [courtC, setCourtC] = useState(c0.closing_seconds ?? 60);
+  const [courtV, setCourtV] = useState(c0.vote_seconds ?? 60);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
 
@@ -275,6 +281,7 @@ function DefaultsEditor({ initial }: { initial: GameDefaults }) {
         roles: Object.fromEntries(MAFIA_ROLES.map((r) => [r.key, !!roles[r.key]])),
       },
       "tactical-grid": { seconds: gridSeconds },
+      court: { host_plays: courtHost, auto: courtAuto, question_seconds: courtQ, closing_seconds: courtC, vote_seconds: courtV },
     } satisfies GameDefaults);
     setBusy(false);
     setMessage(error ? { tone: "error", text: error } : { tone: "ok", text: "حُفظت الإعدادات. تُطبَّق على الغرف الجديدة." });
@@ -352,6 +359,16 @@ function DefaultsEditor({ initial }: { initial: GameDefaults }) {
 
       <GameBox id="tactical-grid" title="تحديات العش">
         <Chips label="وقت السؤال" value={gridSeconds} onChange={setGridSeconds} options={[30, 45, 60, 90].map((n) => ({ value: n, label: `${n} ث` }))} />
+      </GameBox>
+
+      <GameBox id="court" title="المحكمة">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Chips label="الاستجواب (لكل جولة)" value={courtQ} onChange={setCourtQ} options={[{ value: 0, label: "بدون" }, { value: 120, label: "2 د" }, { value: 180, label: "3 د" }, { value: 300, label: "5 د" }]} />
+          <Chips label="المرافعة (لكل طرف)" value={courtC} onChange={setCourtC} options={[{ value: 0, label: "بدون" }, { value: 45, label: "45 ث" }, { value: 60, label: "دقيقة" }, { value: 90, label: "90 ث" }]} />
+          <Chips label="التصويت" value={courtV} onChange={setCourtV} options={[{ value: 0, label: "بدون" }, { value: 30, label: "30 ث" }, { value: 60, label: "دقيقة" }, { value: 90, label: "90 ث" }]} />
+        </div>
+        <Toggle checked={courtHost} onChange={setCourtHost} label="المضيف يلعب دورًا" />
+        <Toggle checked={courtAuto} onChange={setCourtAuto} label="الانتقال تلقائي حين ينتهي الوقت" />
       </GameBox>
 
       <GameBox id="heads-up" title="هل تعرف">

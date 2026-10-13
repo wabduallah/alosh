@@ -7,6 +7,8 @@ import { vibrate } from "@/lib/prefs";
 import { useSecondsLeft } from "@/components/halba";
 import { ResultShare, type ShareResult } from "@/components/result-share";
 import { useLivePoll } from "@/lib/live";
+import { useSiteSettings } from "@/lib/site-settings";
+import { setVoicePreference, speak, voicePreference } from "@/components/mafia";
 
 /**
  * «المحكمة»: a case, secret role cards, evidence in rounds, questioning, closing speeches,
@@ -17,8 +19,8 @@ import { useLivePoll } from "@/lib/live";
 export type CourtKind = "accused" | "prosecutor" | "lawyer" | "detective" | "witness" | "juror";
 type Step = { phase: CourtPhase; stage?: number; side?: "prosecutor" | "lawyer"; seconds?: number };
 type CourtPhase = "intro" | "evidence" | "question" | "closing" | "vote" | "verdict" | "over";
-export type CourtEvidence = { stage: number; title: string; text: string; icon: string };
-type CastRow = { player_id: string; player_name: string; kind: CourtKind; name: string; brief: string | null };
+export type CourtEvidence = { stage: number; title: string; text: string; icon: string; time?: string | null };
+type CastRow = { player_id: string; player_name: string; kind: CourtKind; name: string; brief: string | null; role_key?: string };
 type PointsRow = { player_id: string; player_name: string; kind: CourtKind; name: string; vote: boolean | null; points: number; why: string[] };
 type CardReveal = { player_name: string; kind: CourtKind; name: string; secret: string; later: string | null };
 
@@ -44,7 +46,7 @@ export type CourtState = {
   settings?: CourtSettings;
   last_settings?: CourtSettings | null;
 };
-type CourtSettings = { case_id?: string | null; host_plays?: boolean; question_seconds?: number; closing_seconds?: number; vote_seconds?: number; used_cases?: string[] };
+type CourtSettings = { case_id?: string | null; host_plays?: boolean; auto?: boolean; question_seconds?: number; closing_seconds?: number; vote_seconds?: number; used_cases?: string[] };
 type MyCard = {
   started: boolean;
   late?: boolean;
@@ -84,9 +86,12 @@ const ERRORS: Record<string, string> = {
   BUSY: "انتظر ثواني، هناك اعتراض الآن.",
   ACCUSED: "المتهم لا يصوّت.",
   NOT_IN_CASE: "لست من أطراف هذه القضية.",
+  BAD_PLAYER: "اختر لاعبًا آخر من الغرفة.",
+  HAS_ROLE: "هذا اللاعب له دور في القضية. اختر من دخل بعد التوزيع أو محلّفًا.",
+  NO_ROLE: "تعذّر إيجاد الدور في القضية.",
   OVER: "انتهت المحاكمة.",
 };
-const SETUP_HINT = "لعبة المحكمة تحتاج تشغيل الملفين supabase/court_v1.sql و supabase/court_cases_v1.sql في Supabase.";
+const SETUP_HINT = "لعبة المحكمة تحتاج تشغيل ملفات supabase/court_v1.sql و court_cases_v1.sql و court_v2.sql في Supabase.";
 
 const isCourt = (s: CourtState) => s.game === "court";
 
@@ -199,6 +204,106 @@ function useStepLeft(state: CourtState) {
   return useSecondsLeft(state.ends_at ?? null);
 }
 
+/**
+ * Automatic moves (supabase/court_v2.sql): when the timer of a step ends and the host chose
+ * «انتقال تلقائي», any screen in the room asks the server to move on. The TV asks first, then the
+ * host, then the phones, so one request usually does it; the server ignores late or early ones.
+ */
+function useAutoTick(roomId: string, state: CourtState, delayMs: number) {
+  const left = useStepLeft(state);
+  const asked = useRef<number | null>(null);
+  const step = state.step ?? -1;
+  const auto = !!state.settings?.auto;
+  useEffect(() => {
+    if (!supabase || !auto || left !== 0 || asked.current === step || state.phase === "over") return;
+    asked.current = step;
+    const client = supabase;
+    const t = window.setTimeout(() => {
+      void client.rpc("court_tick", { p_room_id: roomId, p_step: step });
+    }, delayMs);
+    return () => window.clearTimeout(t);
+  }, [roomId, auto, left, step, state.phase, delayMs]);
+}
+
+/** A gavel when a timer runs out, on the screens that make sound. */
+function useTimeUpCue(state: CourtState, on: boolean) {
+  const left = useStepLeft(state);
+  const rang = useRef<string | null>(null);
+  useEffect(() => {
+    const key = `${state.step ?? -1}`;
+    if (!on || left !== 0 || rang.current === key) return;
+    rang.current = key;
+    playCue("gavel");
+  }, [on, left, state.step]);
+}
+
+/** "9:20", "21:05" or "٩:٢٠" → minutes since midnight, for ordering the timeline. */
+export function timeValue(t: string | null | undefined): number | null {
+  if (!t) return null;
+  const latin = t.replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+  const m = latin.match(/(\d{1,2})[:.](\d{2})/);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+/** Evidence with a time, as a line from the earliest to the latest: contradictions show at a glance. */
+function Timeline({ items, stage, big = false }: { items: CourtEvidence[]; stage?: number; big?: boolean }) {
+  const points = items
+    .map((e) => ({ e, v: timeValue(e.time) }))
+    .filter((x): x is { e: CourtEvidence; v: number } => x.v !== null)
+    .sort((a, b) => a.v - b.v);
+  if (points.length < 2) return null;
+  return (
+    <div className={cx("rounded-[20px] border border-gold/30 bg-night/50 px-4 pt-3 pb-4", big && "rounded-[1.4vw] px-[1.6vw] pt-[1vw] pb-[1.4vw]")}>
+      <p className={cx("mb-2 font-bold text-gold", big ? "text-[clamp(14px,1.4vw,28px)]" : "text-[13px]")}>🕰️ الخط الزمني</p>
+      {/* Desktop and TV: a line of the times in order. Phones: a list. */}
+      <div className={cx(big ? "block" : "hidden sm:block")}>
+        <div dir="ltr" className="relative mx-[6%]" style={{ height: big ? "clamp(110px,15vh,190px)" : "120px" }}>
+          <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-gold/40" />
+          {points.map(({ e }, i) => {
+            // Evenly spaced in time order: close times stay readable.
+            const x = (i / (points.length - 1)) * 100;
+            const up = i % 2 === 0;
+            const fresh = stage !== undefined && e.stage === stage;
+            return (
+              <div key={`${e.title}-${i}`} className="absolute top-1/2 grid -translate-x-1/2 justify-items-center" style={{ left: `${x}%` }}>
+                <span className={cx("absolute -translate-y-1/2 rounded-full border-2", fresh ? "border-gold bg-gold" : "border-gold/70 bg-night", big ? "size-[clamp(12px,1.1vw,22px)]" : "size-3")} />
+                <span
+                  dir="rtl"
+                  className={cx(
+                    "absolute w-max max-w-[16vw] text-center leading-tight",
+                    up ? "bottom-3" : "top-3",
+                    big ? "text-[clamp(11px,1.05vw,20px)]" : "max-w-32 text-[11px]",
+                  )}
+                >
+                  <b dir="ltr" className={cx("block font-display tabular-nums", fresh ? "text-gold" : "text-ivory")}>
+                    {e.time}
+                  </b>
+                  <span className="text-mist">
+                    {e.icon} {e.title}
+                  </span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <ol className={cx("grid gap-1", big ? "hidden" : "sm:hidden")}>
+        {points.map(({ e }, i) => (
+          <li key={i} className="flex items-baseline gap-2 text-[13px]">
+            <b dir="ltr" className="w-12 shrink-0 font-display tabular-nums text-gold">
+              {e.time}
+            </b>
+            <span className="text-ivory">
+              {e.icon} {e.title}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 /* ---------------- Shared pieces ---------------- */
 
 function Clock({ seconds, big = false }: { seconds: number | null; big?: boolean }) {
@@ -286,6 +391,11 @@ function EvidenceGrid({ items, stage, big = false, compact = false }: { items: C
             <span className="grid min-w-0 gap-1">
               <span className={cx("font-bold text-ivory", big ? "text-[clamp(16px,1.7vw,34px)]" : "text-[15px]")}>
                 {e.title}
+                {e.time ? (
+                  <span dir="ltr" className={cx("ms-2 rounded-full bg-deep-2 px-2 font-display tabular-nums text-gold", big ? "text-[0.75em]" : "text-[12px]")}>
+                    🕰️ {e.time}
+                  </span>
+                ) : null}
                 {fresh && !big ? <span className="ms-2 rounded-full bg-gold/20 px-2 text-[11px] text-gold">جديد</span> : null}
               </span>
               <span className={cx("text-mist", big ? "text-[clamp(14px,1.45vw,30px)] leading-snug" : "text-[14px] leading-6")}>{e.text}</span>
@@ -501,10 +611,16 @@ export function courtShare(state: CourtState): ShareResult {
   };
 }
 
-/** The player's role card. Hidden by default so neighbours do not read it. */
-function RoleCard({ card, open, onToggle }: { card: MyCard; open: boolean; onToggle: () => void }) {
+/**
+ * The player's role card. The secret shows only while the player holds the button down, so a
+ * neighbour glancing at the phone sees nothing. New information is announced, not shown.
+ */
+function RoleCard({ card, fresh }: { card: MyCard; fresh: boolean }) {
+  const [open, setOpen] = useState(false);
   if (!card.kind) return null;
   const k = KINDS[card.kind];
+  const show = () => setOpen(true);
+  const hide = () => setOpen(false);
   return (
     <div className="grid gap-3 rounded-[24px] border border-gold/50 bg-[linear-gradient(160deg,#3a2210cc,#140c2bcc)] p-5 shadow-glow-gold">
       <div className="flex items-center gap-3">
@@ -515,32 +631,90 @@ function RoleCard({ card, open, onToggle }: { card: MyCard; open: boolean; onTog
           <span className="text-[13px] font-semibold text-gold">{card.name === (card.kind_ar ?? k.label) ? "دورك" : `دورك: ${card.kind_ar ?? k.label}`}</span>
           <span className="font-display text-[21px] leading-8 font-extrabold text-ivory">{card.name}</span>
         </div>
-        <Button tone="quiet" className="min-h-10 px-3" onClick={onToggle} aria-expanded={open}>
-          <Glyph name={open ? "lock" : "info"} className="size-[18px]" />
-          {open ? "أخفِ" : "اعرض بطاقتي"}
-        </Button>
       </div>
-      {open ? (
-        <>
-          {card.brief ? <p className="text-[14px] text-mist">{card.brief}</p> : null}
-          <div className="rounded-[16px] border border-line-strong/60 bg-night/60 p-3">
-            <p className="mb-1 text-[12px] font-bold text-gold">🔒 سري، لك وحدك</p>
-            <p className="text-[16px] leading-7 text-ivory">{card.secret}</p>
-          </div>
-          {card.later ? (
-            <div className="rise rounded-[16px] border border-gold/60 bg-gold/10 p-3">
-              <p className="mb-1 text-[12px] font-bold text-gold">✉️ معلومة جديدة وصلتك</p>
-              <p className="text-[16px] leading-7 text-ivory">{card.later}</p>
-            </div>
-          ) : card.later_pending ? (
-            <p className="text-[13px] text-mist">✉️ ستصلك معلومة إضافية في جولة لاحقة.</p>
-          ) : null}
-          <p className="text-[13px] leading-6 text-mist">🎯 {k.goal}</p>
-        </>
-      ) : (
-        <p className="text-[13px] text-mist">اضغط «اعرض بطاقتي» وأنت بعيد عن أعين الباقين.</p>
-      )}
+      {card.brief ? <p className="text-[14px] text-mist">{card.brief}</p> : null}
+      <button
+        type="button"
+        aria-pressed={open}
+        onPointerDown={(e) => {
+          e.preventDefault();
+          show();
+        }}
+        onPointerUp={hide}
+        onPointerLeave={hide}
+        onPointerCancel={hide}
+        onKeyDown={(e) => {
+          if (e.key === " " || e.key === "Enter") {
+            e.preventDefault();
+            setOpen((v) => !v);
+          }
+        }}
+        onContextMenu={(e) => e.preventDefault()}
+        className={cx(
+          "grid min-h-24 touch-none gap-2 rounded-[16px] border p-3 text-start transition select-none [-webkit-touch-callout:none]",
+          open ? "border-gold/60 bg-night/80" : "border-dashed border-line-strong/70 bg-night/40",
+        )}
+      >
+        {open ? (
+          <>
+            <span className="text-[12px] font-bold text-gold">🔒 سري، لك وحدك</span>
+            <span className="text-[16px] leading-7 text-ivory">{card.secret}</span>
+            {card.later ? (
+              <span className="grid gap-1 rounded-[12px] border border-gold/60 bg-gold/10 p-2.5">
+                <span className="text-[12px] font-bold text-gold">✉️ معلومة وصلتك لاحقًا</span>
+                <span className="text-[16px] leading-7 text-ivory">{card.later}</span>
+              </span>
+            ) : null}
+          </>
+        ) : (
+          <span className="grid justify-items-center gap-1 py-2 text-center">
+            <span aria-hidden="true" className="text-[26px]">
+              👆
+            </span>
+            <span className="text-[15px] font-bold text-ivory">اضغط مطوّلًا لقراءة بطاقتك السرية</span>
+            <span className="text-[12px] text-mist">تختفي حين ترفع إصبعك.</span>
+          </span>
+        )}
+      </button>
+      {fresh ? (
+        <p className="beat rounded-[12px] bg-gold/15 p-2 text-center text-[14px] font-bold text-gold">✉️ وصلتك معلومة جديدة! اضغط مطوّلًا على البطاقة</p>
+      ) : card.later_pending ? (
+        <p className="text-[13px] text-mist">✉️ ستصلك معلومة إضافية في جولة لاحقة.</p>
+      ) : null}
+      <p className="text-[13px] leading-6 text-mist">🎯 {k.goal}</p>
     </div>
+  );
+}
+
+/** Private notes on this phone, kept for this case only. */
+function Notes({ roomId, caseId }: { roomId: string; caseId?: string }) {
+  const key = `alosh-court-notes:${roomId}:${caseId ?? ""}`;
+  const [text, setText] = useState("");
+  useEffect(() => {
+    try {
+      setText(localStorage.getItem(key) ?? "");
+    } catch {
+      setText("");
+    }
+  }, [key]);
+  return (
+    <details className="surface rounded-[20px] p-4">
+      <summary className="cursor-pointer text-[15px] font-semibold text-ivory">📝 ملاحظاتي {text.trim() ? <span className="text-[12px] font-normal text-mist">(محفوظة في جوالك)</span> : null}</summary>
+      <textarea
+        className="mt-3 min-h-28 w-full rounded-[14px] border border-line-strong bg-deep-2/70 p-3 text-[15px] leading-7 text-ivory outline-none placeholder:text-faint focus:border-gold"
+        value={text}
+        maxLength={2000}
+        placeholder="مثل: نورة قالت 9:00، والخزنة فُتحت 9:20…"
+        onChange={(e) => {
+          setText(e.target.value);
+          try {
+            localStorage.setItem(key, e.target.value);
+          } catch {
+            // Storage blocked: the notes stay for this visit.
+          }
+        }}
+      />
+    </details>
   );
 }
 
@@ -664,23 +838,23 @@ function Actions({ roomId, state, card, reloadCard }: { roomId: string; state: C
 
 /** Everything after the start, for a phone: the host's (when the host plays) and the players'. */
 function PlayView({ roomId, state, meId, card, reloadCard }: { roomId: string; state: CourtState; meId: string | null; card: MyCard | null; reloadCard: () => Promise<void> }) {
-  const [open, setOpen] = useState(false);
-  // The card opens by itself at the start, and when new information arrives.
+  // New information is announced with a vibration until the next phase.
   const laterSeen = useRef<string | null>(null);
-  useEffect(() => {
-    if (state.phase === "intro") setOpen(true);
-  }, [state.phase]);
+  const [fresh, setFresh] = useState(false);
   useEffect(() => {
     if (card?.later && card.later !== laterSeen.current) {
       laterSeen.current = card.later;
-      setOpen(true);
+      setFresh(true);
       vibrate([100, 60, 100]);
     }
   }, [card?.later]);
+  useEffect(() => {
+    if (state.phase !== "evidence") setFresh(false);
+  }, [state.phase]);
   const over = state.phase === "over";
   return (
     <div className="grid gap-4">
-      {card?.started && !over ? <RoleCard card={card} open={open} onToggle={() => setOpen((v) => !v)} /> : null}
+      {card?.started && !over ? <RoleCard card={card} fresh={fresh} /> : null}
       <ObjectionFlash state={state} />
       {state.phase === "verdict" ? <VerdictCard state={state} /> : null}
       {over ? (
@@ -704,9 +878,11 @@ function PlayView({ roomId, state, meId, card, reloadCard }: { roomId: string; s
       {!over && (state.evidence ?? []).length ? (
         <section className="grid gap-2">
           <h3 className="text-[15px] font-bold text-ivory">📁 الأدلة</h3>
+          <Timeline items={state.evidence ?? []} stage={state.phase === "evidence" ? state.stage : undefined} />
           <EvidenceGrid items={state.evidence ?? []} stage={state.phase === "evidence" ? state.stage : undefined} compact />
         </section>
       ) : null}
+      {card?.started && !over ? <Notes roomId={roomId} caseId={state.case?.id} /> : null}
       {!over ? (
         <details className="surface rounded-[20px] p-4">
           <summary className="cursor-pointer text-[15px] font-semibold text-ivory">أطراف القضية</summary>
@@ -729,6 +905,8 @@ export function CourtHostPanel({ roomId }: { roomId: string }) {
   const { card, reload: reloadCard } = useMyCard(roomId, state);
   const { run, busy, error } = useRun(roomId, reload);
   useCourtCues(state, { sound: true });
+  useTimeUpCue(state, true);
+  useAutoTick(roomId, state, 700);
   const me = players.find((p) => p.is_host) ?? null;
 
   if (!isCourt(state) || !state.phase) return <CourtSetup state={state} players={players} busy={busy} error={error} onStart={(settings) => run("court_start", { p_settings: settings })} />;
@@ -749,11 +927,15 @@ export function CourtHostPanel({ roomId }: { roomId: string }) {
         ) : null}
         {state.phase === "vote" ? (
           <p className="text-center text-[14px] text-mist">
-            صوّت {state.votes_count ?? 0} من {state.voters_count ?? 0}. أعلن الحكم متى شئت: من لم يصوّت لا يُحسب.
+            صوّت {state.votes_count ?? 0} من {state.voters_count ?? 0}. يُعلن الحكم وحده إذا صوّت الجميع، أو أعلنه متى شئت: من لم يصوّت لا يُحسب.
           </p>
+        ) : state.settings?.auto && !over && state.ends_at ? (
+          <p className="text-center text-[13px] text-mist">⏩ الانتقال تلقائي حين ينتهي الوقت.</p>
         ) : null}
         <ErrorLine error={error} />
       </div>
+
+      {!over && state.phase !== "verdict" ? <ReplacePanel state={state} players={players} busy={busy} onReplace={(from, to) => run("court_replace", { p_from: from, p_to: to })} /> : null}
 
       {state.phase === "question" ? (
         <div className="surface grid gap-3 rounded-[24px] p-4">
@@ -795,6 +977,67 @@ export function CourtHostPanel({ roomId }: { roomId: string }) {
   );
 }
 
+/** A player left: the host gives the role to someone who joined later, or to a juror. */
+function ReplacePanel({ state, players, busy, onReplace }: { state: CourtState; players: Player[]; busy: boolean; onReplace: (from: string, to: string) => Promise<boolean> }) {
+  const present = new Set(players.map((p) => p.id));
+  const cast = state.cast ?? [];
+  const gone = cast.filter((c) => !present.has(c.player_id));
+  const inCase = new Set(cast.map((c) => c.player_id));
+  const candidates = [
+    ...players.filter((p) => !inCase.has(p.id)).map((p) => ({ id: p.id, label: `${p.player_name} (دخل بعد التوزيع)` })),
+    ...cast.filter((c) => c.kind === "juror" && present.has(c.player_id)).map((c) => ({ id: c.player_id, label: `${c.player_name} (محلّف)` })),
+  ];
+  const [from, setFrom] = useState<string>("");
+  const [to, setTo] = useState<string>("");
+  useEffect(() => {
+    if (gone.length && !from) setFrom(gone[0].player_id);
+  }, [gone.length, from]);
+  const select = "min-h-11 w-full rounded-[14px] border border-line-strong bg-deep-2/70 px-3 text-[15px] text-ivory";
+  return (
+    <details className={cx("surface rounded-[20px] p-4", gone.length > 0 && "border border-wrong/50")} open={gone.length > 0}>
+      <summary className="cursor-pointer text-[15px] font-semibold text-ivory">
+        🔁 استبدال لاعب {gone.length ? <span className="text-wrong">· غادر {gone.map((g) => g.player_name).join("، ")}</span> : null}
+      </summary>
+      <div className="mt-3 grid gap-2">
+        <p className="text-[13px] leading-6 text-mist">ينتقل الدور ببطاقته السرية إلى لاعب جديد في الغرفة أو محلّف، ويُلغى صوت كل منهما إن وُجد.</p>
+        <select className={select} value={from} onChange={(e) => setFrom(e.target.value)} aria-label="الدور">
+          <option value="">اختر الدور…</option>
+          {cast.map((c) => (
+            <option key={c.player_id} value={c.player_id}>
+              {KINDS[c.kind].icon} {c.kind === "juror" ? "محلّف" : c.name}: {c.player_name}
+              {present.has(c.player_id) ? "" : " (غادر)"}
+            </option>
+          ))}
+        </select>
+        <select className={select} value={to} onChange={(e) => setTo(e.target.value)} aria-label="ينتقل إلى">
+          <option value="">ينتقل إلى…</option>
+          {candidates
+            .filter((c) => c.id !== from)
+            .map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+        </select>
+        {candidates.length === 0 ? <p className="text-[13px] text-mist">لا يوجد لاعب متاح. اطلب من أحد الدخول للغرفة بالرمز.</p> : null}
+        <Button
+          tone="quiet"
+          className="min-h-11"
+          disabled={busy || !from || !to}
+          onClick={async () => {
+            if (await onReplace(from, to)) {
+              setFrom("");
+              setTo("");
+            }
+          }}
+        >
+          انقل الدور
+        </Button>
+      </div>
+    </details>
+  );
+}
+
 function CourtSetup({
   state,
   players,
@@ -816,7 +1059,22 @@ function CourtSetup({
   const [q, setQ] = useState(last?.question_seconds ?? 180);
   const [c, setC] = useState(last?.closing_seconds ?? 60);
   const [v, setV] = useState(last?.vote_seconds ?? 60);
+  const [auto, setAuto] = useState(last?.auto ?? false);
   const used = new Set(last?.used_cases ?? []);
+
+  // The admin's defaults (admin panel → الموقع) when the room has no earlier match.
+  const site = useSiteSettings();
+  const applied = useRef(false);
+  useEffect(() => {
+    const d = site?.game_defaults?.court;
+    if (!d || last || applied.current) return;
+    applied.current = true;
+    if (typeof d.host_plays === "boolean") setHostPlays(d.host_plays);
+    if (typeof d.auto === "boolean") setAuto(d.auto);
+    if ([0, 120, 180, 300].includes(d.question_seconds ?? -1)) setQ(d.question_seconds as number);
+    if ([0, 45, 60, 90].includes(d.closing_seconds ?? -1)) setC(d.closing_seconds as number);
+    if ([0, 30, 60, 90].includes(d.vote_seconds ?? -1)) setV(d.vote_seconds as number);
+  }, [site, last]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -876,7 +1134,18 @@ function CourtSetup({
         <Choice label="الاستجواب (لكل جولة)" value={String(q)} onChange={(x) => setQ(Number(x))} options={[{ value: "0", label: "بدون" }, { value: "120", label: "2 د" }, { value: "180", label: "3 د" }, { value: "300", label: "5 د" }]} />
         <Choice label="المرافعة (لكل طرف)" value={String(c)} onChange={(x) => setC(Number(x))} options={[{ value: "0", label: "بدون" }, { value: "45", label: "45 ث" }, { value: "60", label: "دقيقة" }, { value: "90", label: "90 ث" }]} />
         <Choice label="التصويت" value={String(v)} onChange={(x) => setV(Number(x))} options={[{ value: "0", label: "بدون" }, { value: "30", label: "30 ث" }, { value: "60", label: "دقيقة" }, { value: "90", label: "90 ث" }]} />
-        <p className="text-[13px] text-mist">المؤقت يظهر للجميع، وأنت تنتقل للمرحلة التالية بزر واحد متى شئت.</p>
+        <Choice
+          label="الانتقال"
+          value={auto ? "auto" : "manual"}
+          onChange={(x) => setAuto(x === "auto")}
+          options={[
+            { value: "manual", label: "أنا أنقل الجلسة" },
+            { value: "auto", label: "تلقائي حين ينتهي الوقت" },
+          ]}
+        />
+        <p className="text-[13px] text-mist">
+          {auto ? "حين ينتهي المؤقت تنتقل الجلسة وحدها، وتأخذ الأدلة 30 ثانية للقراءة. وتقدر تنقلها قبل ذلك بزر «التالي»." : "المؤقت يظهر للجميع، وأنت تنتقل للمرحلة التالية بزر واحد متى شئت."} والتصويت يُغلق وحده إذا صوّت الجميع.
+        </p>
       </div>
 
       <ErrorLine error={error} />
@@ -884,7 +1153,7 @@ function CourtSetup({
         tone="primary"
         className="min-h-14 text-[18px]"
         disabled={!ready || busy}
-        onClick={() => onStart({ case_id: caseId, host_plays: hostPlays, question_seconds: q, closing_seconds: c, vote_seconds: v })}
+        onClick={() => onStart({ case_id: caseId, host_plays: hostPlays, question_seconds: q, closing_seconds: c, vote_seconds: v, auto })}
       >
         {busy ? "نوزّع الأدوار…" : "افتح الجلسة ووزّع الأدوار"}
       </Button>
@@ -939,6 +1208,9 @@ export function CourtPlayerPanel({ roomId, meId }: { roomId: string; meId: strin
   const { state } = useCourtLive(roomId);
   const { card, reload: reloadCard } = useMyCard(roomId, state);
   useCourtCues(state, { vibe: true });
+  // Phones ask last (and at slightly different moments), only if the TV and host did not.
+  const [delay] = useState(() => 1800 + Math.floor(Math.random() * 1500));
+  useAutoTick(roomId, state, delay);
 
   if (!isCourt(state) || !state.phase) return <Note>المضيف يجهّز الجلسة ويختار القضية. ستصلك بطاقة دورك هنا.</Note>;
   if (card && !card.started && card.late && state.phase !== "over") return <Note>دخلت بعد توزيع الأدوار، فتابع هذه القضية من الشاشة الكبيرة. ستدخل القضية القادمة.</Note>;
@@ -955,9 +1227,78 @@ export function CourtPlayerPanel({ roomId, meId }: { roomId: string; meId: strin
 
 /* ---------------- TV ---------------- */
 
+/** What the narrator says when the session moves on, the stand changes, or someone objects. */
+function narration(state: CourtState): string {
+  const p = state.phase;
+  if (p === "intro") return `قضية: ${state.case?.title ?? ""}. ${state.case?.intro ?? ""}`;
+  if (p === "evidence") {
+    const items = (state.evidence ?? []).filter((e) => e.stage === state.stage);
+    return `أدلة الجولة ${state.stage}. ${items.map((e) => `${e.title}${e.time ? `، الساعة ${e.time}` : ""}: ${e.text}`).join(" ")}`;
+  }
+  if (p === "question") return "بدأ الاستجواب. اسألوا المتهم والشهود.";
+  if (p === "closing") return state.side === "prosecutor" ? "الكلمة للمدعي العام." : "الكلمة للمحامي.";
+  if (p === "vote") return "حان وقت التصويت. مذنب أم بريء؟";
+  if (p === "verdict") return `حكمت هيئة المحلفين: ${state.verdict?.guilty ? "مذنب" : "بريء"}.`;
+  if (p === "over") return `${state.truth?.correct ? "تحققت العدالة." : "خطأ قضائي."} الحقيقة: ${state.truth?.text ?? ""}`;
+  return "";
+}
+
+function useNarrator(state: CourtState, on: boolean) {
+  const lastStep = useRef<number | null>(null);
+  const lastStand = useRef<string | null>(null);
+  const lastObjection = useRef<string | null>(null);
+  useEffect(() => {
+    const step = state.step ?? -1;
+    if (!on || !isCourt(state) || lastStep.current === step) return;
+    lastStep.current = step;
+    speak(narration(state));
+  }, [on, state.step, state.phase]);
+  useEffect(() => {
+    const id = state.stand ?? null;
+    if (!on || id === lastStand.current) return;
+    lastStand.current = id;
+    const who = (state.cast ?? []).find((c) => c.player_id === id);
+    if (who) speak(`على المنصة: ${who.name}`);
+  }, [on, state.stand]);
+  useEffect(() => {
+    const at = state.objection?.at ?? null;
+    if (!on || !at || at === lastObjection.current) return;
+    lastObjection.current = at;
+    if (Date.now() - Date.parse(at) < 6000) speak("اعتراض!");
+  }, [on, state.objection?.at]);
+}
+
+function VoiceToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={() => onChange(!on)}
+      className={cx(
+        "inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-[clamp(13px,1.1vw,20px)] font-semibold",
+        on ? "border-gold bg-gold/15 text-gold" : "border-line-strong/70 text-mist hover:text-ivory",
+      )}
+    >
+      <Glyph name={on ? "volume" : "mute"} className="size-[1.2em]" />
+      {on ? "صوت الراوي" : "الراوي صامت"}
+    </button>
+  );
+}
+
 export function CourtTv({ roomId }: { roomId: string }) {
   const { state, players } = useCourtLive(roomId);
   useCourtCues(state, { sound: true });
+  useTimeUpCue(state, true);
+  useAutoTick(roomId, state, 0);
+  const [voice, setVoice] = useState(false);
+  useEffect(() => setVoice(voicePreference()), []);
+  useNarrator(state, voice);
+  const toggleVoice = (next: boolean) => {
+    setVoice(next);
+    setVoicePreference(next);
+    if (next) speak(narration(state) || "صوت الراوي يعمل.");
+    else window.speechSynthesis?.cancel();
+  };
   if (!isCourt(state) || !state.phase) {
     return (
       <div className="grid justify-items-center gap-[2vw] text-center">
@@ -972,7 +1313,9 @@ export function CourtTv({ roomId }: { roomId: string }) {
   const p = state.phase;
   return (
     <div className="grid gap-[1.4vw]">
-      <CaseHeader state={state} big />
+      <CaseHeader state={state} big>
+        <VoiceToggle on={voice} onChange={toggleVoice} />
+      </CaseHeader>
       <ObjectionFlash state={state} big />
       {p === "intro" ? (
         <>
@@ -985,6 +1328,7 @@ export function CourtTv({ roomId }: { roomId: string }) {
         <>
           <p className="text-center font-display text-[clamp(22px,2.6vw,52px)] font-extrabold text-gold">📁 أدلة الجولة {state.stage}</p>
           <EvidenceGrid items={(state.evidence ?? []).filter((e) => e.stage === state.stage)} big />
+          <Timeline items={state.evidence ?? []} stage={state.stage} big />
           {(state.stage ?? 1) > 1 ? (
             <details className="text-[clamp(13px,1.2vw,24px)] text-mist">
               <summary>الأدلة السابقة</summary>
@@ -997,6 +1341,7 @@ export function CourtTv({ roomId }: { roomId: string }) {
         <>
           <p className="text-center font-display text-[clamp(22px,2.6vw,52px)] font-extrabold text-ivory">🎙️ الاستجواب: اسألوا المتهم والشهود</p>
           <StandBanner state={state} big />
+          <Timeline items={state.evidence ?? []} big />
           <EvidenceGrid items={state.evidence ?? []} big />
           <CastGrid state={state} big briefs={false} />
         </>
@@ -1004,6 +1349,7 @@ export function CourtTv({ roomId }: { roomId: string }) {
       {p === "closing" ? (
         <>
           <ClosingBanner state={state} big />
+          <Timeline items={state.evidence ?? []} big />
           <EvidenceGrid items={state.evidence ?? []} big />
         </>
       ) : null}
@@ -1026,6 +1372,7 @@ export function CourtTv({ roomId }: { roomId: string }) {
             <VerdictCard state={state} big />
             <TruthCard state={state} big />
           </div>
+          <Timeline items={state.evidence ?? []} big />
           <PointsTable state={state} big />
           <CardsReveal state={state} big />
         </>
