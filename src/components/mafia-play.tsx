@@ -3,6 +3,8 @@ import { Button, cx } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { useLivePoll } from "@/lib/live";
 import {
+  LOVERS_INFO,
+  MafiaRecapView,
   MafiaShare,
   MafiaSummary,
   ROLE_HINTS,
@@ -15,6 +17,7 @@ import {
   mmss,
   narratorLine,
   useCountdown,
+  useMafiaRecap,
   type MafiaPlayerRow,
   type MafiaPublicState,
   type MafiaTally,
@@ -46,7 +49,7 @@ const MAFIA_HOST_ERRORS: Record<string, string> = {
 /** mafia_progress(): votes for everyone, night actions for the host only (mafia_v2.sql). */
 type MafiaProgress = { phase?: string; done?: number; total?: number; mafia_split?: boolean };
 
-type NarratorRole = { player_id: string; player_name: string; role: string; alive: boolean };
+type NarratorRole = { player_id: string; player_name: string; role: string; alive: boolean; lover?: string | null };
 
 /**
  * The narrator's screen: setup (host only), each phase's controls, the roles of everyone
@@ -75,14 +78,17 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
   const [spy, setSpy] = useState(false);
   const [voteSeconds, setVoteSeconds] = useState(60);
   const [randomNarrator, setRandomNarrator] = useState(0);
+  const [lovers, setLovers] = useState(false);
+  const [deadSee, setDeadSee] = useState(true);
   const [roles, setRoles] = useState<NarratorRole[]>([]);
   const [details, setDetails] = useState<(MafiaVote & { round: number; stage: number })[]>([]);
 
-  useEffect(() => {
+  // Everything reloads when the room's state or players change (realtime, with a slow safety poll);
+  // the night and vote progress, which lives in tables without realtime, has its own light poll below.
+  const loadAll = async () => {
     if (!supabase) return;
     const client = supabase;
-    let cancelled = false;
-    async function load() {
+    {
       const [{ data: gs }, { data: list }, { data: prog }, { count }, { data: secret }, { data: detail }] = await Promise.all([
         client.from("room_game_state").select("state_data").eq("room_id", roomId).maybeSingle(),
         client.rpc("mafia_players", { p_room_id: roomId }),
@@ -92,7 +98,6 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
         client.rpc("mafia_roles", { p_room_id: roomId }),
         client.rpc("mafia_vote_details", { p_room_id: roomId }),
       ]);
-      if (cancelled) return;
       setRoles(Array.isArray(secret) ? (secret as NarratorRole[]) : []);
       setDetails(
         Array.isArray(detail)
@@ -104,13 +109,8 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
       setProgress((prog ?? null) as MafiaProgress | null);
       if (typeof count === "number") setGuests(count);
     }
-    load();
-    const poll = window.setInterval(load, 1500);
-    return () => {
-      cancelled = true;
-      window.clearInterval(poll);
-    };
-  }, [roomId]);
+  };
+  useLivePoll(`mafia-narrator-${roomId}`, [{ table: "room_game_state", filter: `room_id=eq.${roomId}` }, { table: "room_players", filter: `room_id=eq.${roomId}` }], loadAll);
 
   async function step(fn: "mafia_start" | "mafia_resolve_night" | "mafia_open_vote" | "mafia_close_vote" | "mafia_reset" | "mafia_vote_timeout", args: Record<string, unknown> = {}) {
     if (!supabase || busy) return;
@@ -148,6 +148,24 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
   const over = phase === "over";
   const alive = rows.filter((p) => p.alive).length;
   const runoff = Array.isArray(state.runoff) ? state.runoff : null;
+  const recap = useMafiaRecap(roomId, over);
+
+  // Who has chosen or voted so far: every 2.5 seconds, during the night and the vote only.
+  useEffect(() => {
+    if (!supabase || (phase !== "night" && phase !== "vote")) return;
+    const client = supabase;
+    let live = true;
+    const tick = () =>
+      void client.rpc("mafia_progress", { p_room_id: roomId }).then(({ data }) => {
+        if (live) setProgress((data ?? null) as MafiaProgress | null);
+      });
+    tick();
+    const t = window.setInterval(() => document.visibilityState === "visible" && tick(), 2500);
+    return () => {
+      live = false;
+      window.clearInterval(t);
+    };
+  }, [roomId, phase, round]);
 
   // After «مباراة جديدة», the setup starts from the last match's choices.
   const prefilled = useRef(false);
@@ -166,6 +184,8 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
     setSpy(!!last.spy);
     setVoteSeconds(last.vote_seconds ?? 60);
     setRandomNarrator(last.narrator === "random" ? 1 : 0);
+    setLovers(!!last.lovers);
+    setDeadSee(last.dead_see_roles !== false);
   }, [phase, state.last_settings]);
   useEffect(() => {
     if (phase !== "") prefilled.current = false;
@@ -312,23 +332,29 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
                 { on: sniper, set: setSniper, role: "sniper", text: "رصاصة واحدة في المباراة، يطلقها في النهار." },
                 { on: seer, set: setSeer, role: "seer", text: "مرة واحدة تعرف دور لاعب خرج من اللعبة." },
                 { on: spy, set: setSpy, role: "spy", text: "حليف المافيا: يعرفهم ويعرفونه ولا يختار ضحية، ويفوز معهم." },
+                { on: lovers, set: setLovers, role: "lovers", text: "لاعبان من فريق المواطنين يعرف كل منهما الآخر، وإذا مات أحدهما مات الآخر حزنًا." },
               ].map((r) => (
                 <label key={r.role} className="flex items-start gap-3 rounded-2xl border border-line bg-deep-2/50 p-3">
                   <input type="checkbox" checked={r.on} onChange={(e) => r.set(e.target.checked)} className="mt-1 size-5 accent-[var(--color-gold)]" />
                   <span>
-                    <b className="text-ivory">
-                      {ROLE_ICONS[r.role]} {ROLE_NAMES[r.role]}
-                    </b>
+                    <b className="text-ivory">{r.role === "lovers" ? "❤️ العاشقان" : `${ROLE_ICONS[r.role]} ${ROLE_NAMES[r.role]}`}</b>
                     <span className="block text-xs text-muted">{r.text}</span>
                   </span>
                 </label>
               ))}
             </div>
+            <label className="flex items-start gap-3 rounded-2xl border border-line bg-deep-2/50 p-3">
+              <input type="checkbox" checked={deadSee} onChange={(e) => setDeadSee(e.target.checked)} className="mt-1 size-5 accent-[var(--color-gold)]" />
+              <span>
+                <b className="text-ivory">👻 المقتولون يرون الأدوار</b>
+                <span className="block text-xs text-muted">من يخرج يتابع اللعبة ويرى أدوار الجميع في جواله، بشرط ألا يتكلم أو يلمّح.</span>
+              </span>
+            </label>
             <p className={cx("text-center text-xs", fits ? "text-muted" : "text-gold")}>
               {guests < 5
                 ? "تحتاجون 5 لاعبين على الأقل غير الراوي."
                 : fits
-                  ? `الأدوار: ${plannedMafia} مافيا${spy ? "، جاسوس" : ""}، طبيب، محقق${bodyguard ? "، حارس" : ""}${mayor ? "، عمدة" : ""}${jester ? "، مهرّج" : ""}${sniper ? "، قنّاص" : ""}${seer ? "، عرّافة" : ""}، والباقي مواطنون (${guests - plannedMafia - special}).`
+                  ? `الأدوار: ${plannedMafia} مافيا${spy ? "، جاسوس" : ""}، طبيب، محقق${bodyguard ? "، حارس" : ""}${mayor ? "، عمدة" : ""}${jester ? "، مهرّج" : ""}${sniper ? "، قنّاص" : ""}${seer ? "، عرّافة" : ""}، والباقي مواطنون (${guests - plannedMafia - special})${lovers ? "، واثنان من فريق المواطنين عاشقان" : ""}.`
                   : "الأدوار أكثر من اللاعبين. قلّل الأدوار الإضافية أو عدد المافيا."}
             </p>
           </div>
@@ -400,7 +426,10 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
               {roles.map((r) => (
                 <li key={r.player_id} className={cx("flex min-w-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5", r.role === "mafia" || r.role === "spy" ? "bg-wrong-fill/20" : "bg-deep-2/60", !r.alive && "opacity-50 line-through")}>
                   <span aria-hidden="true">{ROLE_ICONS[r.role]}</span>
-                  <span className="min-w-0 flex-1 truncate font-semibold text-ivory">{r.player_name}</span>
+                  <span className="min-w-0 flex-1 truncate font-semibold text-ivory">
+                    {r.player_name}
+                    {r.lover ? <span title={`عاشق ${r.lover}`}> ❤️</span> : null}
+                  </span>
                   <span className="shrink-0 text-xs text-mist">{ROLE_NAMES[r.role]}</span>
                 </li>
               ))}
@@ -427,6 +456,8 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
                     sniper,
                     seer,
                     spy,
+                    lovers,
+                    dead_see_roles: deadSee,
                   },
                 })
               }
@@ -456,7 +487,8 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
           <div className="mt-5 grid gap-4">
             <p className="text-2xl font-extrabold text-ivory">{WINNERS[state.winner ?? ""] ?? "انتهت اللعبة"}</p>
             <MafiaSummary state={state} rows={rows} />
-            <MafiaShare state={state} rows={rows} />
+            <MafiaRecapView recap={recap} />
+            <MafiaShare state={state} rows={rows} recap={recap} />
             {isHost ? (
               <Button type="button" tone="primary" className="mx-auto" onClick={() => step("mafia_reset")} disabled={busy}>
                 مباراة جديدة بنفس اللاعبين
@@ -509,6 +541,10 @@ function MafiaChoice({ label, value, options, onChange }: { label: string; value
 type MafiaInspection = { round: number; name: string; mafia: boolean };
 type MafiaMe = {
   started: boolean;
+  /** Joined after the roles were dealt: plays the next match. */
+  late?: boolean;
+  /** The other lover's name, when this player is one of the lovers. */
+  lover?: string | null;
   narrator?: boolean;
   spies?: string[];
   role?: string;
@@ -584,33 +620,53 @@ export function MafiaPlayerPanel({
     return () => window.clearTimeout(t);
   }, [phase, voteLeft, round, runoff?.join(","), roomId]);
 
-  useEffect(() => {
+  const load = async () => {
     if (!supabase) return;
     const client = supabase;
-    let cancelled = false;
-    async function load() {
+    {
       const [{ data: mine, error: e1 }, { data: list, error: e2 }, { data: prog }, { data: team }] = await Promise.all([
         client.rpc("mafia_my_role", { p_room_id: roomId }),
         client.rpc("mafia_players", { p_room_id: roomId }),
         client.rpc("mafia_progress", { p_room_id: roomId }),
         client.rpc("mafia_team_picks", { p_room_id: roomId }),
       ]);
-      if (cancelled) return;
       if (e1 || e2) return setMessage("تعذّر تحميل اللعبة.");
       setMe((mine ?? null) as MafiaMe | null);
       setRows((list ?? []) as MafiaRow[]);
       setProgress((prog ?? null) as typeof progress);
       setPicks(Array.isArray(team) ? (team as MafiaPick[]) : []);
     }
-    load();
-    const poll = window.setInterval(load, 1500);
-    return () => {
-      cancelled = true;
-      window.clearInterval(poll);
+  };
+  useLivePoll(`mafia-player-${roomId}`, [{ table: "room_game_state", filter: `room_id=eq.${roomId}` }, { table: "room_players", filter: `room_id=eq.${roomId}` }], load);
+
+  // Inside a phase, only what changes without touching the room's state: the mafia's picks
+  // at night (for the mafia), and the vote count during the vote. A light poll for each.
+  const isMafia = me?.role === "mafia" && me?.alive !== false;
+  useEffect(() => {
+    if (!supabase) return;
+    const client = supabase;
+    const nightPicks = phase === "night" && isMafia;
+    if (!nightPicks && phase !== "vote") return;
+    let live = true;
+    const tick = () => {
+      if (document.visibilityState !== "visible") return;
+      if (nightPicks)
+        void client.rpc("mafia_team_picks", { p_room_id: roomId }).then(({ data }) => {
+          if (live && Array.isArray(data)) setPicks(data as MafiaPick[]);
+        });
+      else
+        void client.rpc("mafia_progress", { p_room_id: roomId }).then(({ data }) => {
+          if (live) setProgress((data ?? null) as typeof progress);
+        });
     };
-    // progress is only set inside load.
+    const t = window.setInterval(tick, nightPicks ? 3000 : 4000);
+    return () => {
+      live = false;
+      window.clearInterval(t);
+    };
+    // progress is only set here and in load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId]);
+  }, [roomId, phase, round, isMafia]);
 
   // A new phase, round or runoff starts with no choice made yet.
   useEffect(() => {
@@ -687,6 +743,7 @@ export function MafiaPlayerPanel({
 
   const chosenName = rows.find((p) => p.player_id === picked)?.player_name ?? null;
   const over = phase === "over";
+  const recap = useMafiaRecap(roomId, over);
   const split = role === "mafia" && phase === "night" && new Set(picks.map((x) => x.target_id)).size > 1;
 
   if (me?.narrator) return <MafiaNarratorPanel roomId={roomId} roomCode={roomCode} roomStatus={roomStatus} isHost={false} />;
@@ -699,7 +756,13 @@ export function MafiaPlayerPanel({
       </p>
 
       {!me?.started ? (
-        <p className="mt-4 text-sm text-muted">انتظروا المضيف لبدء اللعبة.</p>
+        me?.late || (phase !== "" && phase !== "over" && !!me) ? (
+          <p className="mt-4 rounded-2xl border border-gold/40 bg-gold/10 p-3 text-sm text-ivory">
+            المباراة بدأت قبل انضمامك، فتدخل المباراة القادمة. تابع النقاش حتى ذلك الحين بدون أن تتدخل.
+          </p>
+        ) : (
+          <p className="mt-4 text-sm text-muted">انتظروا المضيف لبدء اللعبة.</p>
+        )
       ) : (
         <>
           <p className="mt-3 text-sm text-muted">دورك</p>
@@ -745,9 +808,13 @@ export function MafiaPlayerPanel({
               حققت الليلة مع <b>{me?.pending_inspect}</b>. النتيجة تظهر بعد انتهاء الليل.
             </p>
           ) : null}
-          {!iAmAlive ? (
-            <p className="mt-3 rounded-2xl bg-deep-2/60 p-3 text-sm text-muted">أنت خارج اللعبة. يمكنك متابعة النقاش.</p>
+          {me?.lover ? (
+            <div className="mt-3 rounded-2xl border border-[#ff5a7a66] bg-[#83184322] p-3 text-start text-sm">
+              <p className="font-bold text-ivory">❤️ عاشقك: {me.lover}</p>
+              <p className="mt-1 leading-6 text-muted">{LOVERS_INFO}</p>
+            </div>
           ) : null}
+          {!iAmAlive && !over ? <GhostView roomId={roomId} phase={phase} /> : null}
         </>
       )}
 
@@ -887,7 +954,8 @@ export function MafiaPlayerPanel({
         <div className="mt-5 grid gap-4">
           <p className="text-xl font-extrabold text-ivory">{WINNERS[winner ?? ""] ?? "انتهت اللعبة"}</p>
           <MafiaSummary state={state as MafiaPublicState} rows={rows} />
-          <MafiaShare state={state as MafiaPublicState} rows={rows} />
+          <MafiaRecapView recap={recap} />
+          <MafiaShare state={state as MafiaPublicState} rows={rows} recap={recap} />
         </div>
       ) : null}
 
@@ -900,6 +968,44 @@ export function MafiaPlayerPanel({
   );
 }
 
+
+/**
+ * Out of the game: watch quietly, and (when the host allows it) see everyone's role.
+ * The roles come from mafia_roles(), which answers dead players only while the match runs.
+ */
+function GhostView({ roomId, phase }: { roomId: string; phase: string }) {
+  const [roles, setRoles] = useState<Array<{ player_id: string; player_name: string; role: string; alive: boolean; lover?: string | null }>>([]);
+  useEffect(() => {
+    if (!supabase) return;
+    let live = true;
+    void supabase.rpc("mafia_roles", { p_room_id: roomId }).then(({ data }) => {
+      if (live && Array.isArray(data)) setRoles(data as typeof roles);
+    });
+    return () => {
+      live = false;
+    };
+  }, [roomId, phase]);
+  return (
+    <div className="mt-3 grid gap-2 rounded-2xl border border-line bg-deep-2/60 p-3 text-start">
+      <p className="text-sm font-bold text-ivory">👻 أنت خارج اللعبة</p>
+      <p className="text-xs leading-6 text-muted">تابع بصمت: لا تتكلم ولا تلمّح بأي شيء تعرفه، حتى بتعابير وجهك.</p>
+      {roles.length > 0 ? (
+        <ul className="grid grid-cols-2 gap-1.5 text-sm">
+          {roles.map((r) => (
+            <li key={r.player_id} className={cx("flex min-w-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5", r.role === "mafia" || r.role === "spy" ? "bg-wrong-fill/20" : "bg-deep/60", !r.alive && "opacity-50 line-through")}>
+              <span aria-hidden="true">{ROLE_ICONS[r.role]}</span>
+              <span className="min-w-0 flex-1 truncate font-semibold text-ivory">
+                {r.player_name}
+                {r.lover ? " ❤️" : ""}
+              </span>
+              <span className="shrink-0 text-xs text-mist">{ROLE_NAMES[r.role]}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
 
 /**
  * The host's page: the narrator's screen when the host narrates (or before the roles are dealt),

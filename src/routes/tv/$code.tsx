@@ -31,7 +31,7 @@ import {
   useTicks,
   type HalbaState,
 } from "@/components/halba";
-import { MafiaSummary, ROLE_NAMES, TallyView, WINNERS, mmss, narratorLine, setVoicePreference, speak, useCountdown, useMafiaCues, voicePreference, type MafiaPlayerRow, type MafiaPublicState } from "@/components/mafia";
+import { MafiaRecapView, MafiaSummary, ROLE_NAMES, useMafiaRecap, TallyView, WINNERS, mmss, narratorLine, setVoicePreference, speak, useCountdown, useMafiaCues, voicePreference, type MafiaPlayerRow, type MafiaPublicState } from "@/components/mafia";
 
 /**
  * TV screen for a room (/tv/CODE): display only, for the big screen in the room.
@@ -292,7 +292,7 @@ function TvScreen() {
       ) : isOutsider ? (
         <Outsider state={state} counts={counts} />
       ) : isMafia ? (
-        <Mafia state={state} rows={mafia} players={players} />
+        <Mafia roomId={room.id} state={state} rows={mafia} players={players} />
       ) : isGrid ? (
         <GridTv roomId={room.id} />
       ) : isHalba ? (
@@ -722,10 +722,11 @@ function Outsider({ state, counts }: { state: StateData; counts: Counts | null }
 
 /* ---------------- المافيا ---------------- */
 
-function Mafia({ state, rows, players }: { state: StateData; rows: MafiaRow[]; players: Player[] }) {
+function Mafia({ roomId, state, rows, players }: { roomId: string; state: StateData; rows: MafiaRow[]; players: Player[] }) {
   const ms = state as unknown as MafiaPublicState;
   const list = rows as MafiaPlayerRow[];
   const phase = String(ms.phase ?? "");
+  const recap = useMafiaRecap(roomId, phase === "over");
   const round = Number(ms.round ?? 1);
   const runoff = phase === "vote" && Array.isArray(ms.runoff) ? ms.runoff : null;
   const [voice, setVoice] = useState(false);
@@ -792,8 +793,9 @@ function Mafia({ state, rows, players }: { state: StateData; rows: MafiaRow[]; p
       </Panel>
 
       {phase === "over" ? (
-        <Panel className="relative">
+        <Panel className="relative grid gap-[2vh]">
           <MafiaSummary state={ms} rows={list} big />
+          <MafiaRecapView recap={recap} big />
         </Panel>
       ) : (
         <div className={cx("relative grid gap-[2vw]", votes.length > 0 && "lg:grid-cols-[1.4fr_1fr]")}>
