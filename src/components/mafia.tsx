@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Glyph } from "@/components/brand";
 import { buttonBase, buttonTone, cx } from "@/components/ui";
 import { playCue } from "@/lib/sfx";
+import { supabase } from "@/lib/supabase";
 
 /**
  * «المافيا»: shared pieces for the host, player and TV screens.
@@ -21,6 +22,8 @@ export type MafiaSettings = {
   spy?: boolean;
   vote_seconds?: number;
   narrator?: "host" | "random";
+  lovers?: boolean;
+  dead_see_roles?: boolean;
 };
 export type MafiaVote = { voter: string; target: string; weight: number; auto?: boolean };
 /** What everyone sees after a vote: how many votes each player got, without who cast them. */
@@ -150,6 +153,9 @@ export const ROLE_INFO: Record<string, { team: string; does: string; when: strin
   },
 };
 
+/** The lovers are not a role: two citizens tied together. */
+export const LOVERS_INFO = "أنتما العاشقان، وكلاكما من المواطنين. إذا مات أحدكما (قتلًا أو إقصاءً أو برصاصة) مات الآخر حزنًا. احمِ عاشقك في النقاش بدون أن تكشفكما.";
+
 export const WINNERS: Record<string, string> = {
   mafia: "فازت المافيا",
   citizens: "فاز المواطنون",
@@ -179,7 +185,10 @@ export function narratorLine(state: MafiaPublicState, rows: MafiaPlayerRow[]) {
   if (phase === "night") {
     const parts = [
       state.round && state.round > 1 ? "حلّ الليل من جديد… أغمضوا أعينكم جميعًا." : "حلّ الليل… أغمضوا أعينكم جميعًا.",
-      s.spy ? "المافيا والجاسوس: افتحوا أعينكم وتعرّفوا على بعض. المافيا تختار ضحيتها من الجوال." : "المافيا: افتحوا جوالاتكم بهدوء واختاروا ضحيتكم.",
+      // The spy meets the mafia on the first night only.
+      s.spy && (state.round ?? 1) <= 1
+        ? "المافيا والجاسوس: افتحوا أعينكم وتعرّفوا على بعض. المافيا تختار ضحيتها من الجوال."
+        : "المافيا: افتحوا جوالاتكم بهدوء واختاروا ضحيتكم.",
       "الطبيب: من تحمي الليلة؟",
       "المحقق: من تشكّ فيه؟",
     ];
@@ -383,26 +392,119 @@ export function MafiaSummary({ state, rows, big = false }: { state: MafiaPublicS
   );
 }
 
+/* ---------------- End-of-match recap (mafia_v6.sql) ---------------- */
+
+export type MafiaRecap = {
+  nights: Array<{ round: number; target: string | null; victim: string | null; saved: boolean; guarded: boolean; guard_died: boolean; picks: Array<{ by: string; target: string }> }>;
+  doctor: { name: string; saves: number } | null;
+  detective: { name: string; checks: Array<{ round: number; name: string; role: string }> } | null;
+  sniper: { name: string; target: string; role: string } | null;
+  seer: { name: string; target: string; role: string } | null;
+  bodyguard: { name: string; saves: number } | null;
+  lovers: string[] | null;
+};
+
+/** The recap, once the match is over (null before mafia_v6.sql, or for someone outside the room). */
+export function useMafiaRecap(roomId: string | null | undefined, over: boolean) {
+  const [recap, setRecap] = useState<MafiaRecap | null>(null);
+  useEffect(() => {
+    if (!over || !roomId || !supabase) {
+      setRecap(null);
+      return;
+    }
+    let live = true;
+    void supabase.rpc("mafia_summary", { p_room_id: roomId }).then(({ data }) => {
+      if (live && data && typeof data === "object") setRecap(data as MafiaRecap);
+    });
+    return () => {
+      live = false;
+    };
+  }, [roomId, over]);
+  return recap;
+}
+
+/** Short highlights: who saved whom, the detective's score, the sniper's shot, the lovers. */
+export function recapHighlights(recap: MafiaRecap | null): string[] {
+  if (!recap) return [];
+  const out: string[] = [];
+  if (recap.doctor) out.push(`🩺 الطبيب ${recap.doctor.name}: ${recap.doctor.saves === 0 ? "لم ينقذ أحدًا" : recap.doctor.saves === 1 ? "أنقذ ضحية واحدة" : recap.doctor.saves === 2 ? "أنقذ ضحيتين" : `أنقذ ${recap.doctor.saves} ضحايا`}`);
+  if (recap.detective) {
+    const checks = recap.detective.checks;
+    const found = checks.filter((c) => c.role === "mafia").length;
+    out.push(`🔎 المحقق ${recap.detective.name}: ${checks.length === 0 ? "لم يحقق مع أحد" : `كشف ${found} من المافيا في ${checks.length === 1 ? "تحقيق واحد" : checks.length === 2 ? "تحقيقين" : `${checks.length} تحقيقات`}`}`);
+  }
+  if (recap.bodyguard && recap.bodyguard.saves > 0) out.push(`🛡️ الحارس ${recap.bodyguard.name}: حمى ${recap.bodyguard.saves === 1 ? "لاعبًا واحدًا" : recap.bodyguard.saves === 2 ? "لاعبَين" : `${recap.bodyguard.saves} لاعبين`}`);
+  if (recap.sniper) out.push(`🎯 القنّاص ${recap.sniper.name}: أصاب ${recap.sniper.target}${recap.sniper.role === "mafia" ? " وكان مافيا!" : `، وكان ${ROLE_NAMES[recap.sniper.role] ?? ""}`}`);
+  if (recap.seer) out.push(`🔮 العرّافة ${recap.seer.name}: كشفت أن ${recap.seer.target} كان ${ROLE_NAMES[recap.seer.role] ?? ""}`);
+  if (recap.lovers && recap.lovers.length === 2) out.push(`❤️ العاشقان: ${recap.lovers[0]} و${recap.lovers[1]}`);
+  return out;
+}
+
+/** Night by night: whom the mafia chose (and who chose it), and whether a save worked. */
+export function MafiaRecapView({ recap, big = false }: { recap: MafiaRecap | null; big?: boolean }) {
+  if (!recap) return null;
+  const highlights = recapHighlights(recap);
+  return (
+    <div className={cx("grid gap-3 text-start", big ? "text-[clamp(14px,1.3vw,26px)]" : "text-[13px]")}>
+      {highlights.length > 0 ? (
+        <ul className="grid gap-1.5 rounded-[14px] border border-gold/30 bg-gold/5 px-3 py-2">
+          <li className="font-bold text-gold">أبرز اللحظات</li>
+          {highlights.map((h) => (
+            <li key={h} className="text-ivory">
+              {h}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {recap.nights.length > 0 ? (
+        <ol className="grid gap-1.5">
+          {recap.nights.map((n) => (
+            <li key={n.round} className="rounded-[14px] border border-line bg-deep-2/40 px-3 py-2">
+              <p className="font-bold text-ivory">
+                🌙 الليلة {n.round}:{" "}
+                {!n.target
+                  ? "لم تختر المافيا أحدًا."
+                  : n.saved
+                    ? `اختارت المافيا ${n.target}، وأنقذه الطبيب.`
+                    : n.guarded && !n.victim
+                      ? `اختارت المافيا ${n.target}، ونجا بحماية الحارس والطبيب.`
+                      : n.guard_died
+                        ? `اختارت المافيا ${n.target}، ومات الحارس ${n.victim} بدلًا منه.`
+                        : `قتلت المافيا ${n.victim ?? n.target}.`}
+              </p>
+              {n.picks.length > 0 ? <p className="text-mist">{n.picks.map((x) => `${x.by} ← ${x.target}`).join(" · ")}</p> : null}
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </div>
+  );
+}
+
 /* ---------------- Share ---------------- */
 
 function site() {
   return typeof window === "undefined" ? "https://al3sh.app" : window.location.origin;
 }
 
-function shareText(state: MafiaPublicState, rows: MafiaPlayerRow[]) {
+function shareText(state: MafiaPublicState, rows: MafiaPlayerRow[], recap: MafiaRecap | null = null) {
   const lines = [`🕵️ انتهت لعبة المافيا على العش: ${WINNERS[state.winner ?? ""] ?? ""}`];
   const mafia = rows.filter((r) => r.player_role === "mafia").map((r) => r.player_name);
   if (mafia.length) lines.push(`المافيا كانوا: ${mafia.join("، ")}`);
   const special = rows.filter((r) => r.player_role && !["mafia", "citizen"].includes(r.player_role));
   for (const r of special) lines.push(`${ROLE_ICONS[r.player_role ?? ""]} ${ROLE_NAMES[r.player_role ?? ""]}: ${r.player_name}`);
+  const highlights = recapHighlights(recap);
+  if (highlights.length) lines.push("", ...highlights);
   lines.push("", `العبوا معنا: ${site()}`);
   return lines.join("\n");
 }
 
-async function drawImage(state: MafiaPublicState, rows: MafiaPlayerRow[]): Promise<Blob | null> {
+async function drawImage(state: MafiaPublicState, rows: MafiaPlayerRow[], recap: MafiaRecap | null = null): Promise<Blob | null> {
   const W = 1080;
   const perCol = Math.ceil(rows.length / 2);
-  const H = Math.max(1080, 560 + perCol * 96 + 200);
+  const highlights = recapHighlights(recap).slice(0, 5);
+  const extra = highlights.length ? highlights.length * 58 + 40 : 0;
+  const H = Math.max(1080, 560 + perCol * 96 + 200 + extra);
   const canvas = document.createElement("canvas");
   canvas.width = W;
   canvas.height = H;
@@ -453,6 +555,13 @@ async function drawImage(state: MafiaPublicState, rows: MafiaPlayerRow[]): Promi
     ctx.textAlign = "center";
   });
 
+  if (highlights.length) {
+    ctx.fillStyle = "#f5efe3";
+    ctx.font = `500 34px ${sans}`;
+    const top = 470 + perCol * 96 + 20;
+    highlights.forEach((h, i) => ctx.fillText(h, W / 2, top + i * 58, W - 120));
+  }
+
   ctx.fillStyle = "#f5efe3";
   ctx.font = `800 52px ${display}`;
   ctx.fillText("العش", W / 2, H - 110);
@@ -463,19 +572,19 @@ async function drawImage(state: MafiaPublicState, rows: MafiaPlayerRow[]): Promi
   return new Promise((resolve) => canvas.toBlob((b) => resolve(b), "image/png"));
 }
 
-export function MafiaShare({ state, rows }: { state: MafiaPublicState; rows: MafiaPlayerRow[] }) {
+export function MafiaShare({ state, rows, recap = null }: { state: MafiaPublicState; rows: MafiaPlayerRow[]; recap?: MafiaRecap | null }) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   async function share() {
     setBusy(true);
     setNote(null);
     try {
-      const blob = await drawImage(state, rows);
+      const blob = await drawImage(state, rows, recap);
       if (!blob) throw new Error("no image");
       const file = new File([blob], "mafia-result.png", { type: "image/png" });
       const nav = navigator as Navigator & { canShare?: (d: { files: File[] }) => boolean };
       if (nav.share && nav.canShare?.({ files: [file] })) {
-        await nav.share({ files: [file], text: shareText(state, rows) });
+        await nav.share({ files: [file], text: shareText(state, rows, recap) });
       } else {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -497,7 +606,7 @@ export function MafiaShare({ state, rows }: { state: MafiaPublicState; rows: Maf
           <Glyph name="trophy" />
           {busy ? "نجهّز الصورة…" : "صورة النتيجة"}
         </button>
-        <a href={`https://wa.me/?text=${encodeURIComponent(shareText(state, rows))}`} target="_blank" rel="noopener noreferrer" className={cx(buttonBase, buttonTone("quiet"))}>
+        <a href={`https://wa.me/?text=${encodeURIComponent(shareText(state, rows, recap))}`} target="_blank" rel="noopener noreferrer" className={cx(buttonBase, buttonTone("quiet"))}>
           <Glyph name="whatsapp" />
           النتيجة بالواتساب
         </a>
