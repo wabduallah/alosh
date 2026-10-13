@@ -6,6 +6,7 @@ import { NextGame } from "@/components/next-game";
 import { DisplayChoice } from "@/components/display-here";
 import { ResultShare, rankingShare, teamsShare } from "@/components/result-share";
 import { GridHostPanel } from "@/components/grid";
+import { CourtHostPanel } from "@/components/court";
 import { useRoomSession } from "@/lib/room-session";
 import { Button, buttonBase, buttonTone, cx } from "@/components/ui";
 import { Glyph } from "@/components/brand";
@@ -65,6 +66,7 @@ function HostBoard() {
   const isMafia = gameSlug === "social-mafia";
   const isHalba = gameSlug === "alhalba";
   const isGrid = gameSlug === "tactical-grid";
+  const isCourt = gameSlug === "court";
 
   // Load the room, its questions, its live state, and its players.
   useEffect(() => {
@@ -418,6 +420,17 @@ function HostBoard() {
         <ShareRoom code={room.room_code} />
         <TvLink code={room.room_code} />
         <MafiaHostScreen roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
+        {nextGame}
+      </Shell>
+    );
+  }
+
+  if (isCourt) {
+    return (
+      <Shell play>
+        <ShareRoom code={room.room_code} />
+        <TvLink code={room.room_code} />
+        <CourtHostPanel roomId={room.id} />
         {nextGame}
       </Shell>
     );

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><linearGradient id="ctGold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe27a"/><stop offset="1" stop-color="#f39a22"/></linearGradient><linearGradient id="ctPan" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd25e"/><stop offset="1" stop-color="#d97a12"/></linearGradient><linearGradient id="ctWood" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b0682a"/><stop offset="1" stop-color="#6e3a14"/></linearGradient></defs>
+<rect x="56" y="22" width="8" height="70" rx="4" fill="url(#ctGold)"/>
+<rect x="38" y="92" width="44" height="10" rx="5" fill="url(#ctWood)"/>
+<circle cx="60" cy="20" r="8" fill="url(#ctGold)"/>
+<path d="M18 36 L102 30" stroke="url(#ctGold)" stroke-width="7" stroke-linecap="round"/>
+<path d="M22 36 L10 66 M22 36 L34 66" stroke="#ffe9a8" stroke-width="2.5"/>
+<path d="M98 30 L86 58 M98 30 L110 58" stroke="#ffe9a8" stroke-width="2.5"/>
+<path d="M6 66 H38 A16 10 0 0 1 6 66Z" fill="url(#ctPan)"/>
+<path d="M82 58 H114 A16 10 0 0 1 82 58Z" fill="url(#ctPan)"/>
+<ellipse cx="50" cy="20" rx="5" ry="2.6" transform="rotate(-25 50 20)" fill="#fff" opacity="0.5"/></svg>

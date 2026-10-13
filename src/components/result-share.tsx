@@ -29,6 +29,7 @@ const GAME_TITLES: Record<string, string> = {
   "bluff-master": "🎭 سيد الخداع",
   "tactical-grid": "🎲 تحديات العش",
   "heads-up": "🧠 هل تعرف",
+  court: "⚖️ المحكمة",
   outsider: "👀 برة السالفة",
   "hex-letters": "🔤 خلية الحروف",
 };
