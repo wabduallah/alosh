@@ -4,6 +4,13 @@
 -- ترتيب الأدوار مهم: الأساسية أولًا، ثم الاختيارية بالترتيب حسب عدد اللاعبين.
 -- =============================================================================
 
+do $$
+begin
+  if to_regclass('public.court_cases') is null then
+    raise exception 'شغّل الملف supabase/court_v1.sql أولًا، ثم هذا الملف.';
+  end if;
+end $$;
+
 insert into public.court_cases (slug, title, category, difficulty, summary, intro, guilty, truth, roles, evidence) values
 
 -- 1) الخزنة: المتهم بريء. مفتاحها التناقض بين 9:00 و9:20.
