@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Glyph } from "@/components/brand";
 import { Button, Field, cx, inputClass } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
-import { KINDS, type CourtKind } from "@/components/court";
+import { KINDS, WIN_LABELS, type CourtKind } from "@/components/court";
 import { Loading, Notice, Sheet, Toggle, dbMessage, selectClass, textareaClass } from "./common";
 
 /**
@@ -24,7 +24,12 @@ type Role = {
   /** For an optional role: what it knows, shown as evidence when nobody plays it. */
   fallback?: string;
   fallback_stage?: number;
+  /** How a witness or detective wins (court_v3.sql); the accused, prosecutor and lawyer are fixed. */
+  win?: "truth" | "convict" | "acquit";
+  /** A secret goal; the host gives 100 points when it is achieved. */
+  goal?: string;
 };
+type Suspect = { key: string; name: string };
 type Evidence = { stage: number; icon?: string; title: string; text: string; time?: string };
 type Stat = { case_id: string; plays: number; correct: number; convicted: number; last: string };
 export type CourtCase = {
@@ -40,6 +45,9 @@ export type CourtCase = {
   roles: Role[];
   evidence: Evidence[];
   is_active: boolean;
+  suspects?: Suspect[] | null;
+  culprit?: string | null;
+  juror_clues?: string[];
 };
 
 const ROLE_KINDS: RoleKind[] = ["accused", "prosecutor", "lawyer", "detective", "witness"];
@@ -48,7 +56,8 @@ const LEVELS = [
   { value: 2, label: "متوسطة" },
   { value: 3, label: "صعبة" },
 ];
-const FIELDS = "id, slug, title, category, difficulty, summary, intro, guilty, truth, roles, evidence, is_active";
+const FIELDS = "id, slug, title, category, difficulty, summary, intro, guilty, truth, roles, evidence, is_active, suspects, culprit, juror_clues";
+const FIELDS_V2 = "id, slug, title, category, difficulty, summary, intro, guilty, truth, roles, evidence, is_active";
 
 const blank = (): CourtCase => ({
   title: "",
@@ -89,6 +98,11 @@ function problems(c: CourtCase): string[] {
     if (r.name.trim().length < 2) out.push(`الدور ${i + 1}: اكتب الاسم.`);
     if (r.secret.trim().length < 5) out.push(`الدور ${i + 1} (${r.name || KINDS[r.kind].label}): اكتب المعلومة السرية.`);
   });
+  const sus = (c.suspects ?? []).filter((x) => x.name.trim());
+  if (sus.length === 1) out.push("أضف مشتبهًا ثانيًا، أو احذف القائمة.");
+  if (sus.length > 6) out.push("المشتبهون 6 كحد أقصى.");
+  if (sus.length >= 2 && !sus.some((x) => x.key === c.culprit)) out.push("اختر الفاعل الحقيقي من قائمة المشتبهين.");
+  if ((c.juror_clues ?? []).filter((x) => x.trim()).length > 12) out.push("معلومات المحلّفين 12 كحد أقصى.");
   if (c.evidence.length < 2) out.push("أضف دليلين على الأقل.");
   if (c.evidence.length > 15) out.push("الأدلة 15 كحد أقصى.");
   if (!c.evidence.some((e) => e.stage === 1)) out.push("أضف دليلًا في الجولة الأولى.");
@@ -123,8 +137,15 @@ function clean(c: CourtCase): CourtCase {
         ...(later ? { later, later_stage: r.later_stage ?? 2 } : {}),
         ...(r.optional ? { optional: true } : {}),
         ...(fallback ? { fallback, fallback_stage: r.fallback_stage ?? 2 } : {}),
+        ...((r.kind === "witness" || r.kind === "detective") && r.win && r.win !== "truth" ? { win: r.win } : {}),
+        ...(r.goal?.trim() ? { goal: r.goal.trim() } : {}),
       };
     }),
+    ...(() => {
+      const sus = (c.suspects ?? []).map((x, i) => ({ key: x.key || `s${i + 1}`, name: x.name.trim() })).filter((x) => x.name);
+      return sus.length >= 2 ? { suspects: sus, culprit: sus.some((x) => x.key === c.culprit) ? c.culprit : null } : { suspects: null, culprit: null };
+    })(),
+    juror_clues: (c.juror_clues ?? []).map((x) => x.trim()).filter(Boolean),
     evidence: c.evidence.map((e) => ({ stage: e.stage, icon: e.icon?.trim() || "📄", title: e.title.trim(), text: e.text.trim(), ...(e.time?.trim() ? { time: e.time.trim() } : {}) })),
   };
 }
@@ -148,7 +169,10 @@ export function CasesTab() {
 
   async function refresh() {
     if (!supabase) return;
-    const { data, error: e } = await supabase.from("court_cases").select(FIELDS).order("created_at");
+    let res = await supabase.from("court_cases").select(FIELDS).order("created_at");
+    // Before court_v3.sql the case has no suspects or juror clues.
+    if (res.error && /column|schema cache/i.test(res.error.message)) res = await supabase.from("court_cases").select(FIELDS_V2).order("created_at");
+    const { data, error: e } = res;
     if (e) {
       const missing = e.code === "42P01" || e.code === "PGRST205" || /does not exist|schema cache/i.test(e.message);
       setSetup(missing);
@@ -353,7 +377,21 @@ function CaseEditor({ initial, onClose, onSaved }: { initial: CourtCase; onClose
     if (p.length) return;
     const row = clean(c);
     setBusy(true);
-    const payload = { title: row.title, category: row.category, difficulty: row.difficulty, summary: row.summary, intro: row.intro, guilty: row.guilty, truth: row.truth, roles: row.roles, evidence: row.evidence, is_active: row.is_active };
+    const payload = {
+      title: row.title,
+      category: row.category,
+      difficulty: row.difficulty,
+      summary: row.summary,
+      intro: row.intro,
+      guilty: row.guilty,
+      truth: row.truth,
+      roles: row.roles,
+      evidence: row.evidence,
+      is_active: row.is_active,
+      suspects: row.suspects,
+      culprit: row.culprit,
+      juror_clues: row.juror_clues,
+    };
     const { error: e } = c.id ? await supabase.from("court_cases").update(payload).eq("id", c.id) : await supabase.from("court_cases").insert(payload);
     setBusy(false);
     if (e) return setErrors([serverError(e)]);
@@ -414,6 +452,51 @@ function CaseEditor({ initial, onClose, onSaved }: { initial: CourtCase; onClose
         </Box>
 
         <Box
+          title="من الفاعل الحقيقي؟ (اختياري)"
+          action={<p className="text-[13px] leading-6 text-mist">سؤال ثانٍ في التصويت، ومن يعرف الفاعل يكسب 150. ضع المتهم بين المشتبهين، واختر الفاعل بالدائرة. في القضايا البريئة يصير هذا أمتع سؤال.</p>}
+        >
+          {(c.suspects ?? []).map((x, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="culprit"
+                className="size-5 accent-[var(--color-gold)]"
+                checked={c.culprit === x.key}
+                onChange={() => set("culprit", x.key)}
+                aria-label={`${x.name || "المشتبه"} هو الفاعل`}
+              />
+              <input
+                className={inputClass}
+                value={x.name}
+                maxLength={60}
+                onChange={(e) => set("suspects", (c.suspects ?? []).map((y, j) => (j === i ? { ...y, name: e.target.value } : y)))}
+                placeholder="اسم المشتبه، مثل: المدير"
+                aria-label="اسم المشتبه"
+              />
+              <button type="button" className="grid size-9 shrink-0 place-items-center rounded-full text-mist hover:text-wrong" onClick={() => set("suspects", (c.suspects ?? []).filter((_, j) => j !== i))} aria-label="حذف المشتبه">
+                <Glyph name="trash" className="size-4" />
+              </button>
+            </div>
+          ))}
+          {(c.suspects ?? []).length < 6 ? (
+            <Button tone="quiet" onClick={() => set("suspects", [...(c.suspects ?? []), { key: `s${Date.now().toString(36)}`, name: "" }])}>
+              <Glyph name="plus" className="size-[18px]" />
+              أضف مشتبهًا
+            </Button>
+          ) : null}
+        </Box>
+
+        <Box title="معلومات المحلّفين (اختياري)" action={<p className="text-[13px] leading-6 text-mist">كل محلّف يسحب معلومة واحدة عشوائيًا في جواله: حقيقة صغيرة أو شك قد يضلل. سطر لكل معلومة.</p>}>
+          <textarea
+            className={textareaClass}
+            rows={4}
+            value={(c.juror_clues ?? []).join("\n")}
+            onChange={(e) => set("juror_clues", e.target.value.split("\n"))}
+            placeholder={"مثل: المدير اشترى سيارة جديدة الشهر الماضي.\nشوهد ضوء في مكتب المدير ليلة الحادثة."}
+          />
+        </Box>
+
+        <Box
           title={`الأدوار (${c.roles.length})`}
           action={
             <p className="text-[13px] leading-6 text-mist">
@@ -452,6 +535,19 @@ function CaseEditor({ initial, onClose, onSaved }: { initial: CourtCase; onClose
               <input className={inputClass} value={r.name} maxLength={60} onChange={(e) => setRole(i, { name: e.target.value })} placeholder="الاسم في القصة، مثل: نورة، موظفة الاستقبال" aria-label="الاسم" />
               <input className={inputClass} value={r.brief ?? ""} maxLength={160} onChange={(e) => setRole(i, { brief: e.target.value })} placeholder="وصف معلن يراه الجميع (اختياري)" aria-label="الوصف المعلن" />
               <textarea className={cx(textareaClass, "min-h-20")} value={r.secret} maxLength={800} onChange={(e) => setRole(i, { secret: e.target.value })} placeholder="🔒 المعلومة السرية: ما يعرفه، وما يخفيه، وكيف يتصرف." aria-label="المعلومة السرية" />
+              <input className={inputClass} value={r.goal ?? ""} maxLength={200} onChange={(e) => setRole(i, { goal: e.target.value })} placeholder="🎯 هدف سري (اختياري)، مثل: لا تكشف علاقتك بالمدير" aria-label="هدف سري" />
+              {r.kind === "witness" || r.kind === "detective" ? (
+                <label className="flex items-center gap-2 text-[14px] text-ivory">
+                  🏆 يفوز بـ
+                  <select className={cx(selectClass, "min-h-10 !w-44 py-1")} value={r.win ?? "truth"} onChange={(e) => setRole(i, { win: e.target.value as Role["win"] })}>
+                    <option value="truth">الحكم الصحيح (صادق)</option>
+                    <option value="convict">إدانة المتهم (شريك أو كاذب)</option>
+                    <option value="acquit">تبرئة المتهم (يحميه)</option>
+                  </select>
+                </label>
+              ) : (
+                <p className="text-[12px] text-faint">🏆 {r.kind === "accused" ? "يفوز إذا بُرّئ." : r.kind === "prosecutor" ? "يفوز إذا أُدين المتهم، وله مكافأة إذا كان الحكم صحيحًا." : "يفوز إذا بُرّئ موكله، وله مكافأة إذا كان الحكم صحيحًا."}</p>
+              )}
               {r.optional ? (
                 <div className="grid grid-cols-[1fr_auto] gap-2">
                   <textarea
@@ -579,6 +675,9 @@ function ImportSheet({ onClose, onDone }: { onClose: () => void; onDone: (n: num
         roles: Array.isArray(raw?.roles) ? raw.roles : [],
         evidence: Array.isArray(raw?.evidence) ? raw.evidence.map((e) => ({ ...e, stage: Number(e?.stage) || 1 })) : [],
         is_active: raw?.is_active !== false,
+        suspects: Array.isArray(raw?.suspects) ? raw.suspects.map((x, j) => ({ key: String(x?.key ?? `s${j + 1}`), name: String(x?.name ?? "") })) : null,
+        culprit: raw?.culprit ? String(raw.culprit) : null,
+        juror_clues: Array.isArray(raw?.juror_clues) ? raw.juror_clues.map(String) : [],
       };
       const p = problems(c);
       if (p.length) errs.push(`القضية ${i + 1} (${c.title || "بلا عنوان"}): ${p[0]}`);
@@ -686,9 +785,23 @@ function PreviewSheet({ c, onClose }: { c: CourtCase; onClose: () => void }) {
               {r.brief ? <p className="text-[13px] text-mist">{r.brief}</p> : null}
               <p className="text-[14px] leading-6 text-ivory">🔒 {r.secret}</p>
               {r.later ? <p className="text-[14px] leading-6 text-gold">✉️ في الجولة {r.later_stage ?? 2}: {r.later}</p> : null}
+              {r.goal ? <p className="text-[14px] leading-6 text-violet-text">🎯 {r.goal}</p> : null}
+              {(r.kind === "witness" || r.kind === "detective") && r.win && r.win !== "truth" ? <p className="text-[13px] font-semibold text-wrong">🏆 يفوز بـ{WIN_LABELS[r.win]}</p> : null}
             </div>
           ))}
-          {jurors ? <p className="text-[13px] text-mist">🗳️ و{jurors} {jurors === 1 ? "محلّف" : "محلّفين"} ببطاقة عامة بلا معلومات.</p> : null}
+          {jurors ? (
+            <p className="text-[13px] text-mist">
+              🗳️ و{jurors} {jurors === 1 ? "محلّف" : "محلّفين"}، لكل منهم سؤال ذهبي
+              {(c.juror_clues ?? []).length ? `، ويسحب ${Math.min(jurors, (c.juror_clues ?? []).length)} منهم معلومة من ${(c.juror_clues ?? []).length}` : ""}.
+            </p>
+          ) : null}
+          {(c.juror_clues ?? []).length ? (
+            <ul className="grid gap-1 text-[13px] text-mist">
+              {(c.juror_clues ?? []).map((x, i) => (
+                <li key={i}>🔎 {x}</li>
+              ))}
+            </ul>
+          ) : null}
         </Box>
         {stages.map((st) => (
           <Box key={st} title={`أدلة الجولة ${st}، ثم استجواب`}>
@@ -704,6 +817,11 @@ function PreviewSheet({ c, onClose }: { c: CourtCase; onClose: () => void }) {
         ))}
         <Box title="ثم المرافعتان والتصويت، وبعد الحكم تُكشف الحقيقة">
           <p className={cx("text-[15px] font-bold", c.guilty ? "text-wrong" : "text-correct")}>المتهم {c.guilty ? "مذنب" : "بريء"}</p>
+          {(c.suspects ?? []).length >= 2 ? (
+            <p className="text-[14px] text-mist">
+              من الفاعل؟ {(c.suspects ?? []).map((x) => (x.key === c.culprit ? `✅ ${x.name}` : x.name)).join(" · ")}
+            </p>
+          ) : null}
           <p className="text-[15px] leading-7 text-ivory">{c.truth}</p>
         </Box>
       </div>
