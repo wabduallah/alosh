@@ -1,7 +1,6 @@
 import { allPhases, PHASE_LABELS, phaseIndex, type CourtPhaseKey } from "@/lib/court-phase-guide";
 import { cx } from "@/components/ui";
 
-/** شريط مراحل المحكمة — للعرض على المضيف والتلفزيون والجوال */
 export function CourtPhaseBar({
   phase,
   leftSeconds,
@@ -46,15 +45,12 @@ export function CourtPhaseBar({
         })}
       </div>
       {standName ? (
-        <p className="mt-2 text-center text-sm font-bold text-amber-200">
-          الآن على المنصة: {standName}
-        </p>
+        <p className="mt-2 text-center text-sm font-bold text-amber-200">الآن على المنصة: {standName}</p>
       ) : null}
     </div>
   );
 }
 
-/** بطاقة تعليمات المرحلة للاعب */
 export function CourtPhaseHint({ text }: { text: string }) {
   return (
     <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-sm leading-relaxed text-cyan-50">
@@ -64,7 +60,6 @@ export function CourtPhaseHint({ text }: { text: string }) {
   );
 }
 
-/** قائمة أسئلة مقترحة */
 export function CourtQuestionSuggestions({
   items,
   onPick,
