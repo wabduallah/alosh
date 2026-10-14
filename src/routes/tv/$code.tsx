@@ -7,7 +7,7 @@ import { adaptivePoll } from "@/lib/live";
 import { ensureSession, supabase } from "@/lib/supabase";
 import { useRoomSession } from "@/lib/room-session";
 import { GridTv } from "@/components/grid";
-import { CourtTv } from "@/components/court";
+import { CourtTv } from "@/components/court-wired";
 import {
   Hearts,
   MatchSummary,
