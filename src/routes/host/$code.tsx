@@ -6,7 +6,7 @@ import { NextGame } from "@/components/next-game";
 import { DisplayChoice } from "@/components/display-here";
 import { ResultShare, rankingShare, teamsShare } from "@/components/result-share";
 import { GridHostPanel } from "@/components/grid";
-import { CourtHostPanel } from "@/components/court";
+import { CourtHostPanel } from "@/components/court-wired";
 import { useRoomSession } from "@/lib/room-session";
 import { Button, buttonBase, buttonTone, cx } from "@/components/ui";
 import { Glyph } from "@/components/brand";

@@ -7,7 +7,7 @@ import { Button, cx } from "@/components/ui";
 import { Cradle, Glyph } from "@/components/brand";
 import { HalbaPlayerPanel } from "@/components/halba";
 import { GridPlayerPanel } from "@/components/grid";
-import { CourtPlayerPanel } from "@/components/court";
+import { CourtPlayerPanel } from "@/components/court-wired";
 import { ResultShare, rankingShare } from "@/components/result-share";
 import { MafiaPlayerPanel } from "@/components/mafia-play";
 import { adaptivePoll } from "@/lib/live";
