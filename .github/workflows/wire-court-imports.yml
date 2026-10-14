@@ -1,0 +1,50 @@
+name: wire-court-imports
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: Branch to update
+        required: true
+        default: preview/court-ux-2
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_branch }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Change court imports to court-wired
+        run: |
+          set -euo pipefail
+          HOST='src/routes/host/$code.tsx'
+          ROOM='src/routes/room/$code.tsx'
+          TV='src/routes/tv/$code.tsx'
+          test -f "$HOST" && test -f "$ROOM" && test -f "$TV"
+          sed -i 's|import { CourtHostPanel } from "@/components/court"|import { CourtHostPanel } from "@/components/court-wired"|' "$HOST"
+          sed -i 's|import { CourtPlayerPanel } from "@/components/court"|import { CourtPlayerPanel } from "@/components/court-wired"|' "$ROOM"
+          sed -i 's|import { CourtTv } from "@/components/court"|import { CourtTv } from "@/components/court-wired"|' "$TV"
+          git diff -- "$HOST" "$ROOM" "$TV" || true
+
+      - name: Commit and push
+        run: |
+          set -euo pipefail
+          HOST='src/routes/host/$code.tsx'
+          ROOM='src/routes/room/$code.tsx'
+          TV='src/routes/tv/$code.tsx'
+          BRANCH='${{ inputs.target_branch }}'
+          git config user.name "court-wire-bot"
+          git config user.email "court-wire-bot@users.noreply.github.com"
+          git add "$HOST" "$ROOM" "$TV"
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "feat(court): ربط الاستيرادات بـ court-wired"
+          git push origin "HEAD:$BRANCH"
