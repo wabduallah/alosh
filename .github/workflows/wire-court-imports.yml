@@ -1,0 +1,38 @@
+name: wire-court-imports
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: preview/court-ux-2
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Change court imports to court-wired
+        run: |
+          set -euo pipefail
+          sed -i 's|import { CourtHostPanel } from "@/components/court"|import { CourtHostPanel } from "@/components/court-wired"|' "src/routes/host/$code.tsx"
+          sed -i 's|import { CourtPlayerPanel } from "@/components/court"|import { CourtPlayerPanel } from "@/components/court-wired"|' "src/routes/room/$code.tsx"
+          sed -i 's|import { CourtTv } from "@/components/court"|import { CourtTv } from "@/components/court-wired"|' "src/routes/tv/$code.tsx"
+          echo "--- diffs ---"
+          git diff -- "src/routes/host/$code.tsx" "src/routes/room/$code.tsx" "src/routes/tv/$code.tsx" || true
+
+      - name: Commit and push
+        run: |
+          set -euo pipefail
+          git config user.name "court-wire-bot"
+          git config user.email "court-wire-bot@users.noreply.github.com"
+          git add "src/routes/host/$code.tsx" "src/routes/room/$code.tsx" "src/routes/tv/$code.tsx"
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "feat(court): ربط الاستيرادات بـ court-wired"
+          git push origin HEAD:preview/court-ux-2
