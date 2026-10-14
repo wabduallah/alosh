@@ -18,18 +18,23 @@ jobs:
       - name: Change court imports to court-wired
         run: |
           set -euo pipefail
-          sed -i 's|import { CourtHostPanel } from "@/components/court"|import { CourtHostPanel } from "@/components/court-wired"|' "src/routes/host/$code.tsx"
-          sed -i 's|import { CourtPlayerPanel } from "@/components/court"|import { CourtPlayerPanel } from "@/components/court-wired"|' "src/routes/room/$code.tsx"
-          sed -i 's|import { CourtTv } from "@/components/court"|import { CourtTv } from "@/components/court-wired"|' "src/routes/tv/$code.tsx"
-          echo "--- diffs ---"
-          git diff -- "src/routes/host/$code.tsx" "src/routes/room/$code.tsx" "src/routes/tv/$code.tsx" || true
+          HOST='src/routes/host/$code.tsx'
+          ROOM='src/routes/room/$code.tsx'
+          TV='src/routes/tv/$code.tsx'
+          sed -i 's|import { CourtHostPanel } from "@/components/court"|import { CourtHostPanel } from "@/components/court-wired"|' "$HOST"
+          sed -i 's|import { CourtPlayerPanel } from "@/components/court"|import { CourtPlayerPanel } from "@/components/court-wired"|' "$ROOM"
+          sed -i 's|import { CourtTv } from "@/components/court"|import { CourtTv } from "@/components/court-wired"|' "$TV"
+          git diff -- "$HOST" "$ROOM" "$TV" || true
 
       - name: Commit and push
         run: |
           set -euo pipefail
+          HOST='src/routes/host/$code.tsx'
+          ROOM='src/routes/room/$code.tsx'
+          TV='src/routes/tv/$code.tsx'
           git config user.name "court-wire-bot"
           git config user.email "court-wire-bot@users.noreply.github.com"
-          git add "src/routes/host/$code.tsx" "src/routes/room/$code.tsx" "src/routes/tv/$code.tsx"
+          git add "$HOST" "$ROOM" "$TV"
           if git diff --cached --quiet; then
             echo "No changes to commit"
             exit 0
