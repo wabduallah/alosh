@@ -1,0 +1,153 @@
+/**
+ * دليل المرحلة × الدور للعبة المحكمة.
+ * يُعرض على جوال اللاعب حسب المرحلة الحالية.
+ */
+
+export type CourtPhaseKey =
+  | "intro"
+  | "evidence"
+  | "question"
+  | "closing"
+  | "vote"
+  | "verdict"
+  | "over";
+
+export type CourtRoleKey =
+  | "accused"
+  | "prosecutor"
+  | "lawyer"
+  | "detective"
+  | "witness"
+  | "juror";
+
+const PHASE_ORDER: CourtPhaseKey[] = [
+  "intro",
+  "evidence",
+  "question",
+  "closing",
+  "vote",
+  "verdict",
+  "over",
+];
+
+export const PHASE_LABELS: Record<CourtPhaseKey, string> = {
+  intro: "القضية",
+  evidence: "الأدلة",
+  question: "الاستجواب",
+  closing: "المرافعة",
+  vote: "التصويت",
+  verdict: "الحكم",
+  over: "الحقيقة",
+};
+
+const GUIDE: Record<CourtRoleKey, Partial<Record<CourtPhaseKey, string>>> = {
+  accused: {
+    intro: "استمع للقصة. حضّر دفاعك دون كشف ما لا يلزم.",
+    evidence: "راقب الأدلة. سجّل ما يضعف التهمة أو يدعم براءتك.",
+    question: "أجب بوضوح. لا تتطوع بمعلومات تضرّك بلا داعٍ.",
+    closing: "استمع للمرافعات. جهّز جملة أخيرة قصيرة إن سُمح لك.",
+    vote: "المتهم لا يصوّت. انتظر الحكم.",
+    verdict: "انتظر إعلان الحكم.",
+    over: "ستُكشف الحقيقة وبطاقة دورك.",
+  },
+  prosecutor: {
+    intro: "افهم القصة. حدّد نقطة اتهام واضحة.",
+    evidence: "اربط كل دليل بالاتهام. حضّر أسئلة للمتهم والشهود.",
+    question: "اسأل أسئلة قصيرة ومباشرة. استخدم الاعتراض عند التضليل.",
+    closing: "لخّص الأدلة في أقل من دقيقة. اطلب الإدانة بثقة.",
+    vote: "صوّت مذنب إن اقتنعت، وذكّر المحلفين بنقاطك إن أُتيح نقاش.",
+    verdict: "انتظر نتيجة التصويت.",
+    over: "راجع إن أصاب الحكم الحقيقة.",
+  },
+  lawyer: {
+    intro: "ابحث عن ثغرات القصة منذ البداية.",
+    evidence: "ابحث عن تناقض الأوقات والروايات.",
+    question: "اضغط على التناقضات. اعتراض عند الخروج عن الموضوع.",
+    closing: "ركّز على الشك المعقول. اطلب البراءة.",
+    vote: "صوّت بريء إن كان ذلك هدفك أو إن بقي شك معقول.",
+    verdict: "انتظر الحكم.",
+    over: "ستُكشف الحقيقة ونجاح دفاعك.",
+  },
+  detective: {
+    intro: "استمع كمن يجمع خيطًا زمنيًا.",
+    evidence: "رتّب الأدلة زمنيًا. أين الفجوة؟",
+    question: "اسأل لتأكيد أو نفي تسلسل الأحداث.",
+    closing: "لخّص ما ثبت وما بقي غامضًا.",
+    vote: "صوّت حسب ما تدعمه الأدلة لا الانطباع.",
+    verdict: "انتظر الحكم.",
+    over: "قارن استنتاجك بالحقيقة.",
+  },
+  witness: {
+    intro: "راجع معلومتك السرية فقط.",
+    evidence: "لا تكشف سرك قبل أن تُسأل.",
+    question: "أجب عمّا رأيت أو سمعت فقط. لا تختلق.",
+    closing: "استمع. تدخلك محدود الآن.",
+    vote: "صوّت بصدق حسب ما سمعت في الجلسة.",
+    verdict: "انتظر الحكم.",
+    over: "ستُكشف البطاقات والحقيقة.",
+  },
+  juror: {
+    intro: "استمع بدون انحياز مسبق.",
+    evidence: "دوّن ذهنيًا ما يقوي الإدانة أو البراءة.",
+    question: "لك سؤال ذهبي واحد — استخدمه بحكمة.",
+    closing: "وزّن حجج الطرفين.",
+    vote: "صوّت مذنب أو بريء. صوتك الصحيح = 100 نقطة.",
+    verdict: "انتظر إعلان الحكم.",
+    over: "راجع قرارك مقابل الحقيقة.",
+  },
+};
+
+export function phaseGuide(role: CourtRoleKey | string | undefined, phase: CourtPhaseKey | string | undefined): string {
+  if (!role || !phase) return "تابع الشاشة وتعليمات المضيف.";
+  const byRole = GUIDE[role as CourtRoleKey];
+  if (!byRole) return "تابع المرحلة الحالية على الشاشة.";
+  return byRole[phase as CourtPhaseKey] ?? "تابع المرحلة الحالية على الشاشة.";
+}
+
+export function phaseIndex(phase: CourtPhaseKey | string | undefined): number {
+  if (!phase) return 0;
+  const i = PHASE_ORDER.indexOf(phase as CourtPhaseKey);
+  return i < 0 ? 0 : i;
+}
+
+export function allPhases(): CourtPhaseKey[] {
+  return [...PHASE_ORDER];
+}
+
+/** اقتراحات أسئلة جاهزة لتقليل الصمت أثناء الاستجواب */
+export function suggestQuestions(role: CourtRoleKey | string | undefined, stage?: number): string[] {
+  const n = stage ?? 1;
+  if (role === "prosecutor") {
+    return [
+      `أين كنت بالضبط في وقت الواقعة؟`,
+      `من يمكنه تأكيد روايتك؟`,
+      n > 1 ? `كيف تفسّر التناقض مع دليل الجولة ${n}؟` : `ما علاقتك بالمتضرر؟`,
+    ];
+  }
+  if (role === "lawyer") {
+    return [
+      `هل رأيت المتهم فعلاً أم استنتجت ذلك؟`,
+      `ألم يكن هناك شخص آخر في المكان؟`,
+      `هل يمكن أن يكون الدليل ناقصًا أو مضللاً؟`,
+    ];
+  }
+  if (role === "detective") {
+    return [
+      `ما التسلسل الزمني الذي يتوافق مع كل الأدلة؟`,
+      `أي دليل يعتمد على شهادة غير مؤكدة؟`,
+      `أين الفجوة الأوضح في القصة؟`,
+    ];
+  }
+  if (role === "juror") {
+    return [
+      `هل يمكنك تكرار ما قلته عن الوقت؟`,
+      `هل أنت متأكد أم تظن فقط؟`,
+      `هل سمعت ذلك بنفسك أم نقلاً عن غيرك؟`,
+    ];
+  }
+  return [
+    `ماذا رأيت أو سمعت بنفسك؟`,
+    `متى حدث ذلك بالضبط؟`,
+    `هل هناك تفاصيل لم تُذكر بعد؟`,
+  ];
+}
