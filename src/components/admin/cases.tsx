@@ -28,8 +28,24 @@ type Role = {
   win?: "truth" | "convict" | "acquit";
   /** A secret goal; the host gives 100 points when it is achieved. */
   goal?: string;
+  /** Evidence this role can reveal on the screen when it chooses (court_v4.sql). */
+  exhibits?: Exhibit[];
 };
 type Suspect = { key: string; name: string };
+type Exhibit = { title: string; text: string; icon?: string; time?: string };
+type RoleOverride = Partial<Pick<Role, "secret" | "later" | "goal" | "win" | "fallback" | "brief">> & { exhibits?: Exhibit[] };
+/** Another truth for the same story (court_v4.sql): the verdict, culprit, truth, and what changes with them. */
+export type Variant = {
+  key: string;
+  label: string;
+  guilty: boolean;
+  culprit?: string | null;
+  truth: string;
+  roles?: Record<string, RoleOverride>;
+  evidence?: Record<string, { text?: string; time?: string; remove?: boolean }>;
+  extra_evidence?: Evidence[];
+  juror_clues?: string[] | null;
+};
 type Evidence = { stage: number; icon?: string; title: string; text: string; time?: string };
 type Stat = { case_id: string; plays: number; correct: number; convicted: number; last: string };
 export type CourtCase = {
@@ -48,6 +64,7 @@ export type CourtCase = {
   suspects?: Suspect[] | null;
   culprit?: string | null;
   juror_clues?: string[];
+  variants?: Variant[] | null;
 };
 
 const ROLE_KINDS: RoleKind[] = ["accused", "prosecutor", "lawyer", "detective", "witness"];
@@ -56,7 +73,8 @@ const LEVELS = [
   { value: 2, label: "متوسطة" },
   { value: 3, label: "صعبة" },
 ];
-const FIELDS = "id, slug, title, category, difficulty, summary, intro, guilty, truth, roles, evidence, is_active, suspects, culprit, juror_clues";
+const FIELDS = "id, slug, title, category, difficulty, summary, intro, guilty, truth, roles, evidence, is_active, suspects, culprit, juror_clues, variants";
+const FIELDS_V3 = "id, slug, title, category, difficulty, summary, intro, guilty, truth, roles, evidence, is_active, suspects, culprit, juror_clues";
 const FIELDS_V2 = "id, slug, title, category, difficulty, summary, intro, guilty, truth, roles, evidence, is_active";
 
 const blank = (): CourtCase => ({
@@ -103,6 +121,16 @@ function problems(c: CourtCase): string[] {
   if (sus.length > 6) out.push("المشتبهون 6 كحد أقصى.");
   if (sus.length >= 2 && !sus.some((x) => x.key === c.culprit)) out.push("اختر الفاعل الحقيقي من قائمة المشتبهين.");
   if ((c.juror_clues ?? []).filter((x) => x.trim()).length > 12) out.push("معلومات المحلّفين 12 كحد أقصى.");
+  c.roles.forEach((r) => {
+    const ex = (r.exhibits ?? []).filter((x) => x.title.trim() || x.text.trim());
+    if (ex.length > 3) out.push(`أدلة «${r.name}» ثلاثة كحد أقصى.`);
+    if (ex.some((x) => x.title.trim().length < 2 || x.text.trim().length < 5)) out.push(`كل دليل يقدمه «${r.name}» يحتاج عنوانًا ونصًا.`);
+  });
+  (c.variants ?? []).forEach((v, i) => {
+    if (v.truth.trim().length < 10) out.push(`الحقيقة البديلة ${i + 1}: اكتب ماذا حدث فيها.`);
+    if (sus.length >= 2 && v.culprit && !sus.some((x) => x.key === v.culprit)) out.push(`الحقيقة البديلة ${i + 1}: اختر الفاعل من المشتبهين.`);
+  });
+  if ((c.variants ?? []).length > 4) out.push("الحقائق البديلة 4 كحد أقصى.");
   if (c.evidence.length < 2) out.push("أضف دليلين على الأقل.");
   if (c.evidence.length > 15) out.push("الأدلة 15 كحد أقصى.");
   if (!c.evidence.some((e) => e.stage === 1)) out.push("أضف دليلًا في الجولة الأولى.");
@@ -110,6 +138,59 @@ function problems(c: CourtCase): string[] {
     if (e.title.trim().length < 2 || e.text.trim().length < 5) out.push(`الدليل ${i + 1}: اكتب العنوان والنص.`);
   });
   return out;
+}
+
+function cleanExhibits(list?: Exhibit[]): Exhibit[] {
+  return (list ?? [])
+    .map((x) => ({ title: x.title.trim(), text: x.text.trim(), icon: x.icon?.trim() || "📎", ...(x.time?.trim() ? { time: x.time.trim() } : {}) }))
+    .filter((x) => x.title || x.text);
+}
+
+function cleanVariant(v: Variant, i: number): Variant {
+  const roles: Record<string, RoleOverride> = {};
+  for (const [k, o] of Object.entries(v.roles ?? {})) {
+    const r: RoleOverride = {};
+    for (const f of ["secret", "later", "goal", "fallback", "brief"] as const) if (o[f]?.trim()) r[f] = o[f]!.trim();
+    if (o.win && o.win !== "truth") r.win = o.win;
+    const ex = cleanExhibits(o.exhibits);
+    if (ex.length) r.exhibits = ex;
+    if (Object.keys(r).length) roles[k] = r;
+  }
+  const evidence: NonNullable<Variant["evidence"]> = {};
+  for (const [t, o] of Object.entries(v.evidence ?? {})) {
+    if (o.remove) evidence[t] = { remove: true };
+    else if (o.text?.trim() || o.time?.trim()) evidence[t] = { ...(o.text?.trim() ? { text: o.text.trim() } : {}), ...(o.time?.trim() ? { time: o.time.trim() } : {}) };
+  }
+  const extra = (v.extra_evidence ?? []).map((e) => ({ stage: e.stage, icon: e.icon?.trim() || "📄", title: e.title.trim(), text: e.text.trim(), ...(e.time?.trim() ? { time: e.time.trim() } : {}) })).filter((e) => e.title && e.text);
+  const clues = (v.juror_clues ?? []).map((x) => x.trim()).filter(Boolean);
+  return {
+    key: v.key || `v${i + 1}`,
+    label: v.label.trim() || `حقيقة ${i + 2}`,
+    guilty: v.guilty,
+    culprit: v.culprit || null,
+    truth: v.truth.trim(),
+    ...(Object.keys(roles).length ? { roles } : {}),
+    ...(Object.keys(evidence).length ? { evidence } : {}),
+    ...(extra.length ? { extra_evidence: extra } : {}),
+    ...(clues.length ? { juror_clues: clues } : {}),
+  };
+}
+
+/** The case as one truth plays it (the same merge as court_apply_variant in court_v4.sql). */
+export function applyVariant(c: CourtCase, v: Variant | null): CourtCase {
+  if (!v) return c;
+  return {
+    ...c,
+    guilty: v.guilty,
+    culprit: v.culprit || c.culprit,
+    truth: v.truth || c.truth,
+    roles: c.roles.map((r) => (v.roles?.[r.key] ? { ...r, ...v.roles[r.key] } : r)),
+    evidence: [
+      ...c.evidence.filter((e) => !v.evidence?.[e.title]?.remove).map((e) => (v.evidence?.[e.title] ? { ...e, ...v.evidence[e.title] } : e)),
+      ...(v.extra_evidence ?? []),
+    ],
+    juror_clues: v.juror_clues ?? c.juror_clues,
+  };
 }
 
 /** Cleans a case for saving or export. */
@@ -139,8 +220,16 @@ function clean(c: CourtCase): CourtCase {
         ...(fallback ? { fallback, fallback_stage: r.fallback_stage ?? 2 } : {}),
         ...((r.kind === "witness" || r.kind === "detective") && r.win && r.win !== "truth" ? { win: r.win } : {}),
         ...(r.goal?.trim() ? { goal: r.goal.trim() } : {}),
+        ...(() => {
+          const ex = cleanExhibits(r.exhibits);
+          return ex.length ? { exhibits: ex } : {};
+        })(),
       };
     }),
+    variants: (() => {
+      const list = (c.variants ?? []).map(cleanVariant).filter((v) => v.truth);
+      return list.length ? list : null;
+    })(),
     ...(() => {
       const sus = (c.suspects ?? []).map((x, i) => ({ key: x.key || `s${i + 1}`, name: x.name.trim() })).filter((x) => x.name);
       return sus.length >= 2 ? { suspects: sus, culprit: sus.some((x) => x.key === c.culprit) ? c.culprit : null } : { suspects: null, culprit: null };
@@ -171,6 +260,7 @@ export function CasesTab() {
     if (!supabase) return;
     let res = await supabase.from("court_cases").select(FIELDS).order("created_at");
     // Before court_v3.sql the case has no suspects or juror clues.
+    if (res.error && /column|schema cache/i.test(res.error.message)) res = await supabase.from("court_cases").select(FIELDS_V3).order("created_at");
     if (res.error && /column|schema cache/i.test(res.error.message)) res = await supabase.from("court_cases").select(FIELDS_V2).order("created_at");
     const { data, error: e } = res;
     if (e) {
@@ -391,6 +481,7 @@ function CaseEditor({ initial, onClose, onSaved }: { initial: CourtCase; onClose
       suspects: row.suspects,
       culprit: row.culprit,
       juror_clues: row.juror_clues,
+      variants: row.variants ?? null,
     };
     const { error: e } = c.id ? await supabase.from("court_cases").update(payload).eq("id", c.id) : await supabase.from("court_cases").insert(payload);
     setBusy(false);
@@ -496,6 +587,8 @@ function CaseEditor({ initial, onClose, onSaved }: { initial: CourtCase; onClose
           />
         </Box>
 
+        <VariantsEditor c={c} onChange={(list) => set("variants", list)} />
+
         <Box
           title={`الأدوار (${c.roles.length})`}
           action={
@@ -548,6 +641,9 @@ function CaseEditor({ initial, onClose, onSaved }: { initial: CourtCase; onClose
               ) : (
                 <p className="text-[12px] text-faint">🏆 {r.kind === "accused" ? "يفوز إذا بُرّئ." : r.kind === "prosecutor" ? "يفوز إذا أُدين المتهم، وله مكافأة إذا كان الحكم صحيحًا." : "يفوز إذا بُرّئ موكله، وله مكافأة إذا كان الحكم صحيحًا."}</p>
               )}
+              {r.kind === "prosecutor" || r.kind === "lawyer" || r.kind === "detective" ? (
+                <ExhibitsEditor list={r.exhibits ?? []} onChange={(list) => setRole(i, { exhibits: list })} />
+              ) : null}
               {r.optional ? (
                 <div className="grid grid-cols-[1fr_auto] gap-2">
                   <textarea
@@ -678,6 +774,7 @@ function ImportSheet({ onClose, onDone }: { onClose: () => void; onDone: (n: num
         suspects: Array.isArray(raw?.suspects) ? raw.suspects.map((x, j) => ({ key: String(x?.key ?? `s${j + 1}`), name: String(x?.name ?? "") })) : null,
         culprit: raw?.culprit ? String(raw.culprit) : null,
         juror_clues: Array.isArray(raw?.juror_clues) ? raw.juror_clues.map(String) : [],
+        variants: Array.isArray(raw?.variants) ? (raw.variants as Variant[]) : null,
       };
       const p = problems(c);
       if (p.length) errs.push(`القضية ${i + 1} (${c.title || "بلا عنوان"}): ${p[0]}`);
@@ -730,7 +827,10 @@ function CaseStat({ stat, guilty }: { stat?: Stat; guilty: boolean }) {
 }
 
 /** How a case plays with N players, as the server deals it: roles, jurors, evidence by round, the truth. */
-function PreviewSheet({ c, onClose }: { c: CourtCase; onClose: () => void }) {
+function PreviewSheet({ c: base, onClose }: { c: CourtCase; onClose: () => void }) {
+  const [vi, setVi] = useState(-1);
+  const variants = base.variants ?? [];
+  const c = applyVariant(base, vi >= 0 ? (variants[vi] ?? null) : null);
   const required = c.roles.filter((r) => !r.optional).length;
   const min = Math.max(4, required);
   const [n, setN] = useState(Math.min(12, Math.max(min, 6)));
@@ -754,6 +854,22 @@ function PreviewSheet({ c, onClose }: { c: CourtCase; onClose: () => void }) {
   return (
     <Sheet title={`جرّب: ${c.title || "قضية بلا عنوان"}`} onClose={onClose}>
       <div className="grid gap-4">
+        {variants.length ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[14px] font-semibold text-ivory">الحقيقة:</span>
+            {[{ i: -1, label: "الأصلية" }, ...variants.map((v, i) => ({ i, label: v.label || `حقيقة ${i + 2}` }))].map((o) => (
+              <button
+                key={o.i}
+                type="button"
+                aria-pressed={vi === o.i}
+                onClick={() => setVi(o.i)}
+                className={cx("min-h-10 rounded-full border px-4 text-[14px] font-semibold", vi === o.i ? "btn-gold border-transparent" : "border-line-strong/70 text-mist")}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[14px] font-semibold text-ivory">عدد اللاعبين:</span>
           {Array.from({ length: 12 - 4 + 1 }, (_, i) => i + 4).map((k) => (
@@ -787,6 +903,11 @@ function PreviewSheet({ c, onClose }: { c: CourtCase; onClose: () => void }) {
               {r.later ? <p className="text-[14px] leading-6 text-gold">✉️ في الجولة {r.later_stage ?? 2}: {r.later}</p> : null}
               {r.goal ? <p className="text-[14px] leading-6 text-violet-text">🎯 {r.goal}</p> : null}
               {(r.kind === "witness" || r.kind === "detective") && r.win && r.win !== "truth" ? <p className="text-[13px] font-semibold text-wrong">🏆 يفوز بـ{WIN_LABELS[r.win]}</p> : null}
+              {(r.exhibits ?? []).map((x, k) => (
+                <p key={k} className="text-[13px] leading-6 text-violet-text">
+                  📎 {x.title}: {x.text}
+                </p>
+              ))}
             </div>
           ))}
           {jurors ? (
@@ -826,5 +947,183 @@ function PreviewSheet({ c, onClose }: { c: CourtCase; onClose: () => void }) {
         </Box>
       </div>
     </Sheet>
+  );
+}
+
+function ExhibitsEditor({ list, onChange }: { list: Exhibit[]; onChange: (list: Exhibit[]) => void }) {
+  const setAt = (i: number, patch: Partial<Exhibit>) => onChange(list.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  return (
+    <div className="grid gap-2 rounded-[14px] border border-dashed border-gold/40 p-2.5">
+      <p className="text-[13px] text-gold">📎 أدلة في ملفه يكشفها على الشاشة متى شاء (حتى 3). يمكن أن تكون قوية أو ضعيفة أو مضللة.</p>
+      {list.map((x, i) => (
+        <div key={i} className="grid gap-1.5">
+          <div className="flex items-center gap-2">
+            <input className={cx(inputClass, "!w-14 text-center text-[18px]")} value={x.icon ?? ""} maxLength={8} onChange={(e) => setAt(i, { icon: e.target.value })} aria-label="أيقونة" />
+            <input className={inputClass} value={x.title} maxLength={60} onChange={(e) => setAt(i, { title: e.target.value })} placeholder="عنوان الدليل" aria-label="عنوان الدليل" />
+            <input dir="ltr" className={cx(inputClass, "!w-20 text-center")} value={x.time ?? ""} maxLength={8} onChange={(e) => setAt(i, { time: e.target.value })} placeholder="21:00" aria-label="الوقت" />
+            <button type="button" className="grid size-9 shrink-0 place-items-center rounded-full text-mist hover:text-wrong" onClick={() => onChange(list.filter((_, j) => j !== i))} aria-label="حذف الدليل">
+              <Glyph name="trash" className="size-4" />
+            </button>
+          </div>
+          <textarea className={cx(textareaClass, "min-h-14")} value={x.text} maxLength={400} onChange={(e) => setAt(i, { text: e.target.value })} placeholder="ما يقوله الدليل" aria-label="نص الدليل" />
+        </div>
+      ))}
+      {list.length < 3 ? (
+        <button type="button" className="w-fit text-[13px] font-semibold text-gold" onClick={() => onChange([...list, { title: "", text: "", icon: "📎" }])}>
+          + أضف دليلًا لملفه
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** Other truths for the same story: each changes the verdict, the culprit and what changes with them. */
+function VariantsEditor({ c, onChange }: { c: CourtCase; onChange: (list: Variant[]) => void }) {
+  const list = c.variants ?? [];
+  const setAt = (i: number, patch: Partial<Variant>) => onChange(list.map((v, j) => (j === i ? { ...v, ...patch } : v)));
+  const suspects = (c.suspects ?? []).filter((x) => x.name.trim());
+  return (
+    <Box
+      title={`حقائق بديلة (${list.length})`}
+      action={
+        <p className="text-[13px] leading-6 text-mist">
+          نفس القصة بحقيقة أخرى: النظام يختار حقيقة لم تُلعب في الغرفة، فلا يحفظ اللاعبون الحل. غيّر فيها ما يتغير مع الحقيقة فقط: بطاقات بعض الأدوار، وبعض الأدلة.
+        </p>
+      }
+    >
+      {list.map((v, i) => (
+        <details key={v.key} className="grid gap-2 rounded-[16px] border border-line-strong/50 bg-night/40 p-3" open={!v.truth}>
+          <summary className="cursor-pointer text-[15px] font-bold text-ivory">
+            {v.label || `حقيقة ${i + 2}`} · <span className={v.guilty ? "text-wrong" : "text-correct"}>{v.guilty ? "مذنب" : "بريء"}</span>
+          </summary>
+          <div className="mt-2 grid gap-2">
+            <div className="flex items-center gap-2">
+              <input className={inputClass} value={v.label} maxLength={40} onChange={(e) => setAt(i, { label: e.target.value })} placeholder="اسم داخلي، مثل: الحارس هو الفاعل" aria-label="اسم النسخة" />
+              <button type="button" className="grid size-9 shrink-0 place-items-center rounded-full text-mist hover:text-wrong" onClick={() => onChange(list.filter((_, j) => j !== i))} aria-label="حذف النسخة">
+                <Glyph name="trash" className="size-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {[true, false].map((g) => (
+                <button
+                  key={String(g)}
+                  type="button"
+                  aria-pressed={v.guilty === g}
+                  onClick={() => setAt(i, { guilty: g })}
+                  className={cx("min-h-11 rounded-[14px] border-2 text-[15px] font-bold", v.guilty === g ? (g ? "border-wrong bg-wrong-fill/20 text-wrong" : "border-correct bg-correct-fill/20 text-correct") : "border-line-strong/70 text-mist")}
+                >
+                  {g ? "المتهم مذنب" : "المتهم بريء"}
+                </button>
+              ))}
+            </div>
+            {suspects.length >= 2 ? (
+              <select className={selectClass} value={v.culprit ?? ""} onChange={(e) => setAt(i, { culprit: e.target.value || null })} aria-label="الفاعل في هذه النسخة">
+                <option value="">الفاعل: كما في الأصل</option>
+                {suspects.map((x) => (
+                  <option key={x.key} value={x.key}>
+                    الفاعل: {x.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            <textarea className={textareaClass} rows={3} value={v.truth} maxLength={2000} onChange={(e) => setAt(i, { truth: e.target.value })} placeholder="ماذا حدث فعلًا في هذه النسخة؟" aria-label="الحقيقة" />
+            <details className="rounded-[12px] bg-deep-2/40 p-2">
+              <summary className="cursor-pointer text-[14px] font-semibold text-ivory">بطاقات تتغير ({Object.keys(v.roles ?? {}).length})</summary>
+              <div className="mt-2 grid gap-2">
+                {c.roles.map((r) => {
+                  const o = v.roles?.[r.key] ?? {};
+                  const setRole = (patch: RoleOverride) => setAt(i, { roles: { ...(v.roles ?? {}), [r.key]: { ...o, ...patch } } });
+                  return (
+                    <div key={r.key} className="grid gap-1.5">
+                      <p className="text-[13px] font-bold text-mist">
+                        {KINDS[r.kind].icon} {r.name}
+                      </p>
+                      <textarea className={cx(textareaClass, "min-h-14")} value={o.secret ?? ""} maxLength={800} onChange={(e) => setRole({ secret: e.target.value })} placeholder={`السر في هذه النسخة (فارغ = كما هو): ${r.secret.slice(0, 60)}…`} aria-label={`سر ${r.name}`} />
+                      {o.secret || o.later || r.later ? (
+                        <input className={inputClass} value={o.later ?? ""} maxLength={600} onChange={(e) => setRole({ later: e.target.value })} placeholder="المعلومة اللاحقة في هذه النسخة (فارغ = كما هي)" aria-label={`معلومة ${r.name} اللاحقة`} />
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </details>
+            <details className="rounded-[12px] bg-deep-2/40 p-2">
+              <summary className="cursor-pointer text-[14px] font-semibold text-ivory">أدلة تتغير</summary>
+              <div className="mt-2 grid gap-2">
+                {c.evidence.map((e) => {
+                  const o = v.evidence?.[e.title] ?? {};
+                  const setEv = (patch: { text?: string; time?: string; remove?: boolean }) => setAt(i, { evidence: { ...(v.evidence ?? {}), [e.title]: { ...o, ...patch } } });
+                  return (
+                    <div key={e.title} className="grid gap-1.5">
+                      <label className="flex items-center gap-2 text-[13px] font-bold text-mist">
+                        {e.icon} {e.title}
+                        <span className="flex-1" />
+                        <input type="checkbox" className="size-4 accent-[var(--color-wrong)]" checked={!!o.remove} onChange={(ev) => setEv({ remove: ev.target.checked })} />
+                        احذفه
+                      </label>
+                      {!o.remove ? (
+                        <div className="grid grid-cols-[1fr_auto] gap-2">
+                          <input className={inputClass} value={o.text ?? ""} maxLength={400} onChange={(ev) => setEv({ text: ev.target.value })} placeholder="نص بديل (فارغ = كما هو)" aria-label={`نص ${e.title}`} />
+                          <input dir="ltr" className={cx(inputClass, "!w-20 text-center")} value={o.time ?? ""} maxLength={8} onChange={(ev) => setEv({ time: ev.target.value })} placeholder={e.time || "وقت"} aria-label={`وقت ${e.title}`} />
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+                {(v.extra_evidence ?? []).map((e, k) => (
+                  <div key={`x${k}`} className="grid gap-1.5 rounded-[12px] border border-gold/30 p-2">
+                    <div className="flex items-center gap-2">
+                      <select
+                        className={cx(selectClass, "!w-28")}
+                        value={e.stage}
+                        onChange={(ev) => setAt(i, { extra_evidence: (v.extra_evidence ?? []).map((x, j) => (j === k ? { ...x, stage: Number(ev.target.value) } : x)) })}
+                        aria-label="الجولة"
+                      >
+                        {[1, 2, 3].map((n) => (
+                          <option key={n} value={n}>
+                            الجولة {n}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        className={inputClass}
+                        value={e.title}
+                        maxLength={60}
+                        onChange={(ev) => setAt(i, { extra_evidence: (v.extra_evidence ?? []).map((x, j) => (j === k ? { ...x, title: ev.target.value } : x)) })}
+                        placeholder="دليل إضافي في هذه النسخة"
+                        aria-label="عنوان الدليل الإضافي"
+                      />
+                      <button type="button" className="grid size-9 shrink-0 place-items-center rounded-full text-mist hover:text-wrong" onClick={() => setAt(i, { extra_evidence: (v.extra_evidence ?? []).filter((_, j) => j !== k) })} aria-label="حذف">
+                        <Glyph name="trash" className="size-4" />
+                      </button>
+                    </div>
+                    <input
+                      className={inputClass}
+                      value={e.text}
+                      maxLength={400}
+                      onChange={(ev) => setAt(i, { extra_evidence: (v.extra_evidence ?? []).map((x, j) => (j === k ? { ...x, text: ev.target.value } : x)) })}
+                      placeholder="نص الدليل"
+                      aria-label="نص الدليل الإضافي"
+                    />
+                  </div>
+                ))}
+                <button type="button" className="w-fit text-[13px] font-semibold text-gold" onClick={() => setAt(i, { extra_evidence: [...(v.extra_evidence ?? []), { stage: 2, icon: "📄", title: "", text: "" }] })}>
+                  + دليل إضافي لهذه النسخة
+                </button>
+              </div>
+            </details>
+          </div>
+        </details>
+      ))}
+      {list.length < 4 ? (
+        <Button
+          tone="quiet"
+          onClick={() => onChange([...list, { key: `v${Date.now().toString(36)}`, label: "", guilty: !c.guilty, culprit: null, truth: "" }])}
+        >
+          <Glyph name="plus" className="size-[18px]" />
+          أضف حقيقة بديلة
+        </Button>
+      ) : null}
+    </Box>
   );
 }

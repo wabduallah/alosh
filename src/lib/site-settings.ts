@@ -44,7 +44,7 @@ export type GameDefaults = {
     dead_see_roles?: boolean;
   };
   "tactical-grid"?: { seconds?: number };
-  court?: { host_plays?: boolean; auto?: boolean; question_seconds?: number; closing_seconds?: number; vote_seconds?: number };
+  court?: { host_plays?: boolean; auto?: boolean; quick?: boolean; judge?: "host" | "random"; question_seconds?: number; closing_seconds?: number; vote_seconds?: number };
 };
 
 type Settings = { announcement?: Announcement; game_defaults?: GameDefaults };
