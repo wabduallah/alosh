@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, cx } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { useLivePoll } from "@/lib/live";
@@ -11,7 +11,7 @@ import {
   ROLE_HINTS,
   ROLE_ICONS,
   ROLE_NAMES,
-  RoleCard,
+  ROLE_INFO,
   TallyView,
   VotesView,
   WINNERS,
@@ -51,6 +51,174 @@ const MAFIA_HOST_ERRORS: Record<string, string> = {
 type MafiaProgress = { phase?: string; done?: number; total?: number; mafia_split?: boolean };
 
 type NarratorRole = { player_id: string; player_name: string; role: string; alive: boolean; lover?: string | null };
+/** mafia_night_live() (mafia_v7.sql): tonight's choices so far, for the narrator only. */
+type NightLive = { actor: string; actor_role: string; kind: string; target: string; target_role: string };
+
+/** «المتخفي» already unmasked by a vote: everyone knows. */
+const isUnmasked = (state: Record<string, unknown> | MafiaPublicState, id: string) => {
+  const u = (state as { unmasked?: unknown }).unmasked;
+  return Array.isArray(u) && (u as string[]).includes(id);
+};
+
+/** The narrator's live night: who the mafia picked, whom the doctor saves, whom the detective checks… */
+function NightLiveView({ rows }: { rows: NightLive[] }) {
+  const kills = rows.filter((r) => r.kind === "kill");
+  const line = (r: NightLive) => {
+    const who = `${ROLE_ICONS[r.actor_role] ?? ""} ${r.actor}`;
+    switch (r.kind) {
+      case "save":
+        return `${who} (الطبيب) يحمي ${r.target}`;
+      case "guard":
+        return `${who} (الحارس) يحرس ${r.target}`;
+      case "inspect":
+        return `${who} (المحقق) يحقق مع ${r.target} · ${r.target_role === "mafia" ? "سيظهر له مافيا" : "سيظهر له ليس مافيا"}`;
+      case "spy":
+        return `${who} (الجاسوس) تحقّق من ${r.target} · ${r.target_role === "citizen" ? "مواطن عادي" : "صاحب دور خاص"}`;
+      default:
+        return "";
+    }
+  };
+  return (
+    <div className="mx-auto mt-4 max-w-md rounded-2xl border border-violet-text/40 bg-violet-fill/10 p-3 text-start">
+      <p className="text-sm font-bold text-violet-text">👁️ الليل مباشرة (للراوي فقط)</p>
+      {rows.length === 0 ? <p className="mt-2 text-sm text-muted">لم يختر أحد بعد.</p> : null}
+      {kills.length ? (
+        <p className="mt-2 rounded-xl bg-wrong-fill/20 px-3 py-1.5 text-sm text-ivory">
+          🔪 المافيا: {kills.map((k) => `${k.actor} ← ${k.target}`).join("، ")}
+        </p>
+      ) : null}
+      <ul className="mt-1.5 grid gap-1 text-sm text-ivory">
+        {rows
+          .filter((r) => r.kind !== "kill")
+          .map((r, i) => (
+            <li key={i} className="rounded-xl bg-deep-2/60 px-3 py-1.5">
+              {line(r)}
+            </li>
+          ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * The secret card: hidden unless the player touches and holds it, hidden again on release,
+ * when the phone is locked or the tab is left. Neighbours never see a role on the screen.
+ */
+function SecretCard({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const hide = () => setOpen(false);
+    document.addEventListener("visibilitychange", hide);
+    window.addEventListener("blur", hide);
+    return () => {
+      document.removeEventListener("visibilitychange", hide);
+      window.removeEventListener("blur", hide);
+    };
+  }, []);
+  const show = () => setOpen(true);
+  const hide = () => setOpen(false);
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-pressed={open}
+      aria-label="بطاقتك السرية: المس مطولًا لتراها"
+      onPointerDown={show}
+      onPointerUp={hide}
+      onPointerLeave={hide}
+      onPointerCancel={hide}
+      onContextMenu={(e) => e.preventDefault()}
+      onKeyDown={(e) => {
+        if (e.key === " " || e.key === "Enter") {
+          e.preventDefault();
+          show();
+        }
+      }}
+      onKeyUp={hide}
+      onBlur={hide}
+      className={cx(
+        "mt-3 grid min-h-32 cursor-pointer touch-none select-none place-items-center rounded-[22px] border-2 border-dashed p-4 [-webkit-touch-callout:none]",
+        open ? "border-gold/70 bg-night/70" : "border-violet-text/50 bg-violet-fill/10",
+      )}
+    >
+      {open ? (
+        <div className="w-full">{children}</div>
+      ) : (
+        <div className="grid justify-items-center gap-1">
+          <span aria-hidden="true" className="text-[34px] leading-none">
+            🂠
+          </span>
+          <p className="text-[16px] font-extrabold text-ivory">بطاقتك السرية</p>
+          <p className="text-[13px] text-muted">المس الشاشة مطوّلًا لترى دورك، ويختفي حين ترفع إصبعك.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The spy's findings: «مواطن عادي» or «صاحب دور خاص», for the spy and the mafia. */
+function SpyChecks({ checks }: { checks: Array<{ round: number; name: string; special: boolean }> }) {
+  return (
+    <ul className="mx-auto mt-3 grid max-w-xs gap-1.5 text-sm">
+      {checks.map((x) => (
+        <li key={`${x.round}-${x.name}`} className="flex items-center justify-between gap-3 rounded-xl bg-deep-2/70 px-3 py-1.5">
+          <span className="text-muted">🕶️ ليلة {x.round}</span>
+          <span className="font-bold text-ivory">{x.name}</span>
+          <span className={cx("font-bold", x.special ? "text-gold" : "text-mist")}>{x.special ? "صاحب دور خاص" : "مواطن عادي"}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * A private ability (the sniper's shot, the seer's look) behind a neutral button that every
+ * living player has, so having it gives nothing away. It closes by itself after 20 seconds.
+ */
+function SecretAbility({ children, has }: { children: ReactNode; has: boolean }) {
+  const [open, setOpen] = useState(false);
+  const timer = useRef<number | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const t = window.setTimeout(() => setOpen(false), 20000);
+    const hide = () => setOpen(false);
+    document.addEventListener("visibilitychange", hide);
+    return () => {
+      window.clearTimeout(t);
+      document.removeEventListener("visibilitychange", hide);
+    };
+  }, [open]);
+  const start = () => {
+    timer.current = window.setTimeout(() => setOpen(true), 500);
+  };
+  const cancel = () => {
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = null;
+  };
+  if (!open)
+    return (
+      <button
+        type="button"
+        onPointerDown={start}
+        onPointerUp={cancel}
+        onPointerLeave={cancel}
+        onPointerCancel={cancel}
+        onContextMenu={(e) => e.preventDefault()}
+        onKeyDown={(e) => (e.key === " " || e.key === "Enter") && setOpen(true)}
+        className="mt-4 min-h-11 touch-none select-none rounded-full border border-line px-5 text-sm font-bold text-mist"
+      >
+        🤫 قدرتي السرية (المس مطوّلًا)
+      </button>
+    );
+  return (
+    <div className="mt-4">
+      {has ? children : <p className="rounded-2xl border border-line bg-deep-2/60 p-3 text-sm text-muted">ليس لديك قدرة الآن. شارك في النقاش والتصويت.</p>}
+      <button type="button" onClick={() => setOpen(false)} className="mt-2 text-xs text-muted underline">
+        إخفاء
+      </button>
+    </div>
+  );
+}
 
 /**
  * The narrator's screen: setup (host only), each phase's controls, the roles of everyone
@@ -81,6 +249,8 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
   const [randomNarrator, setRandomNarrator] = useState(0);
   const [lovers, setLovers] = useState(false);
   const [deadSee, setDeadSee] = useState(true);
+  const [disguised, setDisguised] = useState(false);
+  const [nightLive, setNightLive] = useState<NightLive[]>([]);
   const [roles, setRoles] = useState<NarratorRole[]>([]);
   const [details, setDetails] = useState<(MafiaVote & { round: number; stage: number })[]>([]);
 
@@ -156,10 +326,16 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
     if (!supabase || (phase !== "night" && phase !== "vote")) return;
     const client = supabase;
     let live = true;
-    const tick = () =>
+    const tick = () => {
       void client.rpc("mafia_progress", { p_room_id: roomId }).then(({ data }) => {
         if (live) setProgress((data ?? null) as MafiaProgress | null);
       });
+      // The narrator watches the night as it happens (mafia_v7.sql; empty before it runs).
+      if (phase === "night")
+        void client.rpc("mafia_night_live", { p_room_id: roomId }).then(({ data }) => {
+          if (live) setNightLive(Array.isArray(data) ? (data as NightLive[]) : []);
+        });
+    };
     tick();
     const t = window.setInterval(() => document.visibilityState === "visible" && tick(), 2500);
     return () => {
@@ -187,6 +363,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
     setRandomNarrator(last.narrator === "random" ? 1 : 0);
     setLovers(!!last.lovers);
     setDeadSee(last.dead_see_roles !== false);
+    setDisguised(!!last.disguised);
   }, [phase, state.last_settings]);
   useEffect(() => {
     if (phase !== "") prefilled.current = false;
@@ -212,6 +389,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
     setSeer(!!r.seer);
     setSpy(!!r.spy);
     setLovers(!!r.lovers);
+    setDisguised(!!r.disguised);
   }, [site, phase, state.last_settings]);
 
   const dayLeft = useCountdown(phase === "day" ? state.day_ends_at : null);
@@ -269,7 +447,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
   const autoMafia = guests >= 10 ? 3 : guests >= 7 ? 2 : 1;
   // A chosen count larger than the room allows (a default, or players who left) falls back to automatic.
   const plannedMafia = (mafiaCount <= maxMafia ? mafiaCount : 0) || autoMafia;
-  const special = 2 + Number(jester) + Number(mayor) + Number(bodyguard) + Number(sniper) + Number(seer) + Number(spy);
+  const special = 2 + Number(jester) + Number(mayor) + Number(bodyguard) + Number(sniper) + Number(seer) + Number(spy) + Number(disguised);
   const fits = guests >= 5 && (plannedMafia + Number(spy)) * 2 < guests && plannedMafia + special < guests;
   const roundVotes = details.filter((d) => d.round === round);
   const shownVotes = roundVotes.length ? roundVotes.filter((d) => d.stage === Math.max(...roundVotes.map((x) => x.stage))) : details.filter((d) => d.round === round - 1);
@@ -357,6 +535,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
                 { on: seer, set: setSeer, role: "seer", text: "مرة واحدة تعرف دور لاعب خرج من اللعبة." },
                 { on: spy, set: setSpy, role: "spy", text: "حليف المافيا: يعرفهم ويعرفونه ولا يختار ضحية، ويفوز معهم." },
                 { on: lovers, set: setLovers, role: "lovers", text: "لاعبان من فريق المواطنين يعرف كل منهما الآخر، وإذا مات أحدهما مات الآخر حزنًا." },
+                { on: disguised, set: setDisguised, role: "disguised", text: "إذا صُوِّت عليه نهارًا لا يموت في المرة الأولى: يُعلن أنه المتخفي وينتهي تصويت اليوم بلا إقصاء." },
               ].map((r) => (
                 <label key={r.role} className="flex items-start gap-3 rounded-2xl border border-line bg-deep-2/50 p-3">
                   <input type="checkbox" checked={r.on} onChange={(e) => r.set(e.target.checked)} className="mt-1 size-5 accent-[var(--color-gold)]" />
@@ -378,7 +557,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
               {guests < 5
                 ? "تحتاجون 5 لاعبين على الأقل غير الراوي."
                 : fits
-                  ? `الأدوار: ${plannedMafia} مافيا${spy ? "، جاسوس" : ""}، طبيب، محقق${bodyguard ? "، حارس" : ""}${mayor ? "، عمدة" : ""}${jester ? "، مهرّج" : ""}${sniper ? "، قنّاص" : ""}${seer ? "، عرّافة" : ""}، والباقي مواطنون (${guests - plannedMafia - special})${lovers ? "، واثنان من فريق المواطنين عاشقان" : ""}.`
+                  ? `الأدوار: ${plannedMafia} مافيا${spy ? "، جاسوس" : ""}، طبيب، محقق${bodyguard ? "، حارس" : ""}${mayor ? "، عمدة" : ""}${jester ? "، مهرّج" : ""}${sniper ? "، قنّاص" : ""}${seer ? "، عرّافة" : ""}${disguised ? "، متخفٍّ" : ""}، والباقي مواطنون (${guests - plannedMafia - special})${lovers ? "، واثنان من فريق المواطنين عاشقان" : ""}.`
                   : "الأدوار أكثر من اللاعبين. قلّل الأدوار الإضافية أو عدد المافيا."}
             </p>
           </div>
@@ -395,6 +574,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
               )}
             >
               {p.is_mayor ? "👑 " : ""}
+              {isUnmasked(state, p.player_id) ? "🎭 " : ""}
               {p.player_name}
               {p.player_role && (over || !p.alive) ? (
                 <span className="block text-xs font-normal text-muted no-underline">{ROLE_NAMES[p.player_role] ?? ""}</span>
@@ -436,6 +616,8 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
             {mmss(voteLeft)}
           </p>
         ) : null}
+
+        {phase === "night" && roles.length > 0 ? <NightLiveView rows={nightLive} /> : null}
 
         {(phase === "night" || phase === "vote") && shownVotes.length > 0 ? (
           <div className="mx-auto mt-4 max-w-md">
@@ -481,6 +663,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
                     seer,
                     spy,
                     lovers,
+                    disguised,
                     dead_see_roles: deadSee,
                   },
                 })
@@ -582,6 +765,9 @@ type MafiaMe = {
   self_save_used?: boolean | null;
   shot_used?: boolean | null;
   seer_result?: { name: string; role: string } | null;
+  /** The spy's checks (mafia_v7.sql), seen by the spy and the mafia. */
+  spy_checks?: Array<{ round: number; name: string; special: boolean }>;
+  spy_ready?: boolean | null;
 };
 type MafiaRow = MafiaPlayerRow;
 type MafiaPick = { player_name: string; target_id: string; target_name: string };
@@ -593,6 +779,7 @@ const MAFIA_PLAYER_ERRORS: Record<string, string> = {
   NOT_IN_ROOM: "تعذّر التعرف عليك في الغرفة.",
   LOCKED: "حققت الليلة. النتيجة تظهر بعد انتهاء الليل.",
   SAME_SAVE: "لا تقدر تحمي نفس اللاعب ليلتين متتاليتين.",
+  SPY_WAIT: "تحققت قبل جولة. التحقق كل جولتين.",
   SELF_USED: "حميت نفسك من قبل. حماية النفس مرة واحدة في المباراة.",
   NOT_IN_RUNOFF: "إعادة التصويت بين المتعادلين فقط.",
   USED: "استخدمتها من قبل في هذه المباراة.",
@@ -761,6 +948,22 @@ export function MafiaPlayerPanel({
       setBusy(false);
     }
   }
+  async function spyCheck(target: string) {
+    if (!supabase || busy) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const { data, error } = await supabase.rpc("mafia_spy_check", { p_room_id: roomId, p_target_id: target });
+      if (error) throw error;
+      const result = data as { ok: boolean; reason?: string };
+      if (!result.ok) setMessage(MAFIA_PLAYER_ERRORS[result.reason ?? ""] ?? "تعذّر التحقق.");
+      await load();
+    } catch {
+      setMessage("تعذّر التحقق.");
+    } finally {
+      setBusy(false);
+    }
+  }
   const dead = rows.filter((p) => !p.alive);
   const showSniper = iAmAlive && role === "sniper" && phase === "day" && !me?.shot_used;
   const showSeer = iAmAlive && role === "seer" && phase !== "over" && phase !== "" && !me?.seer_result;
@@ -789,54 +992,76 @@ export function MafiaPlayerPanel({
         )
       ) : (
         <>
-          <p className="mt-3 text-sm text-muted">دورك</p>
-          <p className="text-2xl font-extrabold text-ivory">
-            {ROLE_ICONS[role] ?? ""} {ROLE_NAMES[role] ?? ""}
-          </p>
-          <p className="mt-2 text-sm leading-7 text-muted">{ROLE_HINTS[role] ?? ""}</p>
-          <RoleCard role={role} open={round <= 1 && phase === "night"} />
-          {role === "mafia" && teammates.length > 0 ? (
-            <p className="mt-2 text-sm text-muted">
-              زملاؤك المافيا: <span className="font-bold text-ivory">{teammates.join("، ")}</span>
+          {over ? (
+            <p className="mt-3 text-2xl font-extrabold text-ivory">
+              {ROLE_ICONS[role] ?? ""} {ROLE_NAMES[role] ?? ""}
             </p>
-          ) : null}
-          {role === "mafia" && (me?.spies ?? []).length > 0 ? (
-            <p className="mt-2 text-sm text-muted">
-              🕶️ الجاسوس حليفكم: <span className="font-bold text-ivory">{(me?.spies ?? []).join("، ")}</span> (لا يختار معكم)
-            </p>
-          ) : null}
-          {role === "spy" ? (
-            <p className="mt-3 rounded-2xl border border-wrong/40 bg-wrong-fill/10 p-3 text-sm text-ivory">
-              {teammates.length > 0 ? (
-                <>
-                  🔪 المافيا: <b>{teammates.join("، ")}</b>
-                </>
-              ) : (
-                "لم يبقَ أحد من المافيا."
-              )}
-            </p>
-          ) : null}
-          {role === "detective" && (me?.inspections ?? []).length > 0 ? (
-            <ul className="mx-auto mt-3 grid max-w-xs gap-1.5 text-sm">
-              {(me?.inspections ?? []).map((x) => (
-                <li key={x.round} className="flex items-center justify-between gap-3 rounded-xl bg-deep-2/70 px-3 py-1.5">
-                  <span className="text-muted">ليلة {x.round}</span>
-                  <span className="font-bold text-ivory">{x.name}</span>
-                  <span className={cx("font-bold", x.mafia ? "text-wrong" : "text-correct")}>{x.mafia ? "مافيا" : "ليس مافيا"}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          ) : (
+            <SecretCard>
+              <p className="text-sm text-muted">دورك</p>
+              <p className="text-2xl font-extrabold text-ivory">
+                {ROLE_ICONS[role] ?? ""} {ROLE_NAMES[role] ?? ""}
+              </p>
+              <p className="mt-2 text-sm leading-7 text-muted">{ROLE_HINTS[role] ?? ""}</p>
+              {ROLE_INFO[role] ? (
+                <dl className="mt-3 grid gap-1.5 rounded-[16px] border border-line bg-deep-2/50 p-3 text-start text-[13px] leading-6">
+                  <div>
+                    <dt className="inline font-bold text-gold">الفريق: </dt>
+                    <dd className="inline text-ivory">{ROLE_INFO[role].team}</dd>
+                  </div>
+                  <div>
+                    <dt className="inline font-bold text-gold">متى: </dt>
+                    <dd className="inline text-ivory">{ROLE_INFO[role].when}</dd>
+                  </div>
+                  <div>
+                    <dt className="inline font-bold text-gold">متى تفوز: </dt>
+                    <dd className="inline text-ivory">{ROLE_INFO[role].wins}</dd>
+                  </div>
+                </dl>
+              ) : null}
+              {role === "mafia" && teammates.length > 0 ? (
+                <p className="mt-2 text-sm text-muted">
+                  زملاؤك المافيا: <span className="font-bold text-ivory">{teammates.join("، ")}</span>
+                </p>
+              ) : null}
+              {role === "mafia" && (me?.spies ?? []).length > 0 ? (
+                <p className="mt-2 text-sm text-muted">
+                  🕶️ الجاسوس حليفكم: <span className="font-bold text-ivory">{(me?.spies ?? []).join("، ")}</span>
+                </p>
+              ) : null}
+              {role === "spy" ? (
+                <p className="mt-2 text-sm text-muted">{teammates.length > 0 ? <>🔪 المافيا: <b className="text-ivory">{teammates.join("، ")}</b></> : "لم يبقَ أحد من المافيا."}</p>
+              ) : null}
+              {(role === "spy" || role === "mafia") && (me?.spy_checks ?? []).length > 0 ? <SpyChecks checks={me?.spy_checks ?? []} /> : null}
+              {role === "detective" && (me?.inspections ?? []).length > 0 ? (
+                <ul className="mx-auto mt-3 grid max-w-xs gap-1.5 text-sm">
+                  {(me?.inspections ?? []).map((x) => (
+                    <li key={x.round} className="flex items-center justify-between gap-3 rounded-xl bg-deep-2/70 px-3 py-1.5">
+                      <span className="text-muted">ليلة {x.round}</span>
+                      <span className="font-bold text-ivory">{x.name}</span>
+                      <span className={cx("font-bold", x.mafia ? "text-wrong" : "text-correct")}>{x.mafia ? "مافيا" : "ليس مافيا"}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {role === "seer" && me?.seer_result ? (
+                <p className="mt-2 text-sm text-ivory">
+                  🔮 {me.seer_result.name} كان <b>{ROLE_NAMES[me.seer_result.role] ?? ""}</b>
+                </p>
+              ) : null}
+              {role === "sniper" && me?.shot_used ? <p className="mt-2 text-sm text-muted">🎯 أطلقت رصاصتك.</p> : null}
+              {me?.lover ? (
+                <div className="mt-3 rounded-2xl border border-[#ff5a7a66] bg-[#83184322] p-3 text-start text-sm">
+                  <p className="font-bold text-ivory">❤️ عاشقك: {me.lover}</p>
+                  <p className="mt-1 leading-6 text-muted">{LOVERS_INFO}</p>
+                </div>
+              ) : null}
+            </SecretCard>
+          )}
           {inspectLocked ? (
             <p className="mt-3 rounded-2xl border border-gold/40 bg-gold/10 p-3 text-sm text-ivory">
               حققت الليلة مع <b>{me?.pending_inspect}</b>. النتيجة تظهر بعد انتهاء الليل.
             </p>
-          ) : null}
-          {me?.lover ? (
-            <div className="mt-3 rounded-2xl border border-[#ff5a7a66] bg-[#83184322] p-3 text-start text-sm">
-              <p className="font-bold text-ivory">❤️ عاشقك: {me.lover}</p>
-              <p className="mt-1 leading-6 text-muted">{LOVERS_INFO}</p>
-            </div>
           ) : null}
           {!iAmAlive && !over ? <GhostView roomId={roomId} phase={phase} /> : null}
         </>
@@ -848,7 +1073,31 @@ export function MafiaPlayerPanel({
         <p className="mt-4 text-sm text-muted">اغمضوا أعينكم. الليل لأصحاب الأدوار.</p>
       ) : null}
       {phase === "night" && role === "spy" && iAmAlive ? (
-        <p className="mt-4 text-sm text-muted">افتح عينك مع المافيا وتعرّف عليهم. لا تختار ضحية؛ انتظر الصباح.</p>
+        <div className="mt-4 rounded-2xl border border-wrong/40 bg-wrong-fill/10 p-4">
+          <p className="text-sm text-muted">افتح عينك مع المافيا. لا تختار ضحية معهم.</p>
+          {me?.spy_ready ? (
+            <>
+              <p className="mt-2 text-sm font-bold text-ivory">🕶️ تحقّق من لاعب: مواطن عادي أم صاحب دور خاص؟</p>
+              <div className="mt-3 flex flex-wrap justify-center gap-2">
+                {rows
+                  .filter((p) => p.alive && p.player_id !== meId && !teammates.includes(p.player_name))
+                  .map((p) => (
+                    <button key={p.player_id} type="button" disabled={busy} onClick={() => spyCheck(p.player_id)} className="min-h-11 rounded-full border border-line px-4 text-sm font-bold text-ivory">
+                      {p.player_name}
+                    </button>
+                  ))}
+              </div>
+            </>
+          ) : (
+            <p className="mt-2 text-sm text-muted">التحقق كل جولتين: تقدر تتحقق مرة ثانية الجولة القادمة.</p>
+          )}
+          {(me?.spy_checks ?? []).length ? <SpyChecks checks={me?.spy_checks ?? []} /> : null}
+        </div>
+      ) : null}
+      {phase === "night" && role === "mafia" && iAmAlive && (me?.spy_checks ?? []).length ? (
+        <div className="mt-4">
+          <SpyChecks checks={me?.spy_checks ?? []} />
+        </div>
       ) : null}
       {phase === "day" ? (
         <p className="mt-4 text-sm text-muted">
@@ -879,63 +1128,62 @@ export function MafiaPlayerPanel({
         </p>
       ) : null}
 
-      {role === "seer" && me?.seer_result ? (
-        <p className="mt-4 rounded-2xl border border-violet-text/40 bg-violet-fill/10 p-3 text-sm text-ivory">
-          🔮 {me.seer_result.name} كان <b>{ROLE_NAMES[me.seer_result.role] ?? ""}</b>
-        </p>
-      ) : null}
-      {role === "sniper" && me?.shot_used ? <p className="mt-4 text-sm text-muted">🎯 أطلقت رصاصتك.</p> : null}
 
-      {showSniper ? (
-        <div className="mt-5 rounded-2xl border border-wrong/40 bg-wrong-fill/10 p-4">
-          <p className="text-sm font-bold text-ivory">🎯 رصاصتك الوحيدة: على من تطلقها؟</p>
-          <div className="mt-3 flex flex-wrap justify-center gap-2">
-            {rows
-              .filter((p) => p.alive && p.player_id !== meId)
-              .map((p) => (
+      {iAmAlive && (phase === "day" || phase === "vote") ? (
+        <SecretAbility has={showSniper || showSeer}>
+          {showSniper ? (
+            <div className="mt-5 rounded-2xl border border-wrong/40 bg-wrong-fill/10 p-4">
+              <p className="text-sm font-bold text-ivory">🎯 رصاصتك الوحيدة: على من تطلقها؟</p>
+              <div className="mt-3 flex flex-wrap justify-center gap-2">
+                {rows
+                  .filter((p) => p.alive && p.player_id !== meId)
+                  .map((p) => (
+                    <button
+                      key={p.player_id}
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setAim(aim === p.player_id ? null : p.player_id)}
+                      aria-pressed={aim === p.player_id}
+                      className={cx("min-h-11 rounded-full border px-4 text-sm font-bold", aim === p.player_id ? "border-wrong bg-wrong-fill/30 text-ivory" : "border-line text-ivory")}
+                    >
+                      {p.is_mayor ? "👑 " : ""}
+                      {p.player_name}
+                    </button>
+                  ))}
+              </div>
+              {aim ? (
                 <button
-                  key={p.player_id}
                   type="button"
                   disabled={busy}
-                  onClick={() => setAim(aim === p.player_id ? null : p.player_id)}
-                  aria-pressed={aim === p.player_id}
-                  className={cx("min-h-11 rounded-full border px-4 text-sm font-bold", aim === p.player_id ? "border-wrong bg-wrong-fill/30 text-ivory" : "border-line text-ivory")}
+                  onClick={() => special("mafia_shoot", aim)}
+                  className="mt-3 min-h-12 rounded-full bg-[linear-gradient(90deg,#ff5a7a,#c21d4f)] px-6 text-sm font-extrabold text-ivory disabled:opacity-50"
                 >
-                  {p.is_mayor ? "👑 " : ""}
-                  {p.player_name}
+                  أطلق على {rows.find((p) => p.player_id === aim)?.player_name}
                 </button>
-              ))}
-          </div>
-          {aim ? (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => special("mafia_shoot", aim)}
-              className="mt-3 min-h-12 rounded-full bg-[linear-gradient(90deg,#ff5a7a,#c21d4f)] px-6 text-sm font-extrabold text-ivory disabled:opacity-50"
-            >
-              أطلق على {rows.find((p) => p.player_id === aim)?.player_name}
-            </button>
-          ) : (
-            <p className="mt-2 text-xs text-muted">مرة واحدة في المباراة، ولا يعرف أحد من أطلقها.</p>
-          )}
-        </div>
-      ) : null}
-
-      {showSeer ? (
-        <div className="mt-5 rounded-2xl border border-violet-text/40 bg-violet-fill/10 p-4">
-          <p className="text-sm font-bold text-ivory">🔮 اكشف دور لاعب خرج (مرة واحدة)</p>
-          {dead.length === 0 ? (
-            <p className="mt-2 text-xs text-muted">لم يخرج أحد بعد.</p>
-          ) : (
-            <div className="mt-3 flex flex-wrap justify-center gap-2">
-              {dead.map((p) => (
-                <button key={p.player_id} type="button" disabled={busy} onClick={() => special("mafia_seer", p.player_id)} className="min-h-11 rounded-full border border-line px-4 text-sm font-bold text-ivory">
-                  {p.player_name}
-                </button>
-              ))}
+              ) : (
+                <p className="mt-2 text-xs text-muted">مرة واحدة في المباراة، ولا يعرف أحد من أطلقها.</p>
+              )}
             </div>
-          )}
-        </div>
+          ) : null}
+
+          {showSeer ? (
+            <div className="mt-5 rounded-2xl border border-violet-text/40 bg-violet-fill/10 p-4">
+              <p className="text-sm font-bold text-ivory">🔮 اكشف دور لاعب خرج (مرة واحدة)</p>
+              {dead.length === 0 ? (
+                <p className="mt-2 text-xs text-muted">لم يخرج أحد بعد.</p>
+              ) : (
+                <div className="mt-3 flex flex-wrap justify-center gap-2">
+                  {dead.map((p) => (
+                    <button key={p.player_id} type="button" disabled={busy} onClick={() => special("mafia_seer", p.player_id)} className="min-h-11 rounded-full border border-line px-4 text-sm font-bold text-ivory">
+                      {p.player_name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
+
+        </SecretAbility>
       ) : null}
 
       {canAct ? (
@@ -958,6 +1206,7 @@ export function MafiaPlayerPanel({
                   )}
                 >
                   {p.is_mayor ? "👑 " : ""}
+                  {isUnmasked(state, p.player_id) ? "🎭 " : ""}
                   {p.player_name}
                   {why ? <span className="text-[11px] font-normal text-muted">{why}</span> : null}
                   {team.length > 0 ? <span className="text-[11px] font-normal text-wrong">🔪 {team.map((x) => x.player_name).join("، ")}</span> : null}

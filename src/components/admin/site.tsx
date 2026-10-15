@@ -197,7 +197,7 @@ function AnnouncementEditor({ initial }: { initial: Announcement }) {
 
 /* ---------------- الإعدادات الافتراضية ---------------- */
 
-type MafiaRole = "jester" | "mayor" | "bodyguard" | "sniper" | "seer" | "spy" | "lovers";
+type MafiaRole = "jester" | "mayor" | "bodyguard" | "sniper" | "seer" | "spy" | "lovers" | "disguised";
 const MAFIA_ROLES: Array<{ key: MafiaRole; label: string }> = [
   { key: "spy", label: "الجاسوس" },
   { key: "jester", label: "المهرّج" },
@@ -206,6 +206,7 @@ const MAFIA_ROLES: Array<{ key: MafiaRole; label: string }> = [
   { key: "sniper", label: "القنّاص" },
   { key: "seer", label: "العرّافة" },
   { key: "lovers", label: "العاشقان" },
+  { key: "disguised", label: "المتخفي" },
 ];
 
 function GameBox({ id, title, children }: { id: string; title: string; children: ReactNode }) {
