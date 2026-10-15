@@ -296,10 +296,13 @@ function TvScreen() {
         <Outsider state={state} counts={counts} />
       ) : isMafia ? (
         <Mafia roomId={room.id} state={state} rows={mafia} players={players} />
-      ) : isGrid ? (
-        <GridTv roomId={room.id} />
-      ) : isCourt ? (
-        <CourtTv roomId={room.id} />
+      ) : isGrid || isCourt ? (
+        <>
+          {room.status === "finished" ? (
+            <p className="mb-[1vw] rounded-[1.4vw] border border-gold/40 bg-night/60 p-[1vw] text-center font-display text-[clamp(20px,2.2vw,44px)] font-extrabold text-gold">⏹️ انتهت الغرفة. شكرًا للعب!</p>
+          ) : null}
+          {isGrid ? <GridTv roomId={room.id} /> : <CourtTv roomId={room.id} />}
+        </>
       ) : isHalba ? (
         <Halba state={state as unknown as HalbaState} players={players} />
       ) : (

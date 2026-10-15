@@ -246,6 +246,7 @@ function friendlyJoinError(err: unknown): string {
   if (message.includes("ROOM_FULL")) return "الغرفة ممتلئة.";
   if (message.includes("NAME_NOT_ALLOWED")) return "هذا الاسم غير مسموح. اختر اسمًا آخر.";
   if (message.includes("ROOM_FINISHED")) return "انتهت هذه الغرفة.";
+  if (message.includes("KICKED")) return "أخرجك المضيف من هذه الغرفة، فلا تستطيع الرجوع إليها.";
   if (message.includes("room_players_room_name_key") || message.toLowerCase().includes("duplicate"))
     return "هذا الاسم مستخدم في الغرفة. اختر اسمًا آخر.";
   return "تعذّر الانضمام، حاول مرة أخرى.";

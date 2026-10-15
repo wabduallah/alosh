@@ -209,6 +209,12 @@ function PlayerBoard() {
   const answered = new Set(stateData.answered ?? []);
   const active = questions.find((q) => q.id === activeId) ?? null;
   const me = players.find((p) => p.user_id && p.user_id === myUserId) ?? null;
+  // Was in the room, and the host removed them (supabase/rooms_v2.sql, room_kick).
+  const [wasIn, setWasIn] = useState(false);
+  useEffect(() => {
+    if (me && !me.is_host) setWasIn(true);
+  }, [me]);
+  const kicked = wasIn && !me && players.length > 0;
   const rememberKey = me && room && room.status !== "finished" ? `${room.room_code}:${me.is_host}` : null;
   useEffect(() => {
     if (!rememberKey) return;
@@ -267,6 +273,23 @@ function PlayerBoard() {
     );
   }
 
+  if (kicked) {
+    return (
+      <Shell play>
+        <section className="glass-card mx-auto mt-8 max-w-xl rounded-[28px] p-6 text-center">
+          <p className="text-[40px] leading-none" aria-hidden="true">
+            🚪
+          </p>
+          <p className="mt-3 text-lg font-extrabold text-ivory">أخرجك المضيف من الغرفة</p>
+          <p className="mt-1 text-sm text-muted">لا تستطيع الرجوع لهذه الغرفة. تقدر تنضم لغرفة أخرى أو تبدأ لعبة جديدة.</p>
+          <Link to="/" className="mt-5 inline-flex min-h-11 items-center rounded-full border border-line-strong/70 px-5 text-sm font-bold text-ivory">
+            الرئيسية
+          </Link>
+        </section>
+      </Shell>
+    );
+  }
+
   return (
     <Shell play>
       <section className="mx-auto mt-4 max-w-md">
@@ -282,6 +305,13 @@ function PlayerBoard() {
             </span>
           )}
         </div>
+
+        {room.status === "finished" && (isGrid || isCourt) ? (
+          <div className="glass-card mb-5 rounded-[22px] p-4 text-center">
+            <p className="text-sm font-bold text-violet-text">⏹️ انتهت الغرفة</p>
+            <p className="mt-1 text-sm text-muted">أنهى المضيف الغرفة. شكرًا للعب!</p>
+          </div>
+        ) : null}
 
         {gameOver && !isGrid && !isCourt ? (
           <div className="glass-card mb-5 rounded-[28px] p-6 text-center">
@@ -449,11 +479,14 @@ function PlayerBoard() {
           </div>
         ) : null}
 
-        <p className="mt-6 text-center text-xs text-muted">
-          <Link to="/join/$code" params={{ code: room.room_code }} className="underline-offset-4 hover:underline">
-            الانضمام كلاعب
-          </Link>
-        </p>
+        {/* For a visitor who opened the room link without joining (a spectator): players and the host never need it. */}
+        {!me && room.status !== "finished" ? (
+          <div className="mt-6 text-center">
+            <Link to="/join/$code" params={{ code: room.room_code }} className="inline-flex min-h-11 items-center rounded-full border border-gold/60 px-5 text-sm font-bold text-gold">
+              أنت تشاهد فقط · انضم كلاعب
+            </Link>
+          </div>
+        ) : null}
       </section>
     </Shell>
   );
