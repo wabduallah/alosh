@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Glyph } from "@/components/brand";
-import { Button, cx } from "@/components/ui";
+import { Button, cx, inputClass } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { playCue } from "@/lib/sfx";
 import { vibrate } from "@/lib/prefs";
@@ -66,6 +66,8 @@ export type CourtState = {
   judge_id?: string | null;
   judge_name?: string | null;
   asking_since?: string | null;
+  /** The judge paused the timers of this step (court_v6.sql): seconds left when paused. */
+  paused?: { step: number; left: number | null; at: string } | null;
   golden_kinds?: CourtKind[];
   presented?: { title: string; icon: string; by_kind: CourtKind; by_name: string; at: string } | null;
   pleading?: { prosecutor: number; lawyer: number; winner: "prosecutor" | "lawyer" | null } | null;
@@ -86,6 +88,11 @@ type CourtSettings = {
   quick?: boolean;
   /** The stand moves by itself during questioning: witnesses, the detective, then the accused. */
   escalate?: boolean;
+  /** Advanced (court_v6.sql): objections each, the turn to ask, reading time, who has a golden question. */
+  objections?: number;
+  turn_seconds?: number;
+  read_seconds?: number;
+  golden?: "jurors" | "all" | "off";
   judge?: "host" | "random";
   new_evening?: boolean;
   question_seconds?: number;
@@ -144,7 +151,7 @@ const ERRORS: Record<string, string> = {
   NOT_HOST: "هذا للمضيف فقط.",
   NOT_PLAYING: "ابدأ اللعبة من صفحة الغرفة أولًا.",
   NOT_ENOUGH_PLAYERS: "المحكمة تحتاج 4 لاعبين على الأقل.",
-  TOO_MANY_PLAYERS: "المحكمة تتسع لـ 12 لاعبًا كحد أقصى.",
+  TOO_MANY_PLAYERS: "المحكمة تتسع لـ 20 لاعبًا كحد أقصى.",
   NO_CASE: "لا توجد قضية مناسبة لهذا العدد. أضف قضايا من لوحة الإدارة.",
   CASE_NEEDS_MORE: "هذه القضية تحتاج لاعبين أكثر.",
   ALREADY_STARTED: "المحاكمة بدأت.",
@@ -164,9 +171,10 @@ const ERRORS: Record<string, string> = {
   HAS_ROLE: "هذا اللاعب له دور في القضية. اختر من دخل بعد التوزيع أو محلّفًا.",
   NO_ROLE: "تعذّر إيجاد الدور في القضية.",
   OVER: "انتهت المحاكمة.",
+  NO_TIMER: "لا يوجد مؤقت في هذه المرحلة.",
   BAD_CASE: "القضية ناقصة، راجعها:",
 };
-const SETUP_HINT = "لعبة المحكمة تحتاج تشغيل ملفات المحكمة في supabase (حتى court_v3.sql).";
+const SETUP_HINT = "لعبة المحكمة تحتاج تشغيل ملفات المحكمة في supabase (حتى court_v6.sql).";
 
 const isCourt = (s: CourtState) => s.game === "court";
 
@@ -274,9 +282,15 @@ function useCourtCues(state: CourtState, opts: { sound?: boolean; vibe?: boolean
   }, [state.objection?.at, opts.sound, opts.vibe]);
 }
 
-/** Seconds left on the step's timer, or null when it has none. */
+/** The judge paused this step (court_v6.sql). A pause from an earlier step no longer counts. */
+const isPaused = (s: CourtState) => !!s.paused && s.paused.step === s.step;
+/** How long a turn to ask lasts (45 seconds unless the host chose otherwise). */
+const turnMs = (s: CourtState) => (s.settings?.turn_seconds ?? 45) * 1000;
+
+/** Seconds left on the step's timer, or null when it has none. While paused: the seconds kept. */
 function useStepLeft(state: CourtState) {
-  return useSecondsLeft(state.ends_at ?? null);
+  const left = useSecondsLeft(state.ends_at ?? null);
+  return isPaused(state) ? (state.paused?.left ?? null) : left;
 }
 
 /**
@@ -296,7 +310,7 @@ function useAutoTick(roomId: string, state: CourtState, delayMs: number) {
   // and a pending objection (10 s).
   const deadlines: Array<[string, number]> = [];
   if (state.settings?.auto && state.ends_at) deadlines.push(["step", Date.parse(state.ends_at)]);
-  if (state.phase === "question" && state.asking && state.asking_since) deadlines.push([`turn:${state.asking_since}`, Date.parse(state.asking_since) + 45000]);
+  if (state.phase === "question" && state.asking && state.asking_since && !isPaused(state)) deadlines.push([`turn:${state.asking_since}`, Date.parse(state.asking_since) + turnMs(state)]);
   if (state.objection?.status === "pending" && state.objection.at) deadlines.push([`obj:${state.objection.at}`, Date.parse(state.objection.at) + 10000]);
   // The next turn on the stand (court_v5.sql): the server moves it when its slot starts.
   const esc = escalation(state);
@@ -395,7 +409,14 @@ function Timeline({ items, stage, big = false }: { items: CourtEvidence[]; stage
 
 /* ---------------- Shared pieces ---------------- */
 
-function Clock({ seconds, big = false }: { seconds: number | null; big?: boolean }) {
+function Clock({ seconds, big = false, paused = false }: { seconds: number | null; big?: boolean; paused?: boolean }) {
+  if (seconds === null && !paused) return null;
+  if (paused)
+    return (
+      <span dir="ltr" className={cx("inline-flex items-center gap-1.5 rounded-full border border-line-strong px-3 font-display font-extrabold tabular-nums text-mist", big ? "py-1 text-[clamp(22px,2.6vw,52px)]" : "py-0.5 text-[20px]")}>
+        ⏸ {seconds !== null ? mmss(seconds) : ""}
+      </span>
+    );
   if (seconds === null) return null;
   const hot = seconds <= 10;
   return (
@@ -450,10 +471,15 @@ function CaseHeader({ state, big = false, children }: { state: CourtState; big?:
           <span aria-hidden="true">⚖️ </span>
           {state.case?.title}
         </h2>
-        <Clock seconds={left} big={big} />
+        <Clock seconds={left} big={big} paused={isPaused(state)} />
         {children}
       </div>
       <Steps state={state} big={big} />
+      {isPaused(state) ? (
+        <p role="status" className={cx("rounded-[14px] border border-line-strong bg-deep-2/70 p-2 text-center font-bold text-ivory", big ? "text-[clamp(16px,1.8vw,36px)]" : "text-[15px]")}>
+          ⏸️ القاضي أوقف الوقت مؤقتًا
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -612,7 +638,7 @@ function SessionBoard({ state, big = false }: { state: CourtState; big?: boolean
           {asker ? (
             <span className="flex flex-wrap items-center justify-center gap-2">
               <span className={cx("font-display font-extrabold", goldenNow ? "text-gold" : "text-ivory", t("text-[18px]", "text-[clamp(20px,2.4vw,48px)]"))}>{asker.player_name}</span>
-              <TurnClock since={state.asking_since} big={big} />
+              {isPaused(state) ? null : <TurnClock since={state.asking_since} big={big} ms={turnMs(state)} />}
             </span>
           ) : (
             <span className={cx("font-semibold text-ivory", t("text-[15px]", "text-[clamp(16px,1.7vw,34px)]"))}>الدور مفتوح: «✋ أبي أسأل»</span>
@@ -1379,8 +1405,8 @@ function Actions({ roomId, state, card, reloadCard }: { roomId: string; state: C
   );
 }
 
-function TurnClock({ since, big = false }: { since?: string | null; big?: boolean }) {
-  const left = useSecondsLeft(since ? new Date(Date.parse(since) + 45000).toISOString() : null);
+function TurnClock({ since, big = false, ms = 45000 }: { since?: string | null; big?: boolean; ms?: number }) {
+  const left = useSecondsLeft(since ? new Date(Date.parse(since) + ms).toISOString() : null);
   if (left === null) return null;
   return (
     <span dir="ltr" className={cx("rounded-full border px-2 font-display font-bold tabular-nums", left <= 10 ? "border-wrong/60 text-wrong" : "border-line-strong text-mist", big ? "text-[clamp(14px,1.5vw,30px)]" : "text-[13px]")}>
@@ -1454,7 +1480,7 @@ function PlayView({ roomId, state, meId, card, reloadCard, host = false }: { roo
 
 /* ---------------- Host ---------------- */
 
-type CaseItem = { id: string; title: string; category: string | null; difficulty: number; summary: string; min: number; roles: number; versions?: number };
+type CaseItem = { id: string; title: string; category: string | null; difficulty: number; summary: string; min: number; roles: number; versions?: number; accused?: number; parts?: Array<{ k: string; o: boolean }> };
 
 /** Rough length of a session: reading the case and cards, rounds, speeches, vote, verdict and truth. */
 export function estimateMinutes({ quick, q, c, v }: { quick: boolean; q: number; c: number; v: number }) {
@@ -1590,6 +1616,7 @@ function JudgeControls({
         ) : state.settings?.auto && !over && state.ends_at ? (
           <p className="text-center text-[13px] text-mist">⏩ الانتقال تلقائي حين ينتهي الوقت.</p>
         ) : null}
+        <TimerControls state={state} busy={busy} run={run} />
         <ErrorLine error={error} />
       </div>
 
@@ -1607,6 +1634,19 @@ function JudgeControls({
       {!over && state.phase !== "verdict" ? <ReplacePanel state={state} players={players} busy={busy} onReplace={(from, to) => run("court_replace", { p_from: from, p_to: to })} /> : null}
 
       {over && (state.goals ?? []).length ? <GoalsPanel state={state} busy={busy} onToggle={(id, on) => run("court_goal", { p_player_id: id, p_on: on })} /> : null}
+
+      {!over ? (
+        <button
+          type="button"
+          disabled={busy}
+          className="mx-auto min-h-11 rounded-full border border-wrong/50 px-5 text-[14px] font-semibold text-wrong hover:bg-wrong-fill/20"
+          onClick={() => {
+            if (window.confirm("إنهاء هذه القضية الآن؟ تُلغى الأدوار والأصوات بلا نقاط، وترجعون لشاشة الإعداد. ترتيب السهرة يبقى كما هو.")) void run("court_reset", { p_new_evening: false });
+          }}
+        >
+          ⏹️ إنهاء القضية
+        </button>
+      ) : null}
 
       {over ? (
         <div className="grid gap-2">
@@ -1627,6 +1667,25 @@ function JudgeControls({
         </div>
       ) : null}
     </>
+  );
+}
+
+/** Pause and resume the timers of the step, or give 30 more seconds (court_v6.sql). */
+function TimerControls({ state, busy, run }: { state: CourtState; busy: boolean; run: (fn: string, args?: Record<string, unknown>) => Promise<boolean> }) {
+  if (!["evidence", "question", "closing", "vote"].includes(state.phase ?? "")) return null;
+  const paused = isPaused(state);
+  const timed = !!state.ends_at || (paused && state.paused?.left !== null && state.paused?.left !== undefined);
+  if (!timed && !paused && !state.asking) return null;
+  const step = state.step ?? 0;
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <Button tone={paused ? "primary" : "quiet"} className="min-h-12" disabled={busy} onClick={() => run("court_timer", { p_step: step, p_action: paused ? "resume" : "pause" })}>
+        {paused ? "▶️ استئناف الوقت" : "⏸️ إيقاف الوقت"}
+      </Button>
+      <Button tone="quiet" className="min-h-12" disabled={busy || !timed} onClick={() => run("court_timer", { p_step: step, p_action: "add" })}>
+        ➕ 30 ثانية
+      </Button>
+    </div>
   );
 }
 
@@ -1850,6 +1909,63 @@ function ReplacePanel({ state, players, busy, onReplace }: { state: CourtState; 
   );
 }
 
+/** The host's choices, kept on this device as soon as they change. */
+type SetupPrefs = {
+  hostPlays: boolean;
+  q: number;
+  c: number;
+  v: number;
+  auto: boolean;
+  quick: boolean;
+  judge: "host" | "random";
+  escalate: boolean;
+  objections: number;
+  turn: number;
+  read: number;
+  golden: "jurors" | "all" | "off";
+};
+const PREFS_KEY = "al3sh.court.setup";
+const DEFAULT_PREFS: SetupPrefs = { hostPlays: true, q: 180, c: 60, v: 60, auto: false, quick: false, judge: "host", escalate: true, objections: 2, turn: 45, read: 30, golden: "jurors" };
+const PRESETS: Array<{ key: string; title: string; sub: string; prefs: Partial<SetupPrefs> }> = [
+  { key: "quick", title: "⚡ سهرة سريعة", sub: "جولة واحدة وانتقال تلقائي", prefs: { quick: true, auto: true, escalate: true, judge: "host" } },
+  { key: "full", title: "⚖️ جلسة كاملة", sub: "جولتا أدلة، وأنت تنقل الجلسة", prefs: { quick: false, q: 180, c: 60, v: 60, auto: false, escalate: true, judge: "host" } },
+  { key: "free", title: "🤝 بدون مضيف", sub: "قاضٍ بالقرعة وانتقال تلقائي، وأنت تلعب", prefs: { judge: "random", hostPlays: true, auto: true, escalate: true } },
+];
+
+function readPrefs(): Partial<SetupPrefs> | null {
+  try {
+    const raw = window.localStorage.getItem(PREFS_KEY);
+    return raw ? (JSON.parse(raw) as Partial<SetupPrefs>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** «متهم، مدعٍ، محامٍ، شاهدان، محقق + 3 محلّفين»: what the case deals for this many players, as the server does. */
+function dealPreview(parts: Array<{ k: string; o: boolean }>, n: number) {
+  const required = parts.filter((x) => !x.o);
+  let slots = n - required.length;
+  const dealt = parts.filter((x) => {
+    if (!x.o) return true;
+    if (slots <= 0) return false;
+    slots -= 1;
+    return true;
+  });
+  const count = (k: string) => dealt.filter((x) => x.k === k).length;
+  const jurors = Math.max(0, n - dealt.length);
+  const out: string[] = [];
+  const a = count("accused");
+  out.push(a > 1 ? "متهمان" : "متهم", "مدعٍ", "محامٍ");
+  const w = count("witness");
+  if (w) out.push(w === 1 ? "شاهد" : w === 2 ? "شاهدان" : `${w} شهود`);
+  if (count("detective")) out.push("محقق");
+  const skipped = parts.length - dealt.length;
+  return {
+    text: `${out.join("، ")}${jurors ? ` + ${jurors === 1 ? "محلّف واحد" : jurors === 2 ? "محلّفان" : `${jurors} ${jurors <= 10 ? "محلّفين" : "محلّفًا"}`}` : " (بلا محلّفين)"}`,
+    skipped,
+  };
+}
+
 function CourtSetup({
   state,
   players,
@@ -1869,35 +1985,80 @@ function CourtSetup({
   const [cases, setCases] = useState<CaseItem[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [caseId, setCaseId] = useState<string | null>(null);
-  const [hostPlays, setHostPlays] = useState(last?.host_plays ?? true);
-  const [q, setQ] = useState(last?.question_seconds ?? 180);
-  const [c, setC] = useState(last?.closing_seconds ?? 60);
-  const [v, setV] = useState(last?.vote_seconds ?? 60);
-  const [auto, setAuto] = useState(last?.auto ?? false);
-  const [quick, setQuick] = useState(last?.quick ?? false);
-  const [judge, setJudge] = useState<"host" | "random">(last?.judge ?? "host");
+  const [p, setP] = useState<SetupPrefs>(() => ({
+    ...DEFAULT_PREFS,
+    ...(last
+      ? {
+          hostPlays: last.host_plays ?? true,
+          q: last.question_seconds ?? 180,
+          c: last.closing_seconds ?? 60,
+          v: last.vote_seconds ?? 60,
+          auto: last.auto ?? false,
+          quick: last.quick ?? false,
+          judge: last.judge ?? "host",
+          escalate: last.escalate ?? true,
+          objections: last.objections ?? 2,
+          turn: last.turn_seconds ?? 45,
+          read: last.read_seconds ?? 30,
+          golden: last.golden ?? "jurors",
+        }
+      : {}),
+  }));
+  const set = <K extends keyof SetupPrefs>(k: K, val: SetupPrefs[K]) => setP((x) => ({ ...x, [k]: val }));
   const [newEvening, setNewEvening] = useState(false);
-  const [escalate, setEscalate] = useState(last?.escalate ?? true);
   const [generating, setGenerating] = useState(false);
   const [draft, setDraft] = useState<Generated | null>(null);
+  const [query, setQuery] = useState("");
+  const [level, setLevel] = useState(0);
+  const [category, setCategory] = useState("");
+  const [dualOnly, setDualOnly] = useState(false);
+  const [freshOnly, setFreshOnly] = useState(false);
   const used = new Set(last?.used_cases ?? []);
   const eveningMatches = last?.evening?.matches ?? 0;
 
-  // The admin's defaults (admin panel → الموقع) when the room has no earlier match.
+  // Where the choices come from: this device's last choices, else the room's last match, else the admin's defaults.
   const site = useSiteSettings();
-  const applied = useRef(false);
+  const loaded = useRef(false);
+  const touched = useRef(false);
   useEffect(() => {
+    if (loaded.current) return;
+    const saved = readPrefs();
+    if (saved) {
+      loaded.current = true;
+      setP((x) => ({ ...x, ...saved }));
+      return;
+    }
     const d = site?.game_defaults?.court;
-    if (!d || last || applied.current) return;
-    applied.current = true;
-    if (typeof d.host_plays === "boolean") setHostPlays(d.host_plays);
-    if (typeof d.auto === "boolean") setAuto(d.auto);
-    if (typeof d.quick === "boolean") setQuick(d.quick);
-    if (d.judge === "host" || d.judge === "random") setJudge(d.judge);
-    if ([0, 120, 180, 300].includes(d.question_seconds ?? -1)) setQ(d.question_seconds as number);
-    if ([0, 30, 45, 60, 90].includes(d.closing_seconds ?? -1)) setC(d.closing_seconds as number);
-    if ([0, 30, 60, 90].includes(d.vote_seconds ?? -1)) setV(d.vote_seconds as number);
+    if (!d) return;
+    loaded.current = true;
+    if (last) return;
+    setP((x) => ({
+      ...x,
+      ...(typeof d.host_plays === "boolean" ? { hostPlays: d.host_plays } : {}),
+      ...(typeof d.auto === "boolean" ? { auto: d.auto } : {}),
+      ...(typeof d.quick === "boolean" ? { quick: d.quick } : {}),
+      ...(typeof d.escalate === "boolean" ? { escalate: d.escalate } : {}),
+      ...(d.judge === "host" || d.judge === "random" ? { judge: d.judge } : {}),
+      ...([0, 120, 180, 300].includes(d.question_seconds ?? -1) ? { q: d.question_seconds as number } : {}),
+      ...([0, 30, 45, 60, 90].includes(d.closing_seconds ?? -1) ? { c: d.closing_seconds as number } : {}),
+      ...([0, 30, 60, 90].includes(d.vote_seconds ?? -1) ? { v: d.vote_seconds as number } : {}),
+      ...([0, 1, 2, 3].includes(d.objections ?? -1) ? { objections: d.objections as number } : {}),
+      ...([30, 45, 60, 90].includes(d.turn_seconds ?? -1) ? { turn: d.turn_seconds as number } : {}),
+      ...([15, 30, 45, 60].includes(d.read_seconds ?? -1) ? { read: d.read_seconds as number } : {}),
+      ...(d.golden === "jurors" || d.golden === "all" || d.golden === "off" ? { golden: d.golden } : {}),
+    }));
   }, [site, last]);
+  useEffect(() => {
+    if (!touched.current) {
+      touched.current = true;
+      return;
+    }
+    try {
+      window.localStorage.setItem(PREFS_KEY, JSON.stringify(p));
+    } catch {
+      // Private mode: the choices still apply to this match.
+    }
+  }, [p]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -1908,25 +2069,74 @@ function CourtSetup({
   }, []);
 
   // With a judge drawn by lot, one person runs the session and gets no role.
-  const people = players.filter((p) => hostPlays || judge === "random" || !p.is_host).length;
-  const n = judge === "random" ? (hostPlays ? people - 1 : players.filter((p) => !p.is_host).length - 1) : people;
+  const people = players.filter((x) => p.hostPlays || p.judge === "random" || !x.is_host).length;
+  const n = p.judge === "random" ? (p.hostPlays ? people - 1 : players.filter((x) => !x.is_host).length - 1) : people;
   const picked = cases?.find((x) => x.id === caseId) ?? null;
   const fits = (cases ?? []).filter((x) => x.min <= n);
-  const ready = n >= 4 && n <= 12 && (picked ? picked.min <= n : fits.length > 0);
-  const minutes = estimateMinutes({ quick, q, c, v });
-  const settings: CourtSettings = { case_id: caseId, host_plays: hostPlays, question_seconds: q, closing_seconds: c, vote_seconds: v, auto, quick, judge, new_evening: newEvening, escalate };
+  const ready = n >= 4 && n <= 20 && (picked ? picked.min <= n : fits.length > 0);
+  const minutes = estimateMinutes({ quick: p.quick, q: p.q, c: p.c, v: p.v });
+  const settings: CourtSettings = {
+    case_id: caseId,
+    host_plays: p.hostPlays,
+    question_seconds: p.q,
+    closing_seconds: p.c,
+    vote_seconds: p.v,
+    auto: p.auto,
+    quick: p.quick,
+    judge: p.judge,
+    new_evening: newEvening,
+    escalate: p.escalate,
+    objections: p.objections,
+    turn_seconds: p.turn,
+    read_seconds: p.read,
+    golden: p.golden,
+  };
+  const conflict = p.hostPlays && p.judge === "host";
+  const preset = PRESETS.find((x) => Object.entries(x.prefs).every(([k, val]) => p[k as keyof SetupPrefs] === val))?.key ?? null;
+
+  const categories = [...new Set((cases ?? []).map((x) => x.category).filter((x): x is string => !!x))];
+  const q = query.trim();
+  const shown = (cases ?? []).filter(
+    (x) =>
+      (!q || x.title.includes(q) || x.summary.includes(q) || (x.category ?? "").includes(q)) &&
+      (!level || x.difficulty === level) &&
+      (!category || x.category === category) &&
+      (!dualOnly || (x.accused ?? 1) > 1) &&
+      (!freshOnly || !used.has(x.id)),
+  );
+  const filtering = !!q || !!level || !!category || dualOnly || freshOnly;
+  const preview = picked?.parts && n >= 4 ? dealPreview(picked.parts, n) : null;
+  const chip = (on: boolean) =>
+    cx("min-h-10 rounded-full border px-3.5 text-[14px] font-semibold transition", on ? "btn-gold border-transparent" : "border-line-strong/70 bg-deep-2/60 text-mist hover:text-ivory");
 
   return (
     <section className="mx-auto mt-2 grid max-w-3xl gap-4">
       <div className="surface grid gap-3 rounded-[24px] p-5">
         <h2 className="text-[20px] leading-8">⚖️ جلسة جديدة</h2>
         <p className="text-[14px] leading-6 text-mist">
-          في الجلسة {n} {n >= 3 && n <= 10 ? "لاعبين" : "لاعبًا"}. يأخذ كل لاعب دورًا: المتهم والمدعي والمحامي أولًا، ثم الشهود والمحقق، والباقي محلّفون. تحتاجون 4 إلى 12 لاعبًا.
+          في الجلسة {n} {n >= 3 && n <= 10 ? "لاعبين" : "لاعبًا"}. يأخذ كل لاعب دورًا: المتهم والمدعي والمحامي أولًا، ثم الشهود والمحقق، والباقي محلّفون. تحتاجون 4 لاعبين على الأقل، وحتى 20.
         </p>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {PRESETS.map((x) => (
+            <button
+              key={x.key}
+              type="button"
+              aria-pressed={preset === x.key}
+              onClick={() => setP((cur) => ({ ...cur, ...x.prefs }))}
+              className={cx(
+                "grid gap-0.5 rounded-[16px] border p-3 text-start transition",
+                preset === x.key ? "border-gold bg-gold/10 shadow-[0_0_0_2px_#ffa53a33]" : "border-line bg-deep-2/50 hover:border-glow",
+              )}
+            >
+              <span className="text-[15px] font-bold text-ivory">{x.title}</span>
+              <span className="text-[12px] leading-5 text-mist">{x.sub}</span>
+            </button>
+          ))}
+        </div>
         <Choice
           label="المضيف"
-          value={hostPlays ? "play" : "judge"}
-          onChange={(x) => setHostPlays(x === "play")}
+          value={p.hostPlays ? "play" : "judge"}
+          onChange={(x) => set("hostPlays", x === "play")}
           options={[
             { value: "play", label: "يلعب معهم" },
             { value: "judge", label: "لا يلعب" },
@@ -1934,18 +2144,33 @@ function CourtSetup({
         />
         <Choice
           label="القاضي (يدير الأسئلة والاعتراضات وينقل الجلسة)"
-          value={judge}
-          onChange={(x) => setJudge(x as "host" | "random")}
+          value={p.judge}
+          onChange={(x) => set("judge", x as "host" | "random")}
           options={[
             { value: "host", label: "المضيف" },
             { value: "random", label: "لاعب بالقرعة" },
           ]}
         />
-        {judge === "random" ? <p className="-mt-1 text-[13px] text-mist">القاضي يُختار بالقرعة، ويدير الجلسة من جواله ولا يأخذ دورًا. وأنت تبقى معك أدوات احتياطية.</p> : null}
+        {p.judge === "random" ? <p className="-mt-1 text-[13px] text-mist">القاضي يُختار بالقرعة، ويدير الجلسة من جواله ولا يأخذ دورًا. وأنت تبقى معك أدوات احتياطية.</p> : null}
+        {conflict ? (
+          <div role="alert" className="grid gap-2 rounded-[16px] border border-gold/60 bg-gold/10 p-3">
+            <p className="text-[14px] leading-6 text-ivory">
+              ⚠️ أنت تلعب دورًا وتحكم بنفس الوقت: قد تقع عليك قرعة المتهم أو المحامي، ثم تحكم على الاعتراضات وتختار من على المنصة.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button tone="primary" className="min-h-10" onClick={() => set("judge", "random")}>
+                اجعل القاضي بالقرعة
+              </Button>
+              <Button tone="quiet" className="min-h-10" onClick={() => set("hostPlays", false)}>
+                لن ألعب دورًا
+              </Button>
+            </div>
+          </div>
+        ) : null}
         <Choice
           label="نوع الجلسة"
-          value={quick ? "quick" : "full"}
-          onChange={(x) => setQuick(x === "quick")}
+          value={p.quick ? "quick" : "full"}
+          onChange={(x) => set("quick", x === "quick")}
           options={[
             { value: "full", label: "كاملة: جولتا أدلة" },
             { value: "quick", label: "سريعة: جولة واحدة" },
@@ -1969,17 +2194,67 @@ function CourtSetup({
         </div>
         {loadError ? <p className="text-[14px] text-wrong">{loadError}</p> : null}
         {cases === null && !loadError ? <p className="text-[14px] text-mist">جارٍ تحميل القضايا…</p> : null}
+        {(cases ?? []).length > 4 ? (
+          <div className="grid gap-2">
+            <input type="search" className={cx(inputClass, "min-h-11")} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="🔎 ابحث باسم القضية أو نوعها" aria-label="بحث في القضايا" />
+            <div className="flex flex-wrap gap-1.5">
+              {LEVEL.map((label, i) => (
+                <button key={i} type="button" aria-pressed={level === i} className={chip(level === i)} onClick={() => setLevel(i)}>
+                  {i === 0 ? "كل الصعوبات" : label}
+                </button>
+              ))}
+              <button type="button" aria-pressed={dualOnly} className={chip(dualOnly)} onClick={() => setDualOnly(!dualOnly)}>
+                ⚖️ متهمان
+              </button>
+              {used.size ? (
+                <button type="button" aria-pressed={freshOnly} className={chip(freshOnly)} onClick={() => setFreshOnly(!freshOnly)}>
+                  لم تُلعب
+                </button>
+              ) : null}
+            </div>
+            {categories.length > 1 ? (
+              <div className="flex flex-wrap gap-1.5">
+                <button type="button" aria-pressed={!category} className={chip(!category)} onClick={() => setCategory("")}>
+                  كل الأنواع
+                </button>
+                {categories.map((x) => (
+                  <button key={x} type="button" aria-pressed={category === x} className={chip(category === x)} onClick={() => setCategory(category === x ? "" : x)}>
+                    {x}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {filtering ? (
+              <p className="text-[13px] text-mist">
+                {shown.length} من {(cases ?? []).length} قضية.{" "}
+                <button
+                  type="button"
+                  className="underline underline-offset-4"
+                  onClick={() => {
+                    setQuery("");
+                    setLevel(0);
+                    setCategory("");
+                    setDualOnly(false);
+                    setFreshOnly(false);
+                  }}
+                >
+                  إظهار الكل
+                </button>
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <ul className="grid gap-2">
           <li>
             <CaseOption on={caseId === null} onClick={() => setCaseId(null)} title="🎲 قضية عشوائية" sub={`تُختار قضية تناسب عددكم${used.size ? "، ولم تلعبوها في هذه الغرفة" : ""}.`} />
           </li>
-          {(cases ?? []).map((x) => (
+          {shown.map((x) => (
             <li key={x.id}>
               <CaseOption
                 on={caseId === x.id}
                 disabled={x.min > n}
                 onClick={() => setCaseId(x.id)}
-                title={x.title}
+                title={`${x.title}${(x.accused ?? 1) > 1 ? " · ⚖️ متهمان" : ""}`}
                 sub={`${x.summary}${x.summary ? " · " : ""}${LEVEL[x.difficulty] ?? ""}${(x.versions ?? 1) > 1 ? ` · ${x.versions} حقائق ممكنة` : ""}${x.min > 4 ? ` · ${x.min} لاعبين على الأقل` : ""}${used.has(x.id) ? " · لُعبت" : ""}`}
               />
             </li>
@@ -1987,50 +2262,82 @@ function CourtSetup({
         </ul>
       </div>
 
-      <div className={cx("surface grid gap-4 rounded-[24px] p-5", quick && "opacity-60")}>
-        <h2 className="text-[18px] leading-7">المؤقتات {quick ? <span className="text-[13px] font-normal text-mist">(السريعة: استجواب دقيقتان، مرافعة 30 ث، تصويت 30 ث)</span> : null}</h2>
-        <Choice label="الاستجواب (لكل جولة)" value={String(q)} onChange={(x) => setQ(Number(x))} options={[{ value: "0", label: "بدون" }, { value: "120", label: "2 د" }, { value: "180", label: "3 د" }, { value: "300", label: "5 د" }]} />
-        <Choice label="المرافعة (لكل طرف)" value={String(c)} onChange={(x) => setC(Number(x))} options={[{ value: "0", label: "بدون" }, { value: "45", label: "45 ث" }, { value: "60", label: "دقيقة" }, { value: "90", label: "90 ث" }]} />
-        <Choice label="التصويت" value={String(v)} onChange={(x) => setV(Number(x))} options={[{ value: "0", label: "بدون" }, { value: "30", label: "30 ث" }, { value: "60", label: "دقيقة" }, { value: "90", label: "90 ث" }]} />
+      <div className={cx("surface grid gap-4 rounded-[24px] p-5")}>
+        <h2 className="text-[18px] leading-7">المؤقتات {p.quick ? <span className="text-[13px] font-normal text-mist">(السريعة تثبّتها: استجواب دقيقتان، مرافعة 30 ث، تصويت 30 ث)</span> : null}</h2>
+        {p.quick ? null : (
+          <>
+            <Choice label="الاستجواب (لكل جولة)" value={String(p.q)} onChange={(x) => set("q", Number(x))} options={[{ value: "0", label: "بدون" }, { value: "120", label: "2 د" }, { value: "180", label: "3 د" }, { value: "300", label: "5 د" }]} />
+            <Choice label="المرافعة (لكل طرف)" value={String(p.c)} onChange={(x) => set("c", Number(x))} options={[{ value: "0", label: "بدون" }, { value: "45", label: "45 ث" }, { value: "60", label: "دقيقة" }, { value: "90", label: "90 ث" }]} />
+            <Choice label="التصويت" value={String(p.v)} onChange={(x) => set("v", Number(x))} options={[{ value: "0", label: "بدون" }, { value: "30", label: "30 ث" }, { value: "60", label: "دقيقة" }, { value: "90", label: "90 ث" }]} />
+          </>
+        )}
         <Choice
           label="الانتقال"
-          value={auto ? "auto" : "manual"}
-          onChange={(x) => setAuto(x === "auto")}
+          value={p.auto ? "auto" : "manual"}
+          onChange={(x) => set("auto", x === "auto")}
           options={[
-            { value: "manual", label: "أنا أنقل الجلسة" },
+            { value: "manual", label: "القاضي ينقل الجلسة" },
             { value: "auto", label: "تلقائي حين ينتهي الوقت" },
           ]}
         />
         <p className="text-[13px] text-mist">
-          {auto ? "حين ينتهي المؤقت تنتقل الجلسة وحدها، وتأخذ الأدلة 30 ثانية للقراءة. وتقدر تنقلها قبل ذلك بزر «التالي»." : "المؤقت يظهر للجميع، وأنت تنتقل للمرحلة التالية بزر واحد متى شئت."} والتصويت يُغلق وحده إذا صوّت الجميع.
+          {p.auto ? `حين ينتهي المؤقت تنتقل الجلسة وحدها، وتأخذ الأدلة ${p.read} ثانية للقراءة. ويقدر القاضي ينقلها قبل ذلك، أو يوقف الوقت أو يزيده.` : "المؤقت يظهر للجميع، والقاضي ينتقل للمرحلة التالية بزر واحد متى شاء، ويقدر يوقف الوقت أو يزيده."} والتصويت يُغلق وحده إذا صوّت الجميع.
         </p>
         <Choice
           label="المنصة أثناء الاستجواب"
-          value={escalate ? "auto" : "judge"}
-          onChange={(x) => setEscalate(x === "auto")}
+          value={p.escalate ? "auto" : "judge"}
+          onChange={(x) => set("escalate", x === "auto")}
           options={[
             { value: "auto", label: "تصعيد تلقائي" },
             { value: "judge", label: "القاضي يختار" },
           ]}
         />
         <p className="text-[13px] text-mist">
-          {escalate
-            ? q || quick
+          {p.escalate
+            ? p.q || p.quick
               ? "تنتقل المنصة وحدها مع مؤقت الاستجواب: الشهود أولًا، ثم المحقق، ثم المتهم في آخر الوقت. والسؤال الذهبي يوقفها حتى ينتهي، والقاضي يقدر يغيّر من على المنصة متى شاء."
               : "التصعيد يحتاج مؤقتًا للاستجواب."
             : "القاضي يستدعي من يشاء للمنصة."}
         </p>
+        <details className="rounded-[16px] border border-line bg-deep-2/40 p-3">
+          <summary className="cursor-pointer text-[15px] font-semibold text-ivory">⚙️ إعدادات متقدمة</summary>
+          <div className="mt-3 grid gap-4">
+            <Choice label="الاعتراضات لكل من المدعي والمحامي" value={String(p.objections)} onChange={(x) => set("objections", Number(x))} options={[{ value: "0", label: "بدون" }, { value: "1", label: "1" }, { value: "2", label: "2" }, { value: "3", label: "3" }]} />
+            <Choice label="دور السؤال (لكل سائل)" value={String(p.turn)} onChange={(x) => set("turn", Number(x))} options={[{ value: "30", label: "30 ث" }, { value: "45", label: "45 ث" }, { value: "60", label: "دقيقة" }, { value: "90", label: "90 ث" }]} />
+            <Choice label="قراءة الأدلة (مع الانتقال التلقائي)" value={String(p.read)} onChange={(x) => set("read", Number(x))} options={[{ value: "15", label: "15 ث" }, { value: "30", label: "30 ث" }, { value: "45", label: "45 ث" }, { value: "60", label: "دقيقة" }]} />
+            <Choice
+              label="السؤال الذهبي"
+              value={p.golden}
+              onChange={(x) => set("golden", x as SetupPrefs["golden"])}
+              options={[
+                { value: "jurors", label: "للمحلّفين" },
+                { value: "all", label: "للمحلّفين والشهود والمحقق" },
+                { value: "off", label: "بدون" },
+              ]}
+            />
+            <p className="text-[13px] text-mist">هذه الإعدادات تحتاج ملف court_v6.sql. وبدونه تعمل الجلسة بالقيم المعتادة.</p>
+          </div>
+        </details>
       </div>
 
-      <ErrorLine error={error} />
-      <Button
-        tone="primary"
-        className="min-h-14 text-[18px]"
-        disabled={!ready || busy}
-        onClick={() => onStart(settings)}
-      >
-        {busy ? "نوزّع الأدوار…" : "افتح الجلسة ووزّع الأدوار"}
-      </Button>
+      <div className="sticky bottom-0 z-20 -mx-4 grid gap-2 border-t border-line bg-night/90 px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] backdrop-blur sm:mx-0 sm:rounded-[20px] sm:border">
+        <ErrorLine error={error} />
+        {ready ? (
+          <p className="text-center text-[13px] leading-5 text-mist">
+            {picked ? <b className="text-ivory">{picked.title}: </b> : "🎲 قضية عشوائية · "}
+            {preview ? preview.text : `${n} ${n <= 10 ? "لاعبين" : "لاعبًا"}، والأدوار حسب القضية`}
+            {p.judge === "random" ? " · وقاضٍ بالقرعة" : ""}
+            {preview?.skipped ? ` · ${preview.skipped === 1 ? "دور إضافي يصير إفادة" : `${preview.skipped} أدوار إضافية تصير إفادات`}` : ""}
+          </p>
+        ) : (
+          <p className="text-center text-[13px] text-mist">
+            {n < 4 ? (p.judge === "random" ? "مع قاضٍ بالقرعة تحتاجون 5 أشخاص على الأقل." : "تحتاجون 4 لاعبين على الأقل.") : n > 20 ? "الحد الأقصى 20 لاعبًا." : picked ? `هذه القضية تحتاج ${picked.min} لاعبين على الأقل.` : "لا توجد قضية تناسب هذا العدد."}
+          </p>
+        )}
+        <Button tone="primary" className="min-h-14 text-[18px]" disabled={!ready || busy} onClick={() => onStart(settings)}>
+          {busy ? "نوزّع الأدوار…" : "افتح الجلسة ووزّع الأدوار"}
+        </Button>
+      </div>
       {generating || draft ? (
         <Suspense fallback={null}>
           {generating ? (
@@ -2059,7 +2366,6 @@ function CourtSetup({
           ) : null}
         </Suspense>
       ) : null}
-      {!ready ? <p className="text-center text-[13px] text-mist">{n < 4 ? (judge === "random" ? "مع قاضٍ بالقرعة تحتاجون 5 أشخاص على الأقل." : "تحتاجون 4 لاعبين على الأقل.") : n > 12 ? "الحد الأقصى 12 لاعبًا." : "لا توجد قضية تناسب هذا العدد."}</p> : null}
     </section>
   );
 }
