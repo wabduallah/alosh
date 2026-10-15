@@ -25,6 +25,8 @@ export type MafiaSettings = {
   narrator?: "host" | "random";
   lovers?: boolean;
   dead_see_roles?: boolean;
+  /** «المتخفي» (mafia_v7.sql). */
+  disguised?: boolean;
 };
 export type MafiaVote = { voter: string; target: string; weight: number; auto?: boolean };
 /** What everyone sees after a vote: how many votes each player got, without who cast them. */
@@ -47,6 +49,8 @@ export type MafiaPublicState = {
   log?: MafiaLogEntry[];
   last_shot?: { text: string; at: string } | null;
   last_settings?: MafiaSettings | null;
+  /** The disguised players already unmasked by a vote (mafia_v7.sql): the next vote eliminates them. */
+  unmasked?: string[];
 };
 export type MafiaPlayerRow = { player_id: string; player_name: string; alive: boolean; player_role: string | null; is_mayor?: boolean };
 
@@ -61,6 +65,7 @@ export const ROLE_NAMES: Record<string, string> = {
   sniper: "قنّاص",
   seer: "عرّافة",
   spy: "جاسوس",
+  disguised: "المتخفي",
 };
 export const ROLE_ICONS: Record<string, string> = {
   mafia: "🔪",
@@ -73,6 +78,7 @@ export const ROLE_ICONS: Record<string, string> = {
   sniper: "🎯",
   seer: "🔮",
   spy: "🕶️",
+  disguised: "🎭",
 };
 export const ROLE_HINTS: Record<string, string> = {
   mafia: "كل ليلة اتفقوا مع زملائكم على ضحية. ترون اختيارات بعض هنا. نهارًا لا تكشفوا أنفسكم.",
@@ -84,7 +90,8 @@ export const ROLE_HINTS: Record<string, string> = {
   bodyguard: "كل ليلة احرس لاعبًا. إذا هاجمته المافيا تموت أنت بدلًا منه.",
   sniper: "معك رصاصة واحدة في المباراة، تطلقها في النهار على من تشكّ فيه. لا يعرف أحد من أطلقها.",
   seer: "مرة واحدة في المباراة تعرف دور لاعب خرج من اللعبة. استخدمها في الوقت المناسب.",
-  spy: "أنت حليف المافيا: تعرفهم ويعرفونك، لكنك لا تختار ضحية. نهارًا ضلّل المواطنين، ولو ادّعيت أنك مافيا.",
+  spy: "أنت حليف المافيا: تعرفهم ويعرفونك، ولا تختار ضحية. كل جولتين تتحقق ليلًا من لاعب: مواطن عادي أم صاحب دور خاص؟ والمافيا ترى النتيجة.",
+  disguised: "أنت المتخفي: إذا صوّتوا عليك أول مرة لا تموت؛ يُعلن أنك المتخفي وينتهي تصويت اليوم بلا إقصاء. المرة الثانية تُقصى.",
 };
 
 /**
@@ -92,6 +99,12 @@ export const ROLE_HINTS: Record<string, string> = {
  * when it acts, and how it wins. Every role has one.
  */
 export const ROLE_INFO: Record<string, { team: string; does: string; when: string; wins: string }> = {
+  disguised: {
+    team: "المواطنون",
+    does: "إذا صوّت عليك اللاعبون نهارًا لا تموت في المرة الأولى: يُعلن الراوي فورًا أنك المتخفي، وينتهي تصويت ذلك النهار بلا إقصاء. ورقة تعطيل تربك حسابات الجميع.",
+    when: "في التصويت. بعد أن ينكشف أمرك، أي تصويت عليك يُقصيك، والمافيا تستطيع قتلك ليلًا في أي وقت.",
+    wins: "مع المواطنين.",
+  },
   mafia: {
     team: "المافيا",
     does: "تختارون مع زملائكم ضحية كل ليلة. ترون اختيارات بعضكم، والضحية من يختاره أكثركم.",
@@ -148,8 +161,8 @@ export const ROLE_INFO: Record<string, { team: string; does: string; when: strin
   },
   spy: {
     team: "المافيا (حليف)",
-    does: "تفتح عينك مع المافيا: تعرفهم ويعرفونك، لكنك لا تختار ضحية معهم. مهمتك التضليل في النهار، حتى لو ادّعيت أنك أنت المافيا.",
-    when: "في الليل ترى المافيا في جوالك، وفي النهار تناقش وتصوّت.",
+    does: "تفتح عينك مع المافيا: تعرفهم ويعرفونك، لكنك لا تختار ضحية معهم. كل جولتين تتحقق من لاعب واحد: هل هو مواطن عادي أم صاحب دور خاص؟ معلومة ذهبية تساعد المافيا في اختيار أخطر الأهداف. ونهارًا تضلّل المواطنين.",
+    when: "في الليل من جوالك (التحقق كل جولتين)، وفي النهار تناقش وتصوّت.",
     wins: "تفوز مع المافيا. المحقق يراك «ليس مافيا»، والمافيا لا تستطيع قتلك.",
   },
 };
@@ -194,6 +207,7 @@ export function narratorLine(state: MafiaPublicState, rows: MafiaPlayerRow[]) {
       "المحقق: من تشكّ فيه؟",
     ];
     if (s.bodyguard) parts.push("الحارس: من تحرس؟");
+    if (s.spy) parts.push("الجاسوس: إن حان دورك (كل جولتين) تحقّق من لاعب.");
     return parts.join(" ");
   }
   if (phase === "day") {

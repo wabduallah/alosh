@@ -40,7 +40,7 @@ export type GameDefaults = {
     reveal?: boolean;
     day_seconds?: number;
     vote_seconds?: number;
-    roles?: Partial<Record<"jester" | "mayor" | "bodyguard" | "sniper" | "seer" | "spy" | "lovers", boolean>>;
+    roles?: Partial<Record<"jester" | "mayor" | "bodyguard" | "sniper" | "seer" | "spy" | "lovers" | "disguised", boolean>>;
     dead_see_roles?: boolean;
   };
   "tactical-grid"?: { seconds?: number };
