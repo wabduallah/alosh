@@ -10,6 +10,20 @@
 -- 4) سجل طلبات مولّد القضايا (court_ai_log) لحدّ الاستخدام في دالة supabase/functions/court-generate.
 -- =============================================================================
 
+do $$
+begin
+  if to_regclass('public.court_cases') is null then
+    raise exception 'جداول المحكمة غير موجودة في هذا المشروع. شغّل أولًا بالترتيب: court_v1.sql ← court_cases_v1.sql ← court_v2.sql ← court_cases_v2.sql ← court_v3.sql ← court_cases_v3.sql، ثم %.', 'court_v5.sql';
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'court_cases' and column_name = 'variants') then
+    raise exception 'شغّل court_v4.sql ثم court_cases_v5.sql أولًا، ثم court_v5.sql.';
+  end if;
+end $$;
+
 alter table public.court_cases add column if not exists source text not null default 'manual';
 alter table public.court_cases add column if not exists room_id uuid references public.game_rooms (id) on delete set null;
 alter table public.room_court_roles add column if not exists guilty boolean;

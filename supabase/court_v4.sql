@@ -17,6 +17,13 @@
 
 -- الأعمدة والجداول -------------------------------------------------------------
 
+do $$
+begin
+  if to_regclass('public.court_cases') is null then
+    raise exception 'جداول المحكمة غير موجودة في هذا المشروع. شغّل أولًا بالترتيب: court_v1.sql ← court_cases_v1.sql ← court_v2.sql ← court_cases_v2.sql ← court_v3.sql ← court_cases_v3.sql، ثم %.', 'court_v4.sql';
+  end if;
+end $$;
+
 alter table public.court_cases add column if not exists variants jsonb;
 comment on column public.court_cases.variants is '[{key, label, guilty, culprit, truth, roles: {مفتاح: {secret, later, goal, win, fallback, exhibits…}}, evidence: {عنوان: {text, time, remove}}, extra_evidence: [...], juror_clues}] نسخ بديلة للحقيقة.';
 
