@@ -41,6 +41,8 @@ function useAutoStand(roomId: string, enabled: boolean) {
     if (!enabled || !supabase) return;
     if (state.phase !== "question") return;
     if (state.objection?.status === "pending") return;
+    // Someone has the turn to ask (or a golden question): they choose who is on the stand.
+    if (state.asking || state.golden) return;
 
     const step = state.step ?? -1;
     if (lastStep.current !== step) {
@@ -65,7 +67,7 @@ function useAutoStand(roomId: string, enabled: boolean) {
       window.clearTimeout(first);
       window.clearInterval(id);
     };
-  }, [roomId, enabled, state.phase, state.step, state.objection?.status, state.cast]);
+  }, [roomId, enabled, state.phase, state.step, state.objection?.status, state.cast, state.asking, state.golden]);
 }
 
 export function CourtHostPanel({ roomId }: { roomId: string }) {

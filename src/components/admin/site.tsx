@@ -246,6 +246,8 @@ function DefaultsEditor({ initial }: { initial: GameDefaults }) {
   const c0 = initial.court ?? {};
   const [courtHost, setCourtHost] = useState(c0.host_plays ?? true);
   const [courtAuto, setCourtAuto] = useState(c0.auto ?? false);
+  const [courtQuick, setCourtQuick] = useState(c0.quick ?? false);
+  const [courtJudge, setCourtJudge] = useState<"host" | "random">(c0.judge ?? "host");
   const [courtQ, setCourtQ] = useState(c0.question_seconds ?? 180);
   const [courtC, setCourtC] = useState(c0.closing_seconds ?? 60);
   const [courtV, setCourtV] = useState(c0.vote_seconds ?? 60);
@@ -281,7 +283,7 @@ function DefaultsEditor({ initial }: { initial: GameDefaults }) {
         roles: Object.fromEntries(MAFIA_ROLES.map((r) => [r.key, !!roles[r.key]])),
       },
       "tactical-grid": { seconds: gridSeconds },
-      court: { host_plays: courtHost, auto: courtAuto, question_seconds: courtQ, closing_seconds: courtC, vote_seconds: courtV },
+      court: { host_plays: courtHost, auto: courtAuto, quick: courtQuick, judge: courtJudge, question_seconds: courtQ, closing_seconds: courtC, vote_seconds: courtV },
     } satisfies GameDefaults);
     setBusy(false);
     setMessage(error ? { tone: "error", text: error } : { tone: "ok", text: "حُفظت الإعدادات. تُطبَّق على الغرف الجديدة." });
@@ -366,6 +368,10 @@ function DefaultsEditor({ initial }: { initial: GameDefaults }) {
           <Chips label="الاستجواب (لكل جولة)" value={courtQ} onChange={setCourtQ} options={[{ value: 0, label: "بدون" }, { value: 120, label: "2 د" }, { value: 180, label: "3 د" }, { value: 300, label: "5 د" }]} />
           <Chips label="المرافعة (لكل طرف)" value={courtC} onChange={setCourtC} options={[{ value: 0, label: "بدون" }, { value: 45, label: "45 ث" }, { value: 60, label: "دقيقة" }, { value: 90, label: "90 ث" }]} />
           <Chips label="التصويت" value={courtV} onChange={setCourtV} options={[{ value: 0, label: "بدون" }, { value: 30, label: "30 ث" }, { value: 60, label: "دقيقة" }, { value: 90, label: "90 ث" }]} />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Chips label="نوع الجلسة" value={courtQuick ? "quick" : "full"} onChange={(v) => setCourtQuick(v === "quick")} options={[{ value: "full", label: "كاملة" }, { value: "quick", label: "سريعة" }]} />
+          <Chips label="القاضي" value={courtJudge} onChange={setCourtJudge} options={[{ value: "host", label: "المضيف" }, { value: "random", label: "لاعب بالقرعة" }]} />
         </div>
         <Toggle checked={courtHost} onChange={setCourtHost} label="المضيف يلعب دورًا" />
         <Toggle checked={courtAuto} onChange={setCourtAuto} label="الانتقال تلقائي حين ينتهي الوقت" />
