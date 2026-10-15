@@ -251,6 +251,11 @@ function DefaultsEditor({ initial }: { initial: GameDefaults }) {
   const [courtQ, setCourtQ] = useState(c0.question_seconds ?? 180);
   const [courtC, setCourtC] = useState(c0.closing_seconds ?? 60);
   const [courtV, setCourtV] = useState(c0.vote_seconds ?? 60);
+  const [courtEscalate, setCourtEscalate] = useState(c0.escalate ?? true);
+  const [courtObj, setCourtObj] = useState(c0.objections ?? 2);
+  const [courtTurn, setCourtTurn] = useState(c0.turn_seconds ?? 45);
+  const [courtRead, setCourtRead] = useState(c0.read_seconds ?? 30);
+  const [courtGolden, setCourtGolden] = useState<"jurors" | "all" | "off">(c0.golden ?? "jurors");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
 
@@ -283,7 +288,7 @@ function DefaultsEditor({ initial }: { initial: GameDefaults }) {
         roles: Object.fromEntries(MAFIA_ROLES.map((r) => [r.key, !!roles[r.key]])),
       },
       "tactical-grid": { seconds: gridSeconds },
-      court: { host_plays: courtHost, auto: courtAuto, quick: courtQuick, judge: courtJudge, question_seconds: courtQ, closing_seconds: courtC, vote_seconds: courtV },
+      court: { host_plays: courtHost, auto: courtAuto, quick: courtQuick, judge: courtJudge, question_seconds: courtQ, closing_seconds: courtC, vote_seconds: courtV, escalate: courtEscalate, objections: courtObj, turn_seconds: courtTurn, read_seconds: courtRead, golden: courtGolden },
     } satisfies GameDefaults);
     setBusy(false);
     setMessage(error ? { tone: "error", text: error } : { tone: "ok", text: "حُفظت الإعدادات. تُطبَّق على الغرف الجديدة." });
@@ -375,6 +380,13 @@ function DefaultsEditor({ initial }: { initial: GameDefaults }) {
         </div>
         <Toggle checked={courtHost} onChange={setCourtHost} label="المضيف يلعب دورًا" />
         <Toggle checked={courtAuto} onChange={setCourtAuto} label="الانتقال تلقائي حين ينتهي الوقت" />
+        <Toggle checked={courtEscalate} onChange={setCourtEscalate} label="تصعيد المنصة تلقائيًا مع مؤقت الاستجواب" />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Chips label="الاعتراضات لكل طرف" value={courtObj} onChange={setCourtObj} options={[0, 1, 2, 3].map((n) => ({ value: n, label: n ? String(n) : "بدون" }))} />
+          <Chips label="دور السؤال" value={courtTurn} onChange={setCourtTurn} options={[30, 45, 60, 90].map((n) => ({ value: n, label: `${n} ث` }))} />
+          <Chips label="قراءة الأدلة (تلقائي)" value={courtRead} onChange={setCourtRead} options={[15, 30, 45, 60].map((n) => ({ value: n, label: `${n} ث` }))} />
+          <Chips label="السؤال الذهبي" value={courtGolden} onChange={setCourtGolden} options={[{ value: "jurors", label: "للمحلّفين" }, { value: "all", label: "والشهود والمحقق" }, { value: "off", label: "بدون" }]} />
+        </div>
       </GameBox>
 
       <GameBox id="heads-up" title="هل تعرف">
