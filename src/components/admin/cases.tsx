@@ -3,6 +3,7 @@ import { Glyph } from "@/components/brand";
 import { Button, Field, cx, inputClass } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { KINDS, WIN_LABELS, type CourtKind } from "@/components/court";
+import { GenerateSheet } from "@/components/court-generate";
 import { Loading, Notice, Sheet, Toggle, dbMessage, selectClass, textareaClass } from "./common";
 
 /**
@@ -30,6 +31,8 @@ type Role = {
   goal?: string;
   /** Evidence this role can reveal on the screen when it chooses (court_v4.sql). */
   exhibits?: Exhibit[];
+  /** For a second accused (court_v5.sql): their own truth. The first accused follows the case. */
+  guilty?: boolean;
 };
 type Suspect = { key: string; name: string };
 type Exhibit = { title: string; text: string; icon?: string; time?: string };
@@ -65,6 +68,8 @@ export type CourtCase = {
   culprit?: string | null;
   juror_clues?: string[];
   variants?: Variant[] | null;
+  /** Where the case came from (court_v5.sql): the admin panel, or a host's generated case. */
+  source?: "manual" | "ai" | "room";
 };
 
 const ROLE_KINDS: RoleKind[] = ["accused", "prosecutor", "lawyer", "detective", "witness"];
@@ -73,7 +78,8 @@ const LEVELS = [
   { value: 2, label: "متوسطة" },
   { value: 3, label: "صعبة" },
 ];
-const FIELDS = "id, slug, title, category, difficulty, summary, intro, guilty, truth, roles, evidence, is_active, suspects, culprit, juror_clues, variants";
+const FIELDS = "id, slug, title, category, difficulty, summary, intro, guilty, truth, roles, evidence, is_active, suspects, culprit, juror_clues, variants, source";
+const FIELDS_V4 = "id, slug, title, category, difficulty, summary, intro, guilty, truth, roles, evidence, is_active, suspects, culprit, juror_clues, variants";
 const FIELDS_V3 = "id, slug, title, category, difficulty, summary, intro, guilty, truth, roles, evidence, is_active, suspects, culprit, juror_clues";
 const FIELDS_V2 = "id, slug, title, category, difficulty, summary, intro, guilty, truth, roles, evidence, is_active";
 
@@ -107,7 +113,7 @@ function problems(c: CourtCase): string[] {
   if (c.truth.trim().length < 10) out.push("اكتب الحقيقة التي تُكشف في النهاية.");
   for (const k of ["accused", "prosecutor", "lawyer"] as const) {
     const n = c.roles.filter((r) => r.kind === k).length;
-    if (n !== 1) out.push(`تحتاج القضية ${KINDS[k].label} واحدًا (الموجود ${n}).`);
+    if (k === "accused" ? n < 1 || n > 2 : n !== 1) out.push(k === "accused" ? `تحتاج القضية متهمًا أو متهمَين (الموجود ${n}).` : `تحتاج القضية ${KINDS[k].label} واحدًا (الموجود ${n}).`);
   }
   if (c.roles.some((r) => (r.kind === "accused" || r.kind === "prosecutor" || r.kind === "lawyer") && r.optional)) out.push("المتهم والمدعي والمحامي أدوار أساسية.");
   if (c.roles.filter((r) => !r.optional).length < 4) out.push("تحتاج 4 أدوار أساسية على الأقل (أضف شاهدًا أو محققًا أساسيًا).");
@@ -220,6 +226,7 @@ function clean(c: CourtCase): CourtCase {
         ...(fallback ? { fallback, fallback_stage: r.fallback_stage ?? 2 } : {}),
         ...((r.kind === "witness" || r.kind === "detective") && r.win && r.win !== "truth" ? { win: r.win } : {}),
         ...(r.goal?.trim() ? { goal: r.goal.trim() } : {}),
+        ...(r.kind === "accused" && typeof r.guilty === "boolean" ? { guilty: r.guilty } : {}),
         ...(() => {
           const ex = cleanExhibits(r.exhibits);
           return ex.length ? { exhibits: ex } : {};
@@ -252,14 +259,17 @@ export function CasesTab() {
   const [note, setNote] = useState<string | null>(null);
   const [editing, setEditing] = useState<CourtCase | null>(null);
   const [importing, setImporting] = useState(false);
-  const [filter, setFilter] = useState<"all" | "guilty" | "innocent" | "off">("all");
+  const [filter, setFilter] = useState<"all" | "guilty" | "innocent" | "off" | "rooms" | "dual">("all");
   const [stats, setStats] = useState<Record<string, Stat>>({});
   const [preview, setPreview] = useState<CourtCase | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [genNote, setGenNote] = useState<string | undefined>(undefined);
 
   async function refresh() {
     if (!supabase) return;
     let res = await supabase.from("court_cases").select(FIELDS).order("created_at");
     // Before court_v3.sql the case has no suspects or juror clues.
+    if (res.error && /column|schema cache/i.test(res.error.message)) res = await supabase.from("court_cases").select(FIELDS_V4).order("created_at");
     if (res.error && /column|schema cache/i.test(res.error.message)) res = await supabase.from("court_cases").select(FIELDS_V3).order("created_at");
     if (res.error && /column|schema cache/i.test(res.error.message)) res = await supabase.from("court_cases").select(FIELDS_V2).order("created_at");
     const { data, error: e } = res;
@@ -318,7 +328,15 @@ export function CasesTab() {
   }
   if (cases === null) return <Loading />;
 
-  const shown = cases.filter((c) => (filter === "all" ? true : filter === "off" ? !c.is_active : filter === "guilty" ? c.guilty : !c.guilty));
+  const dualOf = (c: CourtCase) => c.roles.filter((r) => r.kind === "accused").length > 1;
+  const shown = cases.filter((c) =>
+    filter === "all" ? (c.source ?? "manual") === "manual" || c.is_active
+    : filter === "off" ? !c.is_active && (c.source ?? "manual") === "manual"
+    : filter === "rooms" ? (c.source ?? "manual") !== "manual"
+    : filter === "dual" ? dualOf(c)
+    : filter === "guilty" ? c.guilty
+    : !c.guilty,
+  );
   const guilty = cases.filter((c) => c.guilty).length;
 
   return (
@@ -337,6 +355,9 @@ export function CasesTab() {
         <Button tone="quiet" onClick={() => exportAll(cases)} disabled={!cases.length}>
           تصدير الكل
         </Button>
+        <Button tone="quiet" onClick={() => setGenerating(true)}>
+          ✨ ولّد قضية
+        </Button>
         <Button tone="primary" onClick={() => setEditing(blank())}>
           <Glyph name="plus" className="size-[18px]" />
           قضية جديدة
@@ -349,6 +370,8 @@ export function CasesTab() {
             ["guilty", "المتهم مذنب"],
             ["innocent", "المتهم بريء"],
             ["off", "موقوفة"],
+            ["dual", "بمتهمَين"],
+            ["rooms", `من الغرف (${cases.filter((c) => (c.source ?? "manual") !== "manual").length})`],
           ] as const
         ).map(([k, label]) => (
           <button
@@ -376,6 +399,8 @@ export function CasesTab() {
                   {c.guilty ? "مذنب" : "بريء"}
                 </span>
                 <span className="rounded-full bg-deep-2 px-2.5 py-0.5 text-[12px] text-mist">{LEVELS.find((l) => l.value === c.difficulty)?.label}</span>
+                {dualOf(c) ? <span className="rounded-full bg-deep-2 px-2.5 py-0.5 text-[12px] text-gold">متهمان</span> : null}
+                {c.source === "ai" ? <span className="rounded-full bg-violet-text/15 px-2.5 py-0.5 text-[12px] text-violet-text">✨ من مضيف</span> : c.source === "room" ? <span className="rounded-full bg-deep-2 px-2.5 py-0.5 text-[12px] text-mist">قالب من غرفة</span> : null}
               </div>
               <p className="text-[13px] leading-6 text-mist">{c.summary || c.intro.slice(0, 120)}</p>
               <CaseStat stat={c.id ? stats[c.id] : undefined} guilty={c.guilty} />
@@ -410,7 +435,11 @@ export function CasesTab() {
       {editing ? (
         <CaseEditor
           initial={editing}
-          onClose={() => setEditing(null)}
+          note={editing.id ? undefined : genNote}
+          onClose={() => {
+            setEditing(null);
+            setGenNote(undefined);
+          }}
           onSaved={async () => {
             setEditing(null);
             setNote("حُفظت القضية.");
@@ -419,6 +448,16 @@ export function CasesTab() {
         />
       ) : null}
       {preview ? <PreviewSheet c={preview} onClose={() => setPreview(null)} /> : null}
+      {generating ? (
+        <GenerateSheet
+          onClose={() => setGenerating(false)}
+          onDraft={(g) => {
+            setGenerating(false);
+            setGenNote(g.note ?? "✨ مسودة من المولّد الذكي. راجع القصة والأدلة والحقيقة، وجرّبها قبل الحفظ.");
+            setEditing(g.draft);
+          }}
+        />
+      ) : null}
       {importing ? (
         <ImportSheet
           onClose={() => setImporting(false)}
@@ -435,7 +474,7 @@ export function CasesTab() {
 
 function Box({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
   return (
-    <fieldset className="grid gap-3 rounded-[18px] border border-line bg-deep-2/40 p-4">
+    <fieldset className="min-w-0 grid gap-3 rounded-[18px] border border-line bg-deep-2/40 p-4">
       <legend className="flex items-center gap-2 px-1 text-[15px] font-bold text-gold">{title}</legend>
       {action ? <div className="-mt-1">{action}</div> : null}
       {children}
@@ -443,7 +482,27 @@ function Box({ title, children, action }: { title: string; children: ReactNode; 
   );
 }
 
-function CaseEditor({ initial, onClose, onSaved }: { initial: CourtCase; onClose: () => void; onSaved: () => Promise<void> }) {
+/**
+ * The case editor. In the admin panel it saves to court_cases; in a room (the host reviewing a
+ * generated case) `onSubmit` receives the clean case instead, and returns an error or null.
+ */
+export function CaseEditor({
+  initial,
+  onClose,
+  onSaved,
+  onSubmit,
+  submitLabel,
+  title,
+  note,
+}: {
+  initial: CourtCase;
+  onClose: () => void;
+  onSaved?: () => Promise<void>;
+  onSubmit?: (c: CourtCase) => Promise<string | null>;
+  submitLabel?: string;
+  title?: string;
+  note?: string;
+}) {
   const [c, setC] = useState<CourtCase>(() => ({ ...initial, category: initial.category ?? "", roles: initial.roles.map((r) => ({ ...r })), evidence: initial.evidence.map((e) => ({ ...e })) }));
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
@@ -461,11 +520,18 @@ function CaseEditor({ initial, onClose, onSaved }: { initial: CourtCase; onClose
     });
 
   async function save() {
-    if (!supabase) return;
     const p = problems(c);
     setErrors(p);
     if (p.length) return;
     const row = clean(c);
+    if (onSubmit) {
+      setBusy(true);
+      const err = await onSubmit(row);
+      setBusy(false);
+      if (err) setErrors([err]);
+      return;
+    }
+    if (!supabase) return;
     setBusy(true);
     const payload = {
       title: row.title,
@@ -486,12 +552,13 @@ function CaseEditor({ initial, onClose, onSaved }: { initial: CourtCase; onClose
     const { error: e } = c.id ? await supabase.from("court_cases").update(payload).eq("id", c.id) : await supabase.from("court_cases").insert(payload);
     setBusy(false);
     if (e) return setErrors([serverError(e)]);
-    await onSaved();
+    await onSaved?.();
   }
 
   return (
-    <Sheet title={c.id ? "تعديل القضية" : "قضية جديدة"} onClose={onClose}>
+    <Sheet title={title ?? (c.id ? "تعديل القضية" : "قضية جديدة")} onClose={onClose}>
       <div className="grid gap-4">
+        {note ? <Notice tone="info">{note}</Notice> : null}
         <Box title="القضية">
           <Field label="العنوان">
             <input className={inputClass} value={c.title} maxLength={80} onChange={(e) => set("title", e.target.value)} placeholder="مثل: اختفاء مبلغ من خزنة الشركة" />
@@ -628,6 +695,26 @@ function CaseEditor({ initial, onClose, onSaved }: { initial: CourtCase; onClose
               <input className={inputClass} value={r.name} maxLength={60} onChange={(e) => setRole(i, { name: e.target.value })} placeholder="الاسم في القصة، مثل: نورة، موظفة الاستقبال" aria-label="الاسم" />
               <input className={inputClass} value={r.brief ?? ""} maxLength={160} onChange={(e) => setRole(i, { brief: e.target.value })} placeholder="وصف معلن يراه الجميع (اختياري)" aria-label="الوصف المعلن" />
               <textarea className={cx(textareaClass, "min-h-20")} value={r.secret} maxLength={800} onChange={(e) => setRole(i, { secret: e.target.value })} placeholder="🔒 المعلومة السرية: ما يعرفه، وما يخفيه، وكيف يتصرف." aria-label="المعلومة السرية" />
+              {r.kind === "accused" && c.roles.filter((x) => x.kind === "accused").length > 1 ? (
+                c.roles.findIndex((x) => x.kind === "accused") === i ? (
+                  <p className="text-[13px] text-mist">⚖️ حقيقته حقيقة القضية: {c.guilty ? "مذنب" : "بريء"}.</p>
+                ) : (
+                  <div className="flex items-center gap-2 text-[14px] text-ivory">
+                    ⚖️ حقيقته:
+                    {[true, false].map((g) => (
+                      <button
+                        key={String(g)}
+                        type="button"
+                        aria-pressed={(r.guilty ?? c.guilty) === g}
+                        onClick={() => setRole(i, { guilty: g })}
+                        className={cx("min-h-10 rounded-full border-2 px-4 font-bold", (r.guilty ?? c.guilty) === g ? (g ? "border-wrong text-wrong" : "border-correct text-correct") : "border-line-strong/70 text-mist")}
+                      >
+                        {g ? "مذنب" : "بريء"}
+                      </button>
+                    ))}
+                  </div>
+                )
+              ) : null}
               <input className={inputClass} value={r.goal ?? ""} maxLength={200} onChange={(e) => setRole(i, { goal: e.target.value })} placeholder="🎯 هدف سري (اختياري)، مثل: لا تكشف علاقتك بالمدير" aria-label="هدف سري" />
               {r.kind === "witness" || r.kind === "detective" ? (
                 <label className="flex items-center gap-2 text-[14px] text-ivory">
@@ -694,17 +781,16 @@ function CaseEditor({ initial, onClose, onSaved }: { initial: CourtCase; onClose
           {c.evidence.map((e, i) => (
             <div key={i} className="grid gap-2 rounded-[16px] border border-line-strong/50 bg-night/40 p-3">
               <div className="flex items-center gap-2">
-                <input className={cx(inputClass, "!w-16 text-center text-[20px]")} value={e.icon ?? ""} maxLength={8} onChange={(ev) => setEv(i, { icon: ev.target.value })} aria-label="أيقونة" />
-                <input dir="ltr" className={cx(inputClass, "!w-24 text-center")} value={e.time ?? ""} maxLength={8} onChange={(ev) => setEv(i, { time: ev.target.value })} placeholder="9:20" aria-label="الوقت (للخط الزمني)" />
-                <select className={cx(selectClass, "!w-32")} value={e.stage} onChange={(ev) => setEv(i, { stage: Number(ev.target.value) })} aria-label="الجولة">
+                <input className={cx(inputClass, "!w-14 shrink-0 text-center text-[20px]")} value={e.icon ?? ""} maxLength={8} onChange={(ev) => setEv(i, { icon: ev.target.value })} aria-label="أيقونة" />
+                <input dir="ltr" className={cx(inputClass, "!w-0 min-w-0 flex-1 text-center")} value={e.time ?? ""} maxLength={8} onChange={(ev) => setEv(i, { time: ev.target.value })} placeholder="9:20" aria-label="الوقت (للخط الزمني)" />
+                <select className={cx(selectClass, "!w-0 min-w-0 flex-[1.4]")} value={e.stage} onChange={(ev) => setEv(i, { stage: Number(ev.target.value) })} aria-label="الجولة">
                   {[1, 2, 3].map((n) => (
                     <option key={n} value={n}>
                       الجولة {n}
                     </option>
                   ))}
                 </select>
-                <span className="flex-1" />
-                <button type="button" className="grid size-9 place-items-center rounded-full text-mist hover:text-wrong" onClick={() => set("evidence", c.evidence.filter((_, j) => j !== i))} aria-label="حذف الدليل">
+                <button type="button" className="grid size-9 shrink-0 place-items-center rounded-full text-mist hover:text-wrong" onClick={() => set("evidence", c.evidence.filter((_, j) => j !== i))} aria-label="حذف الدليل">
                   <Glyph name="trash" className="size-4" />
                 </button>
               </div>
@@ -734,7 +820,7 @@ function CaseEditor({ initial, onClose, onSaved }: { initial: CourtCase; onClose
             ▶️ جرّب
           </Button>
           <Button tone="primary" className="min-h-14 text-[17px]" disabled={busy} onClick={save}>
-            {busy ? "جارٍ الحفظ…" : c.id ? "احفظ التعديل" : "أضف القضية"}
+            {busy ? "جارٍ الحفظ…" : (submitLabel ?? (c.id ? "احفظ التعديل" : "أضف القضية"))}
           </Button>
         </div>
       </div>
