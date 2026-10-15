@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Glyph } from "@/components/brand";
 import { Button, cx } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
@@ -9,6 +9,14 @@ import { ResultShare, type ShareResult } from "@/components/result-share";
 import { useLivePoll } from "@/lib/live";
 import { useSiteSettings } from "@/lib/site-settings";
 import { setVoicePreference, speak, voicePreference } from "@/components/mafia";
+import { phaseGuide, suggestQuestions } from "@/lib/court-phase-guide";
+import { ANSWER_RULES, DETECTIVE_GUIDE, OBJECTION_RULES, answerRulesFor, objectionHint } from "@/lib/court-rules";
+import type { Generated } from "@/lib/court-ai";
+import type { CourtCase } from "@/components/admin/cases";
+
+// The case editor and the generator load only when a host opens them.
+const CaseEditor = lazy(() => import("@/components/admin/cases").then((m) => ({ default: m.CaseEditor })));
+const GenerateSheet = lazy(() => import("@/components/court-generate").then((m) => ({ default: m.GenerateSheet })));
 
 /**
  * «المحكمة»: a case, secret role cards, evidence in rounds, questioning, closing speeches,
@@ -21,7 +29,11 @@ type Step = { phase: CourtPhase; stage?: number; side?: "prosecutor" | "lawyer";
 type CourtPhase = "intro" | "evidence" | "question" | "closing" | "vote" | "verdict" | "over";
 export type CourtEvidence = { stage: number; title: string; text: string; icon: string; time?: string | null; presented?: boolean; by_kind?: CourtKind; by_name?: string; by_player?: string };
 type CastRow = { player_id: string; player_name: string; kind: CourtKind; name: string; brief: string | null; role_key?: string };
-type PointsRow = { player_id: string; player_name: string; kind: CourtKind; name: string; vote: boolean | null; pick?: string | null; points: number; why: string[] };
+type PointsRow = { player_id: string; player_name: string; kind: CourtKind; name: string; vote: boolean | null; pick?: string | null; points: number; why: string[]; verdicts?: Record<string, boolean> | null };
+/** One accused (court_v5.sql): a case can have two, each with its own verdict and truth. */
+type AccusedRow = { key: string; name: string; player_id: string };
+type VerdictRow = { key: string; name: string; player_name: string; player_id: string; guilty: boolean; votes_guilty: number; votes_innocent: number };
+type TruthRow = VerdictRow & { truth: boolean; correct: boolean };
 type CardReveal = { player_name: string; kind: CourtKind; name: string; secret: string; later: string | null; goal?: string | null; win?: Win | null; clue?: string | null };
 type Win = "truth" | "convict" | "acquit";
 type QueueRow = { player_id: string; name: string; at: string };
@@ -40,6 +52,9 @@ export type CourtState = {
   cast?: CastRow[];
   evidence?: CourtEvidence[];
   stand?: string | null;
+  /** The last slot of the automatic stand order the server applied (court_v5.sql). */
+  stand_slot?: number | null;
+  accused?: AccusedRow[];
   objection?: { by?: string; kind: CourtKind; name: string; at: string; n: number; status?: "pending" | "accepted" | "rejected"; ruled_at?: string } | null;
   queue?: QueueRow[];
   asking?: string | null;
@@ -56,8 +71,8 @@ export type CourtState = {
   pleading?: { prosecutor: number; lawyer: number; winner: "prosecutor" | "lawyer" | null } | null;
   votes_count?: number;
   voters_count?: number;
-  verdict?: { guilty: boolean; votes_guilty: number; votes_innocent: number } | null;
-  truth?: { guilty: boolean; text: string; correct: boolean; culprit?: string | null; culprit_key?: string | null } | null;
+  verdict?: { guilty: boolean; votes_guilty: number; votes_innocent: number; list?: VerdictRow[] } | null;
+  truth?: { guilty: boolean; text: string; correct: boolean; culprit?: string | null; culprit_key?: string | null; list?: TruthRow[] } | null;
   points?: PointsRow[] | null;
   cards?: CardReveal[] | null;
   settings?: CourtSettings;
@@ -69,6 +84,8 @@ type CourtSettings = {
   host_plays?: boolean;
   auto?: boolean;
   quick?: boolean;
+  /** The stand moves by itself during questioning: witnesses, the detective, then the accused. */
+  escalate?: boolean;
   judge?: "host" | "random";
   new_evening?: boolean;
   question_seconds?: number;
@@ -88,6 +105,8 @@ type MyCard = {
   later?: string | null;
   later_pending?: boolean;
   vote?: boolean | null;
+  /** My verdict for each accused, by role key (court_v5.sql). */
+  verdicts?: Record<string, boolean>;
   pick?: string | null;
   objections_left?: number;
   player_id?: string;
@@ -145,6 +164,7 @@ const ERRORS: Record<string, string> = {
   HAS_ROLE: "هذا اللاعب له دور في القضية. اختر من دخل بعد التوزيع أو محلّفًا.",
   NO_ROLE: "تعذّر إيجاد الدور في القضية.",
   OVER: "انتهت المحاكمة.",
+  BAD_CASE: "القضية ناقصة، راجعها:",
 };
 const SETUP_HINT = "لعبة المحكمة تحتاج تشغيل ملفات المحكمة في supabase (حتى court_v3.sql).";
 
@@ -278,6 +298,9 @@ function useAutoTick(roomId: string, state: CourtState, delayMs: number) {
   if (state.settings?.auto && state.ends_at) deadlines.push(["step", Date.parse(state.ends_at)]);
   if (state.phase === "question" && state.asking && state.asking_since) deadlines.push([`turn:${state.asking_since}`, Date.parse(state.asking_since) + 45000]);
   if (state.objection?.status === "pending" && state.objection.at) deadlines.push([`obj:${state.objection.at}`, Date.parse(state.objection.at) + 10000]);
+  // The next turn on the stand (court_v5.sql): the server moves it when its slot starts.
+  const esc = escalation(state);
+  if (esc && esc.nextAt !== null) deadlines.push([`esc:${esc.nextIndex}`, esc.nextAt]);
   const due = deadlines.find(([, t]) => now >= t);
   const key = due ? `${step}:${due[0]}` : null;
   useEffect(() => {
@@ -525,17 +548,89 @@ function CastGrid({ state, big = false, onPick, busy = false, briefs = true }: {
   );
 }
 
-function StandBanner({ state, big = false }: { state: CourtState; big?: boolean }) {
-  const who = (state.cast ?? []).find((c) => c.player_id === state.stand);
-  if (!who) return null;
+/**
+ * The automatic stand order (court_v5.sql, court_tick): the witnesses, then the detective, then the
+ * accused, each for an equal part of the questioning time (30 seconds at least). A golden question
+ * pauses it. The same formula as the server, so every screen shows who is next and when.
+ */
+function escalation(state: CourtState) {
+  if (state.phase !== "question" || state.settings?.escalate !== true || !state.ends_at || state.golden) return null;
+  const secs = state.steps?.[state.step ?? -1]?.seconds ?? 0;
+  const rank = (k: CourtKind) => (k === "witness" ? 1 : k === "detective" ? 2 : k === "accused" ? 3 : 0);
+  const order = (state.cast ?? [])
+    .map((c, i) => ({ c, i }))
+    .filter((x) => rank(x.c.kind) > 0)
+    .sort((a, b) => rank(a.c.kind) - rank(b.c.kind) || a.i - b.i)
+    .map((x) => x.c);
+  if (!secs || !order.length) return null;
+  const start = Date.parse(state.ends_at) - secs * 1000;
+  const slot = Math.max(30, secs / order.length) * 1000;
+  const nextIndex = (state.stand_slot ?? -1) + 1;
+  const next = nextIndex < order.length ? order[nextIndex] : null;
+  return { order, next, nextIndex, nextAt: next ? start + nextIndex * slot - 1000 : null };
+}
+
+/**
+ * «لوحة الجلسة»: who is on the stand, who asks (and for how long), who waits, and who the stand
+ * goes to next. The same board on phones, the host screen and the TV.
+ */
+function SessionBoard({ state, big = false }: { state: CourtState; big?: boolean }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, []);
+  if (state.phase !== "question") return null;
+  const cast = state.cast ?? [];
+  const stand = cast.find((c) => c.player_id === state.stand);
+  const asker = cast.find((c) => c.player_id === state.asking);
+  const queue = state.queue ?? [];
+  const g = state.golden;
+  const goldenNow = !!g && g.by === state.asking;
+  const esc = escalation(state);
+  const nextIn = esc?.nextAt ? Math.max(0, Math.ceil((esc.nextAt - now) / 1000)) : null;
+  const t = (small: string, large: string) => (big ? large : small);
   return (
-    <div className={cx("rise flex items-center justify-center gap-3 rounded-[20px] border border-gold/60 bg-gold/10 p-3 text-center", big && "rounded-[1.6vw] p-[1.2vw]")}>
-      <span aria-hidden="true" className={big ? "text-[clamp(28px,3vw,60px)]" : "text-[28px]"}>
-        🎙️
-      </span>
-      <p className={cx("font-display font-extrabold text-ivory", big ? "text-[clamp(20px,2.4vw,48px)]" : "text-[19px]")}>
-        على المنصة: {who.name} <span className="text-gold">({who.player_name})</span>
-      </p>
+    <div className={cx("grid gap-2 rounded-[22px] border border-gold/40 bg-night/60 p-3", big && "gap-[0.8vw] rounded-[1.6vw] p-[1.2vw]")}>
+      <p className={cx("text-center font-bold text-gold", t("text-[13px]", "text-[clamp(14px,1.4vw,28px)]"))}>لوحة الجلسة</p>
+      <div className={cx("grid gap-2", big ? "grid-cols-2 gap-[0.8vw]" : "grid-cols-1 sm:grid-cols-2")}>
+        <div className={cx("rise grid gap-0.5 rounded-[16px] border p-3 text-center", stand ? "border-gold/60 bg-gold/10" : "border-line bg-deep-2/50", big && "rounded-[1.2vw] p-[1vw]")}>
+          <span className={cx("text-mist", t("text-[12px]", "text-[clamp(12px,1.2vw,24px)]"))}>🎙️ على المنصة</span>
+          <span className={cx("font-display font-extrabold text-ivory", t("text-[18px]", "text-[clamp(20px,2.4vw,48px)]"))}>
+            {stand ? stand.name : "لا أحد بعد"}
+            {stand ? <span className="ms-1.5 text-gold">({stand.player_name})</span> : null}
+          </span>
+        </div>
+        <div
+          className={cx(
+            "grid gap-0.5 rounded-[16px] border p-3 text-center",
+            goldenNow ? "border-gold bg-[linear-gradient(135deg,#ffb13b33,#ffe27a22)] shadow-glow-gold" : asker ? "border-line-strong bg-deep-2/60" : "border-line bg-deep-2/50",
+            big && "rounded-[1.2vw] p-[1vw]",
+          )}
+        >
+          <span className={cx("text-mist", t("text-[12px]", "text-[clamp(12px,1.2vw,24px)]"))}>{goldenNow ? "⭐ سؤال ذهبي" : "🙋 يسأل الآن"}</span>
+          {asker ? (
+            <span className="flex flex-wrap items-center justify-center gap-2">
+              <span className={cx("font-display font-extrabold", goldenNow ? "text-gold" : "text-ivory", t("text-[18px]", "text-[clamp(20px,2.4vw,48px)]"))}>{asker.player_name}</span>
+              <TurnClock since={state.asking_since} big={big} />
+            </span>
+          ) : (
+            <span className={cx("font-semibold text-ivory", t("text-[15px]", "text-[clamp(16px,1.7vw,34px)]"))}>الدور مفتوح: «✋ أبي أسأل»</span>
+          )}
+          {goldenNow ? <span className={cx("text-ivory", t("text-[13px]", "text-[clamp(13px,1.3vw,26px)]"))}>{g.target_name} يجب أن يجيب</span> : null}
+        </div>
+      </div>
+      {queue.length ? (
+        <p className={cx("text-center text-mist", t("text-[13px]", "text-[clamp(13px,1.3vw,26px)]"))}>✋ ينتظرون الدور: {queue.map((q, i) => `${i + 1}. ${q.name}`).join("  ·  ")}</p>
+      ) : null}
+      {esc?.next ? (
+        <p className={cx("text-center text-ivory", t("text-[13px]", "text-[clamp(13px,1.3vw,26px)]"))}>
+          ⏫ التالي على المنصة: <b>{esc.next.name}</b> ({esc.next.player_name})
+          {nextIn !== null ? <span dir="ltr" className="ms-1.5 font-display font-bold tabular-nums text-gold">{mmss(nextIn)}</span> : null}
+        </p>
+      ) : g && state.settings?.escalate ? (
+        <p className={cx("text-center text-mist", t("text-[13px]", "text-[clamp(13px,1.3vw,26px)]"))}>⏸️ المنصة ثابتة حتى ينتهي السؤال الذهبي.</p>
+      ) : null}
     </div>
   );
 }
@@ -656,6 +751,7 @@ function ClosingBanner({ state, big = false }: { state: CourtState; big?: boolea
 function VerdictCard({ state, big = false }: { state: CourtState; big?: boolean }) {
   const v = state.verdict;
   if (!v) return null;
+  if ((v.list?.length ?? 0) > 1) return <DualVerdict state={state} big={big} />;
   const accused = (state.cast ?? []).find((c) => c.kind === "accused");
   return (
     <div
@@ -682,15 +778,64 @@ function VerdictCard({ state, big = false }: { state: CourtState; big?: boolean 
   );
 }
 
+/** Two accused: a verdict for each, side by side. */
+function DualVerdict({ state, big = false }: { state: CourtState; big?: boolean }) {
+  const list = state.verdict?.list ?? [];
+  return (
+    <div className={cx("rise grid gap-3 rounded-[28px] border-2 border-gold/50 bg-night/60 p-5 text-center", big && "gap-[1vw] p-[2vw]")}>
+      <p className={cx("text-mist", big ? "text-[clamp(16px,1.8vw,34px)]" : "text-[15px]")}>حكم هيئة المحلفين</p>
+      <div className="grid grid-cols-2 gap-3">
+        {list.map((r) => (
+          <div key={r.key} className={cx("grid gap-1 rounded-[20px] border-2 p-3", r.guilty ? "border-wrong/70 bg-wrong-fill/15" : "border-correct/60 bg-correct-fill/15", big && "rounded-[1.4vw] p-[1.2vw]")}>
+            <p className={cx("font-bold text-ivory", big ? "text-[clamp(14px,1.5vw,30px)]" : "text-[14px] leading-6")}>{r.name}</p>
+            <p className={cx("text-mist", big ? "text-[clamp(12px,1.2vw,24px)]" : "text-[12px]")}>{r.player_name}</p>
+            <p className={cx("font-display font-extrabold", big ? "text-[clamp(40px,5.5vw,110px)] leading-none" : "text-[34px] leading-[44px]", r.guilty ? "text-wrong" : "text-correct")}>{r.guilty ? "مذنب" : "بريء"}</p>
+            <p dir="rtl" className={cx("font-bold text-ivory", big ? "text-[clamp(13px,1.3vw,26px)]" : "text-[13px]")}>
+              مذنب {r.votes_guilty} · بريء {r.votes_innocent}
+              {r.votes_guilty === r.votes_innocent ? " · التعادل لصالحه" : ""}
+            </p>
+          </div>
+        ))}
+      </div>
+      {state.pleading?.winner ? (
+        <p className={cx("text-gold", big ? "text-[clamp(14px,1.5vw,30px)]" : "text-[14px]")}>
+          🎤 أفضل مرافعة: {KINDS[state.pleading.winner].label} ({state.pleading[state.pleading.winner]} صوت)
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function TruthCard({ state, big = false }: { state: CourtState; big?: boolean }) {
   const t = state.truth;
   if (!t) return null;
+  const list = t.list && t.list.length > 1 ? t.list : null;
+  const right = list ? list.filter((r) => r.correct).length : 0;
   return (
     <div className={cx("grid gap-3 rounded-[24px] border border-gold/40 bg-night/60 p-5", big && "p-[2vw]")}>
-      <p className={cx("font-display font-extrabold", big ? "text-[clamp(22px,2.6vw,52px)]" : "text-[20px]", t.correct ? "text-correct" : "text-wrong")}>
-        {t.correct ? "⚖️ تحققت العدالة" : "⚠️ خطأ قضائي"}
-        <span className={cx("ms-2 text-ivory", big ? "text-[clamp(16px,1.8vw,34px)]" : "text-[15px]")}>الحقيقة: المتهم {t.guilty ? "مذنب" : "بريء"}</span>
-      </p>
+      {list ? (
+        <>
+          <p className={cx("font-display font-extrabold", big ? "text-[clamp(22px,2.6vw,52px)]" : "text-[20px]", t.correct ? "text-correct" : right ? "text-gold" : "text-wrong")}>
+            {t.correct ? "⚖️ تحققت العدالة في الحكمين" : right ? "⚖️ أصابت الهيئة في حكم واحد" : "⚠️ خطأ قضائي في الحكمين"}
+          </p>
+          <ul className="grid gap-1.5">
+            {list.map((r) => (
+              <li key={r.key} className={cx("flex flex-wrap items-center gap-x-2 rounded-[14px] border px-3 py-2", r.correct ? "border-correct/50" : "border-wrong/50", big && "rounded-[1vw] px-[1vw] py-[0.6vw]")}>
+                <span aria-hidden="true">{r.correct ? "✅" : "❌"}</span>
+                <span className={cx("font-bold text-ivory", big ? "text-[clamp(14px,1.5vw,30px)]" : "text-[15px]")}>{r.name}</span>
+                <span className={cx("text-mist", big ? "text-[clamp(13px,1.3vw,26px)]" : "text-[13px]")}>
+                  الحقيقة: {r.truth ? "مذنب" : "بريء"} · الحكم: {r.guilty ? "مذنب" : "بريء"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p className={cx("font-display font-extrabold", big ? "text-[clamp(22px,2.6vw,52px)]" : "text-[20px]", t.correct ? "text-correct" : "text-wrong")}>
+          {t.correct ? "⚖️ تحققت العدالة" : "⚠️ خطأ قضائي"}
+          <span className={cx("ms-2 text-ivory", big ? "text-[clamp(16px,1.8vw,34px)]" : "text-[15px]")}>الحقيقة: المتهم {t.guilty ? "مذنب" : "بريء"}</span>
+        </p>
+      )}
       {t.culprit ? (
         <p className={cx("font-bold text-gold", big ? "text-[clamp(18px,2vw,40px)]" : "text-[17px]")}>
           🕵️ الفاعل الحقيقي: {t.culprit}
@@ -702,6 +847,19 @@ function TruthCard({ state, big = false }: { state: CourtState; big?: boolean })
       <p className={cx("leading-relaxed text-ivory", big ? "text-[clamp(16px,1.7vw,34px)]" : "text-[16px] leading-7")}>{t.text}</p>
     </div>
   );
+}
+
+/** «صوّت مذنب», or for two accused «فهد: مذنب، سعد: بريء». */
+function votesText(state: CourtState, r: PointsRow) {
+  const list = state.verdict?.list ?? [];
+  if (list.length > 1) {
+    const parts = list.map((a) => {
+      const v = r.verdicts?.[a.key] ?? (a.key === list[0].key ? r.vote : null);
+      return v === null || v === undefined ? null : `${a.player_name}: ${v ? "مذنب" : "بريء"}`;
+    });
+    return parts.some(Boolean) ? ` · صوّت ${parts.filter(Boolean).join("، ")}` : "";
+  }
+  return r.vote !== null && r.vote !== undefined ? ` · صوّت ${r.vote ? "مذنب" : "بريء"}` : "";
 }
 
 function PointsTable({ state, big = false, meId }: { state: CourtState; big?: boolean; meId?: string | null }) {
@@ -726,7 +884,7 @@ function PointsTable({ state, big = false, meId }: { state: CourtState; big?: bo
             <span className={cx("truncate font-bold text-ivory", big ? "text-[clamp(14px,1.45vw,30px)]" : "text-[15px]")}>{r.player_name}</span>
             <span className={cx("text-mist", big ? "truncate text-[clamp(11px,1vw,20px)]" : "text-[12px] leading-5")}>
               {r.kind === "juror" ? "محلّف" : r.name}
-              {r.vote !== null && r.vote !== undefined ? ` · صوّت ${r.vote ? "مذنب" : "بريء"}` : ""}
+              {votesText(state, r)}
               {r.pick ? ` · الفاعل: ${(state.suspects ?? []).find((x) => x.key === r.pick)?.name ?? ""}` : ""}
               {r.why.length ? ` · ${r.why.join("، ")}` : ""}
             </span>
@@ -772,8 +930,10 @@ export function courtShare(state: CourtState): ShareResult {
   return {
     slug: "court",
     title: "⚖️ المحكمة",
-    headline: state.truth ? (state.truth.correct ? "تحققت العدالة" : "خطأ قضائي") : "المحكمة",
-    sub: `${state.case?.title ?? ""}${v ? ` · الحكم: ${v.guilty ? "مذنب" : "بريء"}` : ""}`,
+    headline: state.truth ? (state.truth.correct ? "تحققت العدالة" : (state.truth.list ?? []).some((r) => r.correct) ? "عدالة ناقصة" : "خطأ قضائي") : "المحكمة",
+    sub: `${state.case?.title ?? ""}${
+      v && (v.list?.length ?? 0) > 1 ? ` · ${v.list!.map((a) => `${a.player_name}: ${a.guilty ? "مذنب" : "بريء"}`).join("، ")}` : v ? ` · الحكم: ${v.guilty ? "مذنب" : "بريء"}` : ""
+    }`,
     rows: rows.map((r) => ({ name: `${KINDS[r.kind]?.icon ?? ""} ${r.player_name}`, value: `+${r.points}` })),
   };
 }
@@ -922,6 +1082,86 @@ function Hint({ state, kind }: { state: CourtState; kind?: CourtKind }) {
   return <p className="rounded-[16px] bg-deep-2/60 p-3 text-center text-[14px] leading-6 text-ivory">{text}</p>;
 }
 
+/**
+ * «📘 دليل دورك»: what to do in this phase, questions to ask, and the rules that concern the role
+ * (objections for the prosecutor and the lawyer, answers for the accused and witnesses).
+ */
+function RoleGuide({ state, kind }: { state: CourtState; kind?: CourtKind }) {
+  if (!kind || !state.phase || state.phase === "over") return null;
+  const tip = phaseGuide(kind, state.phase);
+  const asks = state.phase === "question" && kind !== "accused" && kind !== "witness" ? suggestQuestions(kind, state.stage) : [];
+  const answers = answerRulesFor(kind);
+  const objects = kind === "prosecutor" || kind === "lawyer";
+  const dual = (state.accused?.length ?? 0) > 1;
+  const li = "ms-4 list-disc text-[13px] leading-6 text-mist";
+  return (
+    <details className="surface rounded-[20px] p-4" open={state.phase === "intro"}>
+      <summary className="cursor-pointer text-[15px] font-semibold text-ivory">📘 دليل دورك: {KINDS[kind].label}</summary>
+      <div className="mt-3 grid gap-3">
+        <p className="rounded-[14px] bg-deep-2/60 p-3 text-[14px] leading-6 text-ivory">{tip}</p>
+        {dual ? (
+          <p className="text-[13px] leading-6 text-gold">
+            ⚖️ في القضية متهمان، ولكل واحد حكم مستقل وحقيقة مستقلة: {state.accused!.map((a) => a.name).join(" و")}.
+            {kind === "accused" ? " تكسب 300 إذا بُرّئت أنت، مهما كان حكم الآخر." : ""}
+          </p>
+        ) : null}
+        {asks.length ? (
+          <div>
+            <p className="text-[13px] font-bold text-gold">أسئلة تقدر تبدأ بها</p>
+            <ul>
+              {asks.map((q) => (
+                <li key={q} className={li}>
+                  {q}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {kind === "detective" ? (
+          <div>
+            <p className="text-[13px] font-bold text-gold">دليل المحقق</p>
+            <ul>
+              {DETECTIVE_GUIDE.map((x) => (
+                <li key={x} className={li}>
+                  {x}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {objects ? (
+          <div>
+            <p className="text-[13px] font-bold text-gold">قواعد الاعتراض</p>
+            <p className="text-[13px] leading-6 text-mist">{OBJECTION_RULES.who}</p>
+            <ul>
+              {OBJECTION_RULES.when.map((x) => (
+                <li key={x} className={li}>
+                  {x}
+                </li>
+              ))}
+            </ul>
+            <p className="text-[13px] leading-6 text-mist">{OBJECTION_RULES.how}</p>
+            <p className="text-[13px] font-semibold leading-6 text-ivory">{objectionHint(kind)}</p>
+          </div>
+        ) : null}
+        {answers.length ? (
+          <div>
+            <p className="text-[13px] font-bold text-gold">{kind === "accused" ? "قواعد إجابة المتهم" : "قواعد إجابة الشاهد"}</p>
+            <ul>
+              {answers.map((x) => (
+                <li key={x} className={li}>
+                  {x}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        <p className="text-[12px] leading-5 text-faint">{ANSWER_RULES.general}</p>
+      </div>
+    </details>
+  );
+}
+
 function useRun(roomId: string, reload: () => Promise<void>) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -973,7 +1213,18 @@ function Actions({ roomId, state, card, reloadCard }: { roomId: string; state: C
   const asking = state.asking === me;
   const pendingObjection = state.objection?.status === "pending";
   const rates = card.kind !== "prosecutor" && card.kind !== "lawyer";
-  const voted = card.vote !== null && card.vote !== undefined && (!suspects.length || !!card.pick) && (!rates || !!card.pleading);
+  // One verdict per accused (court_v5.sql); older servers have one accused and no list.
+  const accusedList = state.accused?.length ? state.accused : null;
+  const verdictOf = (key: string | null) => {
+    if (!key) return card.vote;
+    const v = card.verdicts?.[key];
+    return v ?? (key === accusedList?.[0]?.key ? card.vote : null);
+  };
+  const ballots: Array<{ key: string | null; label: string }> =
+    accusedList && accusedList.length > 1
+      ? accusedList.map((a) => ({ key: a.key, label: `حكمك على ${a.name}؟` }))
+      : [{ key: accusedList?.[0]?.key ?? null, label: "حكمك على المتهم؟" }];
+  const voted = ballots.every((b) => verdictOf(b.key) !== null && verdictOf(b.key) !== undefined) && (!suspects.length || !!card.pick) && (!rates || !!card.pleading);
   return (
     <div className="grid gap-3">
       {state.phase === "question" ? (
@@ -1045,24 +1296,31 @@ function Actions({ roomId, state, card, reloadCard }: { roomId: string; state: C
                 </div>
               </>
             ) : null}
-            <p className="text-center text-[17px] font-bold text-ivory">حكمك على المتهم؟</p>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { v: true, label: "مذنب", on: "border-wrong bg-wrong-fill/30 text-wrong", hover: "hover:border-wrong/70" },
-                { v: false, label: "بريء", on: "border-correct bg-correct-fill/30 text-correct", hover: "hover:border-correct/70" },
-              ].map((o) => (
-                <button
-                  key={o.label}
-                  type="button"
-                  disabled={busy}
-                  aria-pressed={card.vote === o.v}
-                  onClick={() => run("court_vote", { p_guilty: o.v })}
-                  className={cx("min-h-16 rounded-[18px] border-2 font-display text-[22px] font-extrabold transition", card.vote === o.v ? o.on : cx("border-line-strong/70 bg-deep-2/60 text-ivory", o.hover))}
-                >
-                  {o.label}
-                </button>
-              ))}
-            </div>
+            {ballots.map((b) => {
+              const mine = verdictOf(b.key);
+              return (
+                <div key={b.key ?? "one"} className="grid gap-2">
+                  <p className="text-center text-[17px] font-bold text-ivory">{b.label}</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { v: true, label: "مذنب", on: "border-wrong bg-wrong-fill/30 text-wrong", hover: "hover:border-wrong/70" },
+                      { v: false, label: "بريء", on: "border-correct bg-correct-fill/30 text-correct", hover: "hover:border-correct/70" },
+                    ].map((o) => (
+                      <button
+                        key={o.label}
+                        type="button"
+                        disabled={busy}
+                        aria-pressed={mine === o.v}
+                        onClick={() => run("court_vote", b.key ? { p_guilty: o.v, p_accused: b.key } : { p_guilty: o.v })}
+                        className={cx("min-h-16 rounded-[18px] border-2 font-display text-[22px] font-extrabold transition", mine === o.v ? o.on : cx("border-line-strong/70 bg-deep-2/60 text-ivory", o.hover))}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
             {suspects.length ? (
               <>
                 <p className="text-center text-[17px] font-bold text-ivory">من الفاعل الحقيقي؟ <span className="text-[13px] font-normal text-gold">(+150 إذا عرفته)</span></p>
@@ -1131,40 +1389,6 @@ function TurnClock({ since, big = false }: { since?: string | null; big?: boolea
   );
 }
 
-/** Who asks now, the golden question, and who waits: on phones, the host screen and the TV. */
-function QuestionTurn({ state, big = false }: { state: CourtState; big?: boolean }) {
-  const cast = state.cast ?? [];
-  const asker = cast.find((c) => c.player_id === state.asking);
-  const queue = state.queue ?? [];
-  const g = state.golden;
-  const goldenNow = g && g.by === state.asking;
-  if (!asker && !queue.length) return null;
-  return (
-    <div className="grid gap-2">
-      {asker ? (
-        <div
-          className={cx(
-            "rise flex flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-[20px] border p-3 text-center",
-            goldenNow ? "border-gold bg-[linear-gradient(135deg,#ffb13b33,#ffe27a22)] shadow-glow-gold" : "border-line-strong bg-deep-2/60",
-            big && "rounded-[1.6vw] p-[1.1vw]",
-          )}
-        >
-          <span className={cx("font-display font-extrabold", goldenNow ? "text-gold" : "text-ivory", big ? "text-[clamp(20px,2.3vw,46px)]" : "text-[18px]")}>
-            {goldenNow ? "⭐ سؤال ذهبي" : "🙋 يسأل الآن"}: {asker.player_name}
-          </span>
-          <TurnClock since={state.asking_since} big={big} />
-          {goldenNow ? <span className={cx("text-ivory", big ? "text-[clamp(14px,1.5vw,30px)]" : "text-[14px]")}>و{g.target_name} يجب أن يجيب</span> : null}
-        </div>
-      ) : null}
-      {queue.length ? (
-        <p className={cx("text-center text-mist", big ? "text-[clamp(13px,1.3vw,26px)]" : "text-[13px]")}>
-          ✋ ينتظرون الدور: {queue.map((q, i) => `${i + 1}. ${q.name}`).join("  ·  ")}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
 /** Everything after the start, for a phone: the host's (when the host plays) and the players'. */
 function PlayView({ roomId, state, meId, card, reloadCard, host = false }: { roomId: string; state: CourtState; meId: string | null; card: MyCard | null; reloadCard: () => Promise<void>; host?: boolean }) {
   // New information is announced with a vibration until the next phase.
@@ -1198,8 +1422,8 @@ function PlayView({ roomId, state, meId, card, reloadCard, host = false }: { roo
         </>
       ) : null}
       {!over ? <Hint state={state} kind={card?.kind} /> : null}
-      {state.phase === "question" ? <StandBanner state={state} /> : null}
-      {state.phase === "question" && !host ? <QuestionTurn state={state} /> : null}
+      {card?.started && !over ? <RoleGuide state={state} kind={card.kind} /> : null}
+      <SessionBoard state={state} />
       {state.phase === "closing" ? <ClosingBanner state={state} /> : null}
       <Actions roomId={roomId} state={state} card={card} reloadCard={reloadCard} />
       {state.phase === "intro" ? (
@@ -1253,7 +1477,25 @@ export function CourtHostPanel({ roomId }: { roomId: string }) {
   useAutoTick(roomId, state, 700);
   const me = players.find((p) => p.is_host) ?? null;
 
-  if (!isCourt(state) || !state.phase) return <CourtSetup state={state} players={players} busy={busy} error={error} onStart={(settings) => run("court_start", { p_settings: settings })} />;
+  // A case the host generated and reviewed (court_v5.sql): saved inactive for the admin, then played.
+  const startCustom = async (settings: CourtSettings, c: CourtCase, source: "ai" | "room"): Promise<string | null> => {
+    if (!supabase) return "تعذّر الاتصال.";
+    // Older servers ignore custom_case and would deal a random case instead: check first.
+    const probe = await supabase.rpc("court_ai_quota");
+    if (probe.error && (probe.error.code === "PGRST202" || probe.error.code === "42883")) return "قضايا الغرف تحتاج تشغيل ملف court_v5.sql في supabase.";
+    const { id: _id, is_active: _a, variants: _v, ...rest } = c;
+    const { data, error: e } = await supabase.rpc("court_start", { p_room_id: roomId, p_settings: { ...settings, case_id: null, custom_case: { ...rest, source } } });
+    if (e) return e.code === "PGRST202" || e.code === "42883" ? SETUP_HINT : "تعذّر بدء الجلسة، حاول مرة أخرى.";
+    const res = data as { ok: boolean; reason?: string; detail?: string; min?: number };
+    if (!res?.ok) {
+      return `${ERRORS[res?.reason ?? ""] ?? "تعذّر بدء الجلسة."}${res?.detail ? ` ${res.detail}` : ""}${res?.min ? ` (${res.min} على الأقل)` : ""}`;
+    }
+    await reload();
+    return null;
+  };
+
+  if (!isCourt(state) || !state.phase)
+    return <CourtSetup state={state} players={players} busy={busy} error={error} onStart={(settings) => run("court_start", { p_settings: settings })} onStartCustom={startCustom} />;
 
   const judgeIsOther = !!state.judge_id && state.judge_id !== me?.id;
   const controls = <JudgeControls state={state} players={players} run={run} busy={busy} error={error} />;
@@ -1290,6 +1532,7 @@ function Spectator({ state }: { state: CourtState }) {
     <>
       <ObjectionFlash state={state} />
       <PresentedFlash state={state} />
+      <SessionBoard state={state} />
       {state.phase === "closing" ? <ClosingBanner state={state} /> : null}
       {state.phase === "verdict" || over ? <VerdictCard state={state} /> : null}
       {over ? (
@@ -1421,7 +1664,6 @@ function QueuePanel({ state, busy, onCall }: { state: CourtState; busy: boolean;
       <p className="text-[15px] font-bold text-ivory">
         ✋ دور الأسئلة <span className="text-[13px] font-normal text-mist">من يضغط «أبي أسأل» يظهر هنا.</span>
       </p>
-      <QuestionTurn state={state} />
       <div className="flex flex-wrap gap-2">
         {queue.length ? (
           <Button tone="primary" className="min-h-11" disabled={busy} onClick={() => onCall(queue[0].player_id, false)}>
@@ -1614,12 +1856,14 @@ function CourtSetup({
   busy,
   error,
   onStart,
+  onStartCustom,
 }: {
   state: CourtState;
   players: Player[];
   busy: boolean;
   error: string | null;
   onStart: (settings: CourtSettings) => Promise<boolean>;
+  onStartCustom: (settings: CourtSettings, c: CourtCase, source: "ai" | "room") => Promise<string | null>;
 }) {
   const last = state.last_settings ?? null;
   const [cases, setCases] = useState<CaseItem[] | null>(null);
@@ -1633,6 +1877,9 @@ function CourtSetup({
   const [quick, setQuick] = useState(last?.quick ?? false);
   const [judge, setJudge] = useState<"host" | "random">(last?.judge ?? "host");
   const [newEvening, setNewEvening] = useState(false);
+  const [escalate, setEscalate] = useState(last?.escalate ?? true);
+  const [generating, setGenerating] = useState(false);
+  const [draft, setDraft] = useState<Generated | null>(null);
   const used = new Set(last?.used_cases ?? []);
   const eveningMatches = last?.evening?.matches ?? 0;
 
@@ -1667,6 +1914,7 @@ function CourtSetup({
   const fits = (cases ?? []).filter((x) => x.min <= n);
   const ready = n >= 4 && n <= 12 && (picked ? picked.min <= n : fits.length > 0);
   const minutes = estimateMinutes({ quick, q, c, v });
+  const settings: CourtSettings = { case_id: caseId, host_plays: hostPlays, question_seconds: q, closing_seconds: c, vote_seconds: v, auto, quick, judge, new_evening: newEvening, escalate };
 
   return (
     <section className="mx-auto mt-2 grid max-w-3xl gap-4">
@@ -1713,7 +1961,12 @@ function CourtSetup({
       </div>
 
       <div className="surface grid gap-3 rounded-[24px] p-5">
-        <h2 className="text-[18px] leading-7">القضية</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-[18px] leading-7">القضية</h2>
+          <Button tone="quiet" className="min-h-11 border-gold/60 text-gold" onClick={() => setGenerating(true)}>
+            ✨ قضية جديدة بالذكاء الاصطناعي
+          </Button>
+        </div>
         {loadError ? <p className="text-[14px] text-wrong">{loadError}</p> : null}
         {cases === null && !loadError ? <p className="text-[14px] text-mist">جارٍ تحميل القضايا…</p> : null}
         <ul className="grid gap-2">
@@ -1751,6 +2004,22 @@ function CourtSetup({
         <p className="text-[13px] text-mist">
           {auto ? "حين ينتهي المؤقت تنتقل الجلسة وحدها، وتأخذ الأدلة 30 ثانية للقراءة. وتقدر تنقلها قبل ذلك بزر «التالي»." : "المؤقت يظهر للجميع، وأنت تنتقل للمرحلة التالية بزر واحد متى شئت."} والتصويت يُغلق وحده إذا صوّت الجميع.
         </p>
+        <Choice
+          label="المنصة أثناء الاستجواب"
+          value={escalate ? "auto" : "judge"}
+          onChange={(x) => setEscalate(x === "auto")}
+          options={[
+            { value: "auto", label: "تصعيد تلقائي" },
+            { value: "judge", label: "القاضي يختار" },
+          ]}
+        />
+        <p className="text-[13px] text-mist">
+          {escalate
+            ? q || quick
+              ? "تنتقل المنصة وحدها مع مؤقت الاستجواب: الشهود أولًا، ثم المحقق، ثم المتهم في آخر الوقت. والسؤال الذهبي يوقفها حتى ينتهي، والقاضي يقدر يغيّر من على المنصة متى شاء."
+              : "التصعيد يحتاج مؤقتًا للاستجواب."
+            : "القاضي يستدعي من يشاء للمنصة."}
+        </p>
       </div>
 
       <ErrorLine error={error} />
@@ -1758,10 +2027,38 @@ function CourtSetup({
         tone="primary"
         className="min-h-14 text-[18px]"
         disabled={!ready || busy}
-        onClick={() => onStart({ case_id: caseId, host_plays: hostPlays, question_seconds: q, closing_seconds: c, vote_seconds: v, auto, quick, judge, new_evening: newEvening })}
+        onClick={() => onStart(settings)}
       >
         {busy ? "نوزّع الأدوار…" : "افتح الجلسة ووزّع الأدوار"}
       </Button>
+      {generating || draft ? (
+        <Suspense fallback={null}>
+          {generating ? (
+            <GenerateSheet
+              players={n}
+              onClose={() => setGenerating(false)}
+              onDraft={(g) => {
+                setGenerating(false);
+                setDraft(g);
+              }}
+            />
+          ) : null}
+          {draft ? (
+            <CaseEditor
+              initial={draft.draft}
+              title="راجع القضية قبل اللعب"
+              submitLabel="▶ العب بها الآن"
+              note={`${draft.note ? `${draft.note} ` : ""}أنت ترى الحقيقة الآن، فالأفضل ألا تلعب دورًا: اختر «لا يلعب» أو «قاضٍ بالقرعة». تُحفظ القضية موقوفة في لوحة الإدارة للمراجعة.`}
+              onClose={() => setDraft(null)}
+              onSubmit={async (cs) => {
+                const err = await onStartCustom(settings, cs, draft.source === "ai" ? "ai" : "room");
+                if (!err) setDraft(null);
+                return err;
+              }}
+            />
+          ) : null}
+        </Suspense>
+      ) : null}
       {!ready ? <p className="text-center text-[13px] text-mist">{n < 4 ? (judge === "random" ? "مع قاضٍ بالقرعة تحتاجون 5 أشخاص على الأقل." : "تحتاجون 4 لاعبين على الأقل.") : n > 12 ? "الحد الأقصى 12 لاعبًا." : "لا توجد قضية تناسب هذا العدد."}</p> : null}
     </section>
   );
@@ -1863,10 +2160,14 @@ function narration(state: CourtState): string {
     const items = (state.evidence ?? []).filter((e) => e.stage === state.stage);
     return `أدلة الجولة ${state.stage}. ${items.map((e) => `${e.title}${e.time ? `، الساعة ${e.time}` : ""}: ${e.text}`).join(" ")}`;
   }
-  if (p === "question") return "بدأ الاستجواب. اسألوا المتهم والشهود.";
+  if (p === "question") return state.settings?.escalate ? "بدأ الاستجواب. المنصة تنتقل وحدها: الشهود، ثم المحقق، ثم المتهم." : "بدأ الاستجواب. اسألوا المتهم والشهود.";
   if (p === "closing") return state.side === "prosecutor" ? "الكلمة للمدعي العام." : "الكلمة للمحامي.";
   if (p === "vote") return "حان وقت التصويت. مذنب أم بريء؟";
-  if (p === "verdict") return `حكمت هيئة المحلفين: ${state.verdict?.guilty ? "مذنب" : "بريء"}.`;
+  if (p === "verdict") {
+    const list = state.verdict?.list ?? [];
+    if (list.length > 1) return `حكمت هيئة المحلفين. ${list.map((a) => `${a.name}: ${a.guilty ? "مذنب" : "بريء"}`).join(". ")}.`;
+    return `حكمت هيئة المحلفين: ${state.verdict?.guilty ? "مذنب" : "بريء"}.`;
+  }
   if (p === "over") return `${state.truth?.correct ? "تحققت العدالة." : "خطأ قضائي."} الحقيقة: ${state.truth?.text ?? ""}`;
   return "";
 }
@@ -1996,8 +2297,7 @@ export function CourtTv({ roomId }: { roomId: string }) {
       {p === "question" ? (
         <>
           <p className="text-center font-display text-[clamp(22px,2.6vw,52px)] font-extrabold text-ivory">🎙️ الاستجواب: اسألوا المتهم والشهود</p>
-          <StandBanner state={state} big />
-          <QuestionTurn state={state} big />
+          <SessionBoard state={state} big />
           <Timeline items={state.evidence ?? []} big />
           <EvidenceGrid items={state.evidence ?? []} big />
           <CastGrid state={state} big briefs={false} />
@@ -2016,6 +2316,7 @@ export function CourtTv({ roomId }: { roomId: string }) {
             🗳️
           </span>
           <p className="font-display text-[clamp(30px,4vw,80px)] font-extrabold text-ivory">المحلفون يصوّتون: مذنب أم بريء؟</p>
+          {(state.accused?.length ?? 0) > 1 ? <p className="text-[clamp(16px,1.7vw,34px)] text-gold">حكم مستقل لكل متهم: {state.accused!.map((a) => a.name).join(" · ")}</p> : null}
           <p dir="ltr" className="font-display text-[clamp(28px,3.4vw,68px)] font-extrabold tabular-nums text-gold">
             {state.votes_count ?? 0} / {state.voters_count ?? 0}
           </p>
