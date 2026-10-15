@@ -2,11 +2,8 @@ import { Pool } from "pg";
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 /**
- * Kick a player only from a specific game instance.
- * - gameKind: 'mafia' | 'court'
- * - gameId: id of the game record (mafia_games.id or court_cases.id)
- * - targetPlayerId: the room_players.player_id (or room_players.id depending on your schema)
- * - actorPlayerId: id of the actor performing the kick (must be host)
+ * Kick a player only from a specific game instance (soft-kick).
+ * Replaces hard DELETE with setting kicked=true and kicked_at.
  */
 export async function kickPlayerFromGame(
   gameKind: "mafia" | "court",
@@ -26,11 +23,12 @@ export async function kickPlayerFromGame(
       if (!g.rows.length) throw new Error("GAME_NOT_FOUND");
       if (g.rows[0].host_id !== actorPlayerId) throw new Error("NOT_HOST");
 
-      const del = await client.query(
-        "DELETE FROM public.mafia_players WHERE game_id = $1 AND player_id = $2 RETURNING id",
+      // soft-kick: mark as kicked instead of delete
+      const upd = await client.query(
+        `UPDATE public.mafia_players SET kicked = true, kicked_at = now() WHERE game_id = $1 AND player_id = $2 RETURNING id`,
         [gameId, targetPlayerId]
       );
-      if (!del.rows.length) {
+      if (!upd.rows.length) {
         await client.query("ROLLBACK");
         throw new Error("PLAYER_NOT_IN_GAME");
       }

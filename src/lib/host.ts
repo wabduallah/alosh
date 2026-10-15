@@ -2,11 +2,7 @@ import { Pool } from "pg";
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 /**
- * Kick a player from a room. Only the room host may perform this action.
- * This will DELETE the row from public.room_players which should cascade to
- * game-specific tables (mafia_players etc.) if DB foreign keys use ON DELETE CASCADE.
- *
- * Returns { ok: true } on success or throws an error.
+ * Soft-kick a player from a room (mark kicked=true) instead of deleting row.
  */
 export async function kickPlayer(roomId: string, targetPlayerId: string, actorPlayerId: string) {
   const client = await pool.connect();
@@ -19,21 +15,18 @@ export async function kickPlayer(roomId: string, targetPlayerId: string, actorPl
     const hostId = r.rows[0].host_id;
     if (hostId !== actorPlayerId) throw new Error("NOT_HOST");
 
-    // delete the player from the room. This relies on DB constraints to cascade
-    const del = await client.query(
-      "DELETE FROM public.room_players WHERE id = $1 AND room_id = $2 RETURNING id",
+    // soft-kick: mark player as kicked instead of deleting
+    const upd = await client.query(
+      "UPDATE public.room_players SET kicked = true, kicked_at = now() WHERE id = $1 AND room_id = $2 RETURNING id, player_id",
       [targetPlayerId, roomId],
     );
 
-    if (!del.rows.length) {
-      // player not found in this room
+    if (!upd.rows.length) {
       await client.query("ROLLBACK");
       throw new Error("PLAYER_NOT_IN_ROOM");
     }
 
-    // Optionally: tidy up any game state that references the player (best-effort)
-    // For example, remove from court_cases.state.participants if present.
-    // We do a best-effort JSON update for court_cases.state if the column exists.
+    // Best-effort cleanup for game-specific JSON state (example for court_cases participants)
     try {
       await client.query(
         `UPDATE public.court_cases
@@ -52,9 +45,7 @@ export async function kickPlayer(roomId: string, targetPlayerId: string, actorPl
     await client.query("COMMIT");
     return { ok: true };
   } catch (err) {
-    try {
-      await client.query("ROLLBACK");
-    } catch (e) {}
+    try { await client.query("ROLLBACK"); } catch (e) {}
     throw err;
   } finally {
     client.release();
