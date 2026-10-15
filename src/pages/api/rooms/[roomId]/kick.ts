@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { getSession } from "../../../lib/auth";
 import { kickPlayer } from "../../../lib/host";
+import { emitRoomEvent } from "../../../lib/socket";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "METHOD_NOT_ALLOWED" });
@@ -13,7 +14,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const result = await kickPlayer(roomId, targetPlayerId, session.playerId);
-    // TODO: broadcast "player:kicked" event to room (realtime / sockets)
+    // broadcast to room
+    try {
+      emitRoomEvent(String(roomId), "player:kicked", { playerId: targetPlayerId });
+    } catch (e) {}
     return res.status(200).json(result);
   } catch (err: any) {
     const msg = err.message || String(err);

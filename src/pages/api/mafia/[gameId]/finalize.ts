@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from "next";
 import { finalizeNight } from "../../../lib/mafia";
 import { getSession } from "../../../lib/auth";
 import pg from "pg";
+import { emitRoomEvent } from "../../../lib/socket";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
@@ -17,7 +18,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const resolved = await finalizeNight(gameId);
-    // TODO: broadcast via realtime/socket
+    // broadcast resolved night to room
+    try {
+      emitRoomEvent(String(gameId), "night:finalized", { resolved });
+    } catch (e) {}
     return res.status(200).json({ ok: true, resolved });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || String(err) });

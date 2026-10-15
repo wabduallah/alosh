@@ -1,6 +1,7 @@
-import { NextApiRequest, NextApiResponse } from "next";
+import type { NextApiRequest, NextApiResponse } from "next";
 import { getSession } from "../../../../lib/auth";
 import { kickPlayerFromGame } from "../../../../lib/hostGame";
+import { emitRoomEvent } from "../../../../lib/socket";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
@@ -13,6 +14,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const result = await kickPlayerFromGame("mafia", gameId, targetPlayerId, session.playerId);
+    // broadcast player kicked in this game
+    try {
+      emitRoomEvent(String(gameId), "player:kicked", { playerId: targetPlayerId });
+    } catch (e) {}
     return res.status(200).json(result);
   } catch (err: any) {
     const msg = err.message || String(err);
