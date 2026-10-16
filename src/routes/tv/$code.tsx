@@ -33,7 +33,8 @@ import {
   useTicks,
   type HalbaState,
 } from "@/components/halba";
-import { MafiaRecapView, MafiaSummary, ROLE_NAMES, useMafiaRecap, TallyView, WINNERS, mmss, narratorLine, setVoicePreference, speak, useCountdown, useMafiaCues, voicePreference, type MafiaPlayerRow, type MafiaPublicState } from "@/components/mafia";
+import { MafiaRecapView, MafiaSummary, ROLE_NAMES, RevealCard, pausedLeft, revealOrder, useMafiaRecap, TallyView, WINNERS, mmss, narratorLine, setVoicePreference, speak, useCountdown, useMafiaCues, voicePreference, type MafiaPlayerRow, type MafiaPublicState } from "@/components/mafia";
+import { EveningView } from "@/components/mafia-play";
 
 /**
  * TV screen for a room (/tv/CODE): display only, for the big screen in the room.
@@ -752,6 +753,14 @@ function Mafia({ roomId, state, rows, players }: { roomId: string; state: StateD
   const votes = (night || runoff) && Array.isArray(ms.last_tally) ? ms.last_tally : [];
   const voteLeft = useCountdown(phase === "vote" ? ms.vote_ends_at : null);
 
+  // The reveal at the end: the whole screen for one player at a time.
+  if (phase === "over" && typeof ms.reveal_i === "number")
+    return (
+      <div className="relative grid flex-1 content-center">
+        <RevealCard rows={revealOrder(list)} index={ms.reveal_i} big />
+      </div>
+    );
+
   return (
     <div className="relative grid flex-1 content-center gap-[3vh]">
       {/* Night darkens the whole screen; day warms it a little. */}
@@ -793,6 +802,11 @@ function Mafia({ roomId, state, rows, players }: { roomId: string; state: StateD
             {mmss(voteLeft)}
           </p>
         ) : null}
+        {pausedLeft(ms) !== null && phase !== "over" ? (
+          <p dir="ltr" className="mt-[2vh] font-display text-[clamp(40px,5vw,100px)] leading-none font-extrabold tabular-nums text-mist">
+            ⏸ {mmss(pausedLeft(ms) ?? 0)}
+          </p>
+        ) : null}
         {phase === "day" && dayLeft !== null ? (
           <p dir="ltr" key={dayLeft <= 10 ? dayLeft : "calm"} className={cx("mt-[2vh] font-display text-[clamp(56px,7vw,140px)] leading-none font-extrabold tabular-nums", dayLeft <= 10 ? "beat text-wrong" : "text-gold")}>
             {mmss(dayLeft)}
@@ -803,6 +817,7 @@ function Mafia({ roomId, state, rows, players }: { roomId: string; state: StateD
       {phase === "over" ? (
         <Panel className="relative grid gap-[2vh]">
           <MafiaSummary state={ms} rows={list} big />
+          <EveningView roomId={roomId} phase={phase} big />
           <MafiaRecapView recap={recap} big />
         </Panel>
       ) : (

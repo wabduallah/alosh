@@ -420,11 +420,19 @@ function HostBoard() {
   if (isMafia) {
     return (
       <Shell play>
-        <ShareRoom code={room.room_code} />
-        <TvLink code={room.room_code} />
-        <HostRoomTools roomId={room.id} status={liveStatus ?? room.status} onEnded={() => setRoom({ ...room, status: "finished" })} />
-        <TestGuestsBar roomId={room.id} roomCode={room.room_code} onHost />
-        <MafiaHostScreen roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
+        <MafiaHostScreen
+          roomId={room.id}
+          roomCode={room.room_code}
+          roomStatus={room.status}
+          tools={
+            <>
+              <ShareRoom code={room.room_code} />
+              <TvLink code={room.room_code} />
+              <HostRoomTools roomId={room.id} status={liveStatus ?? room.status} onEnded={() => setRoom({ ...room, status: "finished" })} />
+              <TestGuestsBar roomId={room.id} roomCode={room.room_code} onHost />
+            </>
+          }
+        />
         {nextGame}
       </Shell>
     );
