@@ -34,6 +34,8 @@ export type MafiaSettings = {
   vote_mode?: "phone" | "pick" | "count";
   no_first_kill?: boolean;
   preset?: "quick" | "diwaniya" | "beginners" | null;
+  /** mafia_v10.sql: «حاولت المافيا القتل… لكن الطبيب أنقذ الضحية». */
+  announce_saves?: boolean;
 };
 export type MafiaVote = { voter: string; target: string; weight: number; auto?: boolean };
 /** What everyone sees after a vote: how many votes each player got, without who cast them. */
@@ -61,7 +63,47 @@ export type MafiaPublicState = {
   unmasked?: string[];
   /** The narrator's nominees for this vote (mafia_v9.sql). */
   nominees?: string[] | null;
+  /** mafia_v10.sql: a paused timer, the reveal at the end, and the evening across matches. */
+  timer_paused?: { key: string; left: number } | null;
+  reveal_i?: number | null;
+  evening?: unknown;
 };
+
+/** Seconds left on a paused timer, or null when it runs. */
+export function pausedLeft(state: MafiaPublicState | Record<string, unknown>) {
+  const p = (state as MafiaPublicState).timer_paused;
+  return p && typeof p === "object" && typeof p.left === "number" ? p.left : null;
+}
+
+/** The order of the reveal at the end: citizens first, then the special roles, the jester, and the mafia last. */
+export function revealOrder(rows: MafiaPlayerRow[]) {
+  const rank = (r: string | null) => (r === "citizen" ? 0 : r === "mafia" ? 4 : r === "spy" ? 3 : r === "jester" ? 2 : 1);
+  return [...rows].filter((r) => r.player_role).sort((a, b) => rank(a.player_role) - rank(b.player_role) || a.player_name.localeCompare(b.player_name, "ar"));
+}
+
+/** One player of the reveal: the name first, then the role, big. */
+export function RevealCard({ rows, index, big = false }: { rows: MafiaPlayerRow[]; index: number; big?: boolean }) {
+  if (index >= rows.length)
+    return (
+      <div className="grid justify-items-center gap-2 py-6 text-center">
+        <p className={cx("font-display font-extrabold text-gold", big ? "text-[clamp(40px,5vw,100px)]" : "text-[30px]")}>انكشفت كل الأدوار</p>
+      </div>
+    );
+  const p = rows[index];
+  const evil = p.player_role === "mafia" || p.player_role === "spy";
+  return (
+    <div key={p.player_id} className={cx("rise grid justify-items-center gap-2 rounded-[22px] border-2 py-6 text-center", evil ? "border-wrong/70 bg-wrong-fill/20" : p.player_role === "jester" ? "border-gold/70 bg-gold/10" : "border-correct/50 bg-correct-fill/10")}>
+      <p className={cx("text-mist", big ? "text-[clamp(16px,1.6vw,30px)]" : "text-[13px]")}>
+        {index + 1} من {rows.length}
+      </p>
+      <p className={cx("font-display font-extrabold text-ivory", big ? "text-[clamp(40px,6vh,110px)]" : "text-[30px]")}>{p.player_name}</p>
+      <p aria-hidden="true" className={cx("leading-none", big ? "text-[clamp(60px,14vh,180px)]" : "text-[52px]")}>
+        {ROLE_ICONS[p.player_role ?? ""] ?? ""}
+      </p>
+      <p className={cx("font-display font-extrabold", evil ? "text-wrong" : "text-gold", big ? "text-[clamp(32px,8vh,110px)]" : "text-[26px]")}>{ROLE_NAMES[p.player_role ?? ""] ?? ""}</p>
+    </div>
+  );
+}
 export type MafiaPlayerRow = { player_id: string; player_name: string; alive: boolean; player_role: string | null; is_mayor?: boolean };
 
 export const ROLE_NAMES: Record<string, string> = {
