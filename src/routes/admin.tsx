@@ -14,6 +14,7 @@ import { RoomsTab } from "@/components/admin/rooms";
 import { StatsTab } from "@/components/admin/stats";
 import { ContentTab } from "@/components/admin/content";
 import { SiteTab } from "@/components/admin/site";
+import { AppearanceTab } from "@/components/admin/appearance";
 import { HealthTab } from "@/components/admin/health";
 import { CasesTab } from "@/components/admin/cases";
 import { MessagesTab, countNewFeedback } from "@/components/admin/messages";
@@ -29,7 +30,7 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-type Tab = "stats" | "games" | "questions" | "words" | "content" | "health" | "cases" | "rooms" | "messages" | "site";
+type Tab = "stats" | "games" | "questions" | "words" | "content" | "health" | "cases" | "rooms" | "messages" | "site" | "appearance";
 const TABS: Array<{ key: Tab; label: string; icon: string }> = [
   { key: "stats", label: "الإحصاءات", icon: "fire" },
   { key: "rooms", label: "الغرف", icon: "tv" },
@@ -41,6 +42,7 @@ const TABS: Array<{ key: Tab; label: string; icon: string }> = [
   { key: "cases", label: "قضايا المحكمة", icon: "shield" },
   { key: "health", label: "صحة المحتوى", icon: "alert" },
   { key: "site", label: "الموقع", icon: "gear" },
+  { key: "appearance", label: "المظهر", icon: "fire" },
 ];
 
 function isAdmin(session: Session | null) {
@@ -237,6 +239,7 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => Prom
         {tab === "cases" ? <CasesTab /> : null}
         {tab === "messages" ? <MessagesTab onCount={setNewMessages} /> : null}
         {tab === "site" ? <SiteTab /> : null}
+        {tab === "appearance" ? <AppearanceTab /> : null}
       </div>
     </div>
   );

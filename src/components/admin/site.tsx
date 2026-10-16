@@ -3,14 +3,16 @@ import { AnnouncementView } from "@/components/announcement";
 import { Glyph } from "@/components/brand";
 import { Button, Field, cx, inputClass } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
-import { announcementLive, loadSiteSettings, type Announcement, type GameDefaults } from "@/lib/site-settings";
-import { Loading, Notice, Toggle, dbMessage, textareaClass, toList } from "./common";
+import { announcementLive, loadSiteSettings, type Announcement, type GameDefaults, type TestGuests } from "@/lib/site-settings";
+import { TestGuestsEditor } from "./appearance";
+import { Card, Chips, Loading, Notice, Toggle, dbMessage, saveSetting, textareaClass, toList } from "./common";
 
 /** «الموقع»: the home-page announcement, game defaults, and blocked words in player names. Needs supabase/admin_v3.sql. */
 export function SiteTab() {
   const [ready, setReady] = useState<"loading" | "ok" | "setup">("loading");
   const [announcement, setAnnouncement] = useState<Announcement>({});
   const [defaults, setDefaults] = useState<GameDefaults>({});
+  const [testGuests, setTestGuests] = useState<TestGuests>({});
 
   async function refresh() {
     if (!supabase) return;
@@ -22,6 +24,7 @@ export function SiteTab() {
     const map = Object.fromEntries(((data ?? []) as Array<{ key: string; value: unknown }>).map((r) => [r.key, r.value]));
     setAnnouncement((map.announcement as Announcement) ?? {});
     setDefaults((map.game_defaults as GameDefaults) ?? {});
+    setTestGuests((map.test_guests as TestGuests) ?? {});
     setReady("ok");
   }
 
@@ -41,54 +44,10 @@ export function SiteTab() {
     <div className="grid grid-cols-1 gap-4">
       <AnnouncementEditor initial={announcement} />
       <DefaultsEditor initial={defaults} />
+      <TestGuestsEditor initial={testGuests} />
       <BlockedNames />
     </div>
   );
-}
-
-function Card({ title, icon, note, children }: { title: string; icon: string; note?: string; children: ReactNode }) {
-  return (
-    <section className="surface grid min-w-0 grid-cols-1 gap-4 rounded-[22px] p-4 sm:p-5">
-      <div>
-        <h2 className="flex items-center gap-2 text-[20px] leading-8">
-          <Glyph name={icon} className="size-5 text-gold" />
-          {title}
-        </h2>
-        {note ? <p className="text-[13px] leading-6 text-mist">{note}</p> : null}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function Chips<T extends string | number>({ label, value, options, onChange }: { label: string; value: T; options: Array<{ value: T; label: string }>; onChange: (v: T) => void }) {
-  return (
-    <div className="grid gap-1.5">
-      <span className="text-[14px] font-semibold text-ivory">{label}</span>
-      <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1.5">
-        {options.map((o) => (
-          <button
-            key={String(o.value)}
-            type="button"
-            role="radio"
-            aria-checked={value === o.value}
-            onClick={() => onChange(o.value)}
-            className={cx("min-h-10 rounded-full border px-4 text-[14px] font-semibold transition", value === o.value ? "btn-gold border-transparent" : "border-line-strong/70 bg-deep-2/60 text-mist hover:text-ivory")}
-          >
-            {o.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-async function saveSetting(key: "announcement" | "game_defaults", value: unknown) {
-  if (!supabase) return "الاتصال بقاعدة البيانات غير مضبوط بعد.";
-  const { error } = await supabase.from("site_settings").upsert({ key, value, updated_at: new Date().toISOString() });
-  if (error) return dbMessage(error);
-  await loadSiteSettings(true);
-  return null;
 }
 
 /* ---------------- الإعلان ---------------- */

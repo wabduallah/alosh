@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useI18n, type Lang } from "@/lib/i18n";
 import { buttonBase, buttonTone, cx } from "@/components/ui";
 import { Glyph, Lockup } from "@/components/brand";
+import { infoLinks, useSiteSettings } from "@/lib/site-settings";
 
 type T = (key: string, vars?: Record<string, string | number>) => string;
 
@@ -242,6 +243,9 @@ function PlayBar() {
 
 function SiteFooter({ brand, t }: { brand: string; t: T }) {
   const link = "inline-flex min-h-11 items-center text-[15px] text-mist transition hover:text-gold";
+  const settings = useSiteSettings();
+  const social = infoLinks(settings?.info);
+  const motto = settings?.home?.footer_text?.trim() || "حيث تلتقي التحديات بالمتعة الجماعية";
   return (
     <footer className="mt-16 border-t border-line">
       <div className="mx-auto grid max-w-[1240px] gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[1.4fr_1fr_1fr] lg:items-center lg:px-8">
@@ -263,10 +267,34 @@ function SiteFooter({ brand, t }: { brand: string; t: T }) {
           <Link to="/settings" className={link}>
             {t("nav.settings")}
           </Link>
+          <Link to="/faq" className={link}>
+            الأسئلة الشائعة
+          </Link>
+          <Link to="/privacy" className={link}>
+            الخصوصية
+          </Link>
+          <Link to="/copyright" className={link}>
+            حقوق الملكية
+          </Link>
         </nav>
+        {social.length ? (
+          <ul aria-label="تواصل معنا" className="flex flex-wrap gap-2 lg:col-span-3 lg:justify-end">
+            {social.map((s) => (
+              <li key={s.key}>
+                <a
+                  href={s.href}
+                  {...(s.href.startsWith("mailto:") ? {} : { target: "_blank", rel: "noopener noreferrer" })}
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-line-strong/70 px-3.5 text-[14px] text-mist transition hover:border-gold/60 hover:text-gold"
+                >
+                  {s.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
       <p className="flex items-center justify-center gap-1.5 border-t border-line px-4 py-4 text-center font-display text-[15px] font-bold text-ivory">
-        حيث تلتقي التحديات بالمتعة الجماعية
+        {motto}
         <Glyph name="heart" className="size-4 text-gold" />
       </p>
     </footer>

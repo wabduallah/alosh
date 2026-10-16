@@ -14,6 +14,9 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as PlayRouteImport } from './routes/play'
 import { Route as PremiumRouteImport } from './routes/premium'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as FaqRouteImport } from './routes/faq'
+import { Route as CopyrightRouteImport } from './routes/copyright'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as QuestionsRouteImport } from './routes/questions'
 import { Route as RankRouteImport } from './routes/rank'
@@ -53,6 +56,21 @@ const PlayRoute = PlayRouteImport.update({
 const PremiumRoute = PremiumRouteImport.update({
   id: '/premium',
   path: '/premium',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FaqRoute = FaqRouteImport.update({
+  id: '/faq',
+  path: '/faq',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CopyrightRoute = CopyrightRouteImport.update({
+  id: '/copyright',
+  path: '/copyright',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProfileRoute = ProfileRouteImport.update({
@@ -137,6 +155,9 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/play': typeof PlayRoute
   '/premium': typeof PremiumRoute
+  '/privacy': typeof PrivacyRoute
+  '/faq': typeof FaqRoute
+  '/copyright': typeof CopyrightRoute
   '/profile': typeof ProfileRoute
   '/questions': typeof QuestionsRoute
   '/rank': typeof RankRoute
@@ -159,6 +180,9 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/play': typeof PlayRoute
   '/premium': typeof PremiumRoute
+  '/privacy': typeof PrivacyRoute
+  '/faq': typeof FaqRoute
+  '/copyright': typeof CopyrightRoute
   '/profile': typeof ProfileRoute
   '/questions': typeof QuestionsRoute
   '/rank': typeof RankRoute
@@ -182,6 +206,9 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/play': typeof PlayRoute
   '/premium': typeof PremiumRoute
+  '/privacy': typeof PrivacyRoute
+  '/faq': typeof FaqRoute
+  '/copyright': typeof CopyrightRoute
   '/profile': typeof ProfileRoute
   '/questions': typeof QuestionsRoute
   '/rank': typeof RankRoute
@@ -206,6 +233,9 @@ export interface FileRouteTypes {
     | '/login'
     | '/play'
     | '/premium'
+    | '/privacy'
+    | '/faq'
+    | '/copyright'
     | '/profile'
     | '/questions'
     | '/rank'
@@ -228,6 +258,9 @@ export interface FileRouteTypes {
     | '/login'
     | '/play'
     | '/premium'
+    | '/privacy'
+    | '/faq'
+    | '/copyright'
     | '/profile'
     | '/questions'
     | '/rank'
@@ -250,6 +283,9 @@ export interface FileRouteTypes {
     | '/login'
     | '/play'
     | '/premium'
+    | '/privacy'
+    | '/faq'
+    | '/copyright'
     | '/profile'
     | '/questions'
     | '/rank'
@@ -273,6 +309,9 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   PlayRoute: typeof PlayRoute
   PremiumRoute: typeof PremiumRoute
+  PrivacyRoute: typeof PrivacyRoute
+  FaqRoute: typeof FaqRoute
+  CopyrightRoute: typeof CopyrightRoute
   ProfileRoute: typeof ProfileRoute
     QuestionsRoute: typeof QuestionsRoute
     RankRoute: typeof RankRoute
@@ -325,6 +364,27 @@ declare module '@tanstack/react-router' {
       path: '/premium'
       fullPath: '/premium'
       preLoaderRoute: typeof PremiumRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/faq': {
+      id: '/faq'
+      path: '/faq'
+      fullPath: '/faq'
+      preLoaderRoute: typeof FaqRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/copyright': {
+      id: '/copyright'
+      path: '/copyright'
+      fullPath: '/copyright'
+      preLoaderRoute: typeof CopyrightRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/profile': {
@@ -420,6 +480,9 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   PlayRoute: PlayRoute,
   PremiumRoute: PremiumRoute,
+  PrivacyRoute: PrivacyRoute,
+  FaqRoute: FaqRoute,
+  CopyrightRoute: CopyrightRoute,
   ProfileRoute: ProfileRoute,
   QuestionsRoute: QuestionsRoute,
   RankRoute: RankRoute,

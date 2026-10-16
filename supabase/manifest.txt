@@ -46,3 +46,4 @@ mafia_v7.sql
 app_v1.sql
 court_v7.sql
 mafia_v8.sql
+site_v1.sql

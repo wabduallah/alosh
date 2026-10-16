@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Glyph } from "@/components/brand";
 import { Button, cx, inputClass } from "@/components/ui";
+import { supabase } from "@/lib/supabase";
+import { loadSiteSettings } from "@/lib/site-settings";
 
 /** Multi-line text field, same look as inputClass. */
 export const textareaClass = cx(inputClass, "min-h-24 py-3 leading-7");
@@ -258,4 +260,53 @@ export function useSelection() {
     setAll: (list: string[]) => setIds(new Set(list)),
     clear: () => setIds(new Set()),
   };
+}
+
+/* Shared by the «الموقع» and «المظهر» tabs. */
+
+export function Card({ title, icon, note, children }: { title: string; icon: string; note?: string; children: ReactNode }) {
+  return (
+    <section className="surface grid min-w-0 grid-cols-1 gap-4 rounded-[22px] p-4 sm:p-5">
+      <div>
+        <h2 className="flex items-center gap-2 text-[20px] leading-8">
+          <Glyph name={icon} className="size-5 text-gold" />
+          {title}
+        </h2>
+        {note ? <p className="text-[13px] leading-6 text-mist">{note}</p> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+export function Chips<T extends string | number>({ label, value, options, onChange }: { label: string; value: T; options: Array<{ value: T; label: string }>; onChange: (v: T) => void }) {
+  return (
+    <div className="grid gap-1.5">
+      <span className="text-[14px] font-semibold text-ivory">{label}</span>
+      <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1.5">
+        {options.map((o) => (
+          <button
+            key={String(o.value)}
+            type="button"
+            role="radio"
+            aria-checked={value === o.value}
+            onClick={() => onChange(o.value)}
+            className={cx("min-h-10 rounded-full border px-4 text-[14px] font-semibold transition", value === o.value ? "btn-gold border-transparent" : "border-line-strong/70 bg-deep-2/60 text-mist hover:text-ivory")}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export type SettingKey = "announcement" | "game_defaults" | "test_guests" | "home" | "theme" | "info" | "pages";
+
+export async function saveSetting(key: SettingKey, value: unknown) {
+  if (!supabase) return "الاتصال بقاعدة البيانات غير مضبوط بعد.";
+  const { error } = await supabase.from("site_settings").upsert({ key, value, updated_at: new Date().toISOString() });
+  if (error) return dbMessage(error);
+  await loadSiteSettings(true);
+  return null;
 }
