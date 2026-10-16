@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, cx } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { useLivePoll } from "@/lib/live";
+import { GameIntro, type IntroStep } from "@/components/game-intro";
 import { useSiteSettings } from "@/lib/site-settings";
 import {
   LOVERS_INFO,
@@ -48,11 +49,26 @@ const MAFIA_HOST_ERRORS: Record<string, string> = {
 };
 
 /** mafia_progress(): votes for everyone, night actions for the host only (mafia_v2.sql). */
-type MafiaProgress = { phase?: string; done?: number; total?: number; mafia_split?: boolean };
+type MafiaProgress = { phase?: string; done?: number; total?: number; mafia_split?: boolean; waiting?: Array<string | { name: string; role: string }> };
+
+/** «م1 (مافيا)، م6 (طبيب)» or «م1، م2»: who has not chosen or voted yet. */
+const waitingText = (w: MafiaProgress["waiting"]) =>
+  (w ?? []).map((x) => (typeof x === "string" ? x : `${x.name} (${ROLE_NAMES[x.role] ?? ""})`)).join("، ");
 
 type NarratorRole = { player_id: string; player_name: string; role: string; alive: boolean; lover?: string | null };
 /** mafia_night_live() (mafia_v7.sql): tonight's choices so far, for the narrator only. */
 type NightLive = { actor: string; actor_role: string; kind: string; target: string; target_role: string };
+
+/** The first-time intro for a mafia role: who you are, what you do, how you win. */
+function mafiaIntro(role: string): IntroStep[] {
+  const info = ROLE_INFO[role];
+  if (!info) return [];
+  return [
+    { icon: ROLE_ICONS[role] ?? "🎭", title: `دورك: ${ROLE_NAMES[role] ?? ""}`, text: `فريقك: ${info.team}. احفظ دورك سرًّا، وتراه في أي وقت بلمس «بطاقتك السرية» مطوّلًا.` },
+    { icon: "🌙", title: "ماذا تفعل ومتى", text: `${info.does} ${info.when}` },
+    { icon: "🏆", title: "كيف تفوز", text: `${info.wins} في النهار ناقشوا وصوّتوا، ولا تُرِ جوالك لأحد.` },
+  ];
+}
 
 /** «المتخفي» already unmasked by a vote: everyone knows. */
 const isUnmasked = (state: Record<string, unknown> | MafiaPublicState, id: string) => {
@@ -231,7 +247,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
   const [guests, setGuests] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [ended, setEnded] = useState(roomStatus === "finished");
+  const ended = roomStatus === "finished";
   const [progress, setProgress] = useState<MafiaProgress | null>(null);
   const [auto, setAuto] = useState(true);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -246,6 +262,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
   const [seer, setSeer] = useState(false);
   const [spy, setSpy] = useState(false);
   const [voteSeconds, setVoteSeconds] = useState(60);
+  const [nightSeconds, setNightSeconds] = useState(60);
   const [randomNarrator, setRandomNarrator] = useState(0);
   const [lovers, setLovers] = useState(false);
   const [deadSee, setDeadSee] = useState(true);
@@ -299,21 +316,6 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
     }
   }
 
-  async function endGame() {
-    if (!supabase) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const { error: updateError } = await supabase.from("game_rooms").update({ status: "finished" }).eq("id", roomId);
-      if (updateError) throw updateError;
-      setEnded(true);
-    } catch {
-      setError("تعذّر إنهاء الغرفة.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   const phase = state.phase ?? "";
   const round = state.round ?? 1;
   const over = phase === "over";
@@ -360,6 +362,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
     setSeer(!!last.seer);
     setSpy(!!last.spy);
     setVoteSeconds(last.vote_seconds ?? 60);
+    setNightSeconds(last.night_seconds ?? 0);
     setRandomNarrator(last.narrator === "random" ? 1 : 0);
     setLovers(!!last.lovers);
     setDeadSee(last.dead_see_roles !== false);
@@ -380,6 +383,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
     if (typeof d.reveal === "boolean") setReveal(d.reveal);
     if (typeof d.day_seconds === "number" && [0, 60, 120, 180, 300].includes(d.day_seconds)) setDaySeconds(d.day_seconds);
     if (typeof d.vote_seconds === "number" && [0, 30, 45, 60, 90, 120].includes(d.vote_seconds)) setVoteSeconds(d.vote_seconds);
+    if (typeof d.night_seconds === "number" && [0, 45, 60, 90, 120].includes(d.night_seconds)) setNightSeconds(d.night_seconds);
     if (typeof d.dead_see_roles === "boolean") setDeadSee(d.dead_see_roles);
     const r = d.roles ?? {};
     setJester(!!r.jester);
@@ -394,6 +398,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
 
   const dayLeft = useCountdown(phase === "day" ? state.day_ends_at : null);
   const voteLeft = useCountdown(phase === "vote" ? state.vote_ends_at : null);
+  const nightLeft = useCountdown(phase === "night" ? state.night_ends_at : null);
   const complete = !!progress && progress.phase === phase && (phase === "night" || phase === "vote") && (progress.total ?? 0) > 0 && (progress.done ?? 0) >= (progress.total ?? 0);
   const stepKey = `${phase}:${round}:${runoff ? "r" : ""}`;
 
@@ -425,6 +430,31 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
     // step is stable for this one-shot call.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, dayLeft, auto, stepKey]);
+
+  // The night timer ran out: the night is settled with what was chosen (mafia_v8.sql).
+  const nightDone = useRef("");
+  useEffect(() => {
+    if (phase !== "night" || nightLeft !== 0 || nightDone.current === stepKey || !supabase) return;
+    nightDone.current = stepKey;
+    void supabase.rpc("mafia_night_timeout", { p_room_id: roomId });
+    // A one-shot call when the timer hits zero.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, nightLeft, stepKey]);
+
+  /** Settling the night or closing the vote with choices missing: ask first. */
+  function confirmMissing(kind: "night" | "vote") {
+    const p = progress && progress.phase === kind ? progress : null;
+    const done = p?.done ?? 0;
+    const names = waitingText(p?.waiting);
+    if (kind === "night") {
+      if (done === 0) return window.confirm("لم يختر أحد من أصحاب الأدوار بعد! إذا حسمت الليل الآن لن يحدث شيء الليلة. تأكد أن الجميع فتح جواله. تحسم الليل الآن؟");
+      if (names) return window.confirm(`لم يختر بعد: ${names}. تحسم الليل الآن؟`);
+      return true;
+    }
+    if (done === 0) return window.confirm("لم يصوّت أحد! إذا أغلقت التصويت الآن ينتهي اليوم بلا إقصاء. تغلقه الآن؟");
+    if (names) return window.confirm(`لم يصوّت بعد: ${names}. تغلق التصويت الآن؟`);
+    return true;
+  }
 
   // The vote timer ran out: the system votes at random for whoever hasn't, and shows the result.
   const voteDone = useRef("");
@@ -504,6 +534,19 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
                 { value: 300, label: "5 دقائق" },
               ]}
             />
+            <MafiaChoice
+              label="مؤقت الليل"
+              value={nightSeconds}
+              onChange={setNightSeconds}
+              options={[
+                { value: 0, label: "بدون" },
+                { value: 45, label: "45 ثانية" },
+                { value: 60, label: "دقيقة" },
+                { value: 90, label: "دقيقة ونصف" },
+                { value: 120, label: "دقيقتان" },
+              ]}
+            />
+            {nightSeconds ? <p className="-mt-2 text-xs text-muted">حين ينتهي وقت الليل يُحسم بما اختاره أصحاب الأدوار حتى تلك اللحظة.</p> : null}
             <MafiaChoice
               label="مؤقت التصويت"
               value={voteSeconds}
@@ -597,6 +640,9 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
               <span className="tabular-nums">{progress.total ?? 0}</span>
             </p>
             {phase === "night" && progress.mafia_split ? <p className="text-xs text-muted">المافيا لم تتفق بعد على ضحية واحدة.</p> : null}
+            {waitingText(progress.waiting) ? (
+              <p className="text-sm text-gold">⏳ {phase === "night" ? "لم يختر بعد" : "لم يصوّت بعد"}: {waitingText(progress.waiting)}</p>
+            ) : null}
             {countdown !== null ? (
               <p className="text-sm font-bold text-gold">
                 الكل اختار. {phase === "night" ? "يطلع الفجر" : "يُغلق التصويت"} بعد {countdown}…
@@ -609,6 +655,12 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
             <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="size-4 accent-[var(--color-gold)]" />
             انتقل تلقائيًا (عندما يختار الجميع، أو ينتهي وقت النهار)
           </label>
+        ) : null}
+
+        {phase === "night" && nightLeft !== null ? (
+          <p className={cx("mt-4 font-display text-4xl font-extrabold tabular-nums", nightLeft <= 10 ? "text-wrong" : "text-gold")} dir="ltr">
+            🌙 {mmss(nightLeft)}
+          </p>
         ) : null}
 
         {phase === "vote" && voteLeft !== null ? (
@@ -655,6 +707,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
                     reveal_roles: reveal,
                     day_seconds: daySeconds,
                     vote_seconds: voteSeconds,
+                    night_seconds: nightSeconds,
                     narrator: randomNarrator ? "random" : "host",
                     jester,
                     mayor,
@@ -674,7 +727,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
             </Button>
           ) : null}
           {phase === "night" ? (
-            <Button type="button" tone="primary" onClick={() => step("mafia_resolve_night")} disabled={busy}>
+            <Button type="button" tone="primary" onClick={() => confirmMissing("night") && step("mafia_resolve_night")} disabled={busy}>
               الفجر: احسم الليل
             </Button>
           ) : null}
@@ -684,7 +737,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
             </Button>
           ) : null}
           {phase === "vote" ? (
-            <Button type="button" tone="primary" onClick={() => step("mafia_close_vote")} disabled={busy}>
+            <Button type="button" tone="primary" onClick={() => confirmMissing("vote") && step("mafia_close_vote")} disabled={busy}>
               أغلق التصويت
             </Button>
           ) : null}
@@ -710,15 +763,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
         ) : null}
       </div>
 
-      {!isHost ? null : !ended ? (
-        <div className="mt-6 text-center">
-          <Button type="button" tone="violet" onClick={endGame} disabled={busy}>
-            إنهاء الغرفة للجميع
-          </Button>
-        </div>
-      ) : (
-        <p className="mt-6 text-center text-sm text-muted">انتهت الغرفة.</p>
-      )}
+      {isHost && (ended || roomStatus === "finished") ? <p className="mt-6 text-center text-sm text-muted">انتهت الغرفة.</p> : null}
     </section>
   );
 }
@@ -817,6 +862,19 @@ export function MafiaPlayerPanel({
   const dayLeft = useCountdown(phase === "day" ? (state.day_ends_at as string | null | undefined) : null);
   const voteLeft = useCountdown(phase === "vote" ? (state.vote_ends_at as string | null | undefined) : null);
   const narratorName = typeof state.narrator_name === "string" ? state.narrator_name : null;
+  const nightLeft = useCountdown(phase === "night" ? (state.night_ends_at as string | null | undefined) : null);
+
+  // A backup for the night timer (mafia_v8.sql): 3 seconds after it ends, any phone asks to settle the night.
+  const nightKey = useRef("");
+  useEffect(() => {
+    if (phase !== "night" || nightLeft !== 0 || !supabase) return;
+    const key = String(round);
+    if (nightKey.current === key) return;
+    nightKey.current = key;
+    const client = supabase;
+    const t = window.setTimeout(() => void client.rpc("mafia_night_timeout", { p_room_id: roomId }), 3000 + Math.floor(Math.random() * 1500));
+    return () => window.clearTimeout(t);
+  }, [phase, nightLeft, round, roomId]);
 
   // A backup for the vote timer, if the narrator's device is asleep: 3 seconds after time is up,
   // any phone can ask the server to finish the vote (the server checks the time itself).
@@ -977,6 +1035,7 @@ export function MafiaPlayerPanel({
 
   return (
     <section className="glass-card mb-5 rounded-[28px] p-5 text-center">
+      {me?.started && role && phase !== "over" ? <GameIntro game="mafia" role={role} steps={mafiaIntro(role)} secret /> : null}
       <p className="text-xs font-bold text-violet-text">
         المافيا · الجولة {round || 1}
         {narratorName ? ` · الراوي: ${narratorName}` : ""}
@@ -1071,6 +1130,11 @@ export function MafiaPlayerPanel({
 
       {phase === "night" && me?.started === true && iAmAlive && !canAct && !inspectLocked && role !== "spy" ? (
         <p className="mt-4 text-sm text-muted">اغمضوا أعينكم. الليل لأصحاب الأدوار.</p>
+      ) : null}
+      {phase === "night" && nightLeft !== null && me?.started ? (
+        <p dir="ltr" className={cx("mt-3 font-display text-2xl font-extrabold tabular-nums", nightLeft <= 10 ? "text-wrong" : "text-gold")}>
+          🌙 {mmss(nightLeft)}
+        </p>
       ) : null}
       {phase === "night" && role === "spy" && iAmAlive ? (
         <div className="mt-4 rounded-2xl border border-wrong/40 bg-wrong-fill/10 p-4">
@@ -1289,7 +1353,6 @@ export function MafiaHostScreen({ roomId, roomCode, roomStatus }: { roomId: stri
   const [mine, setMine] = useState<{ started?: boolean; narrator?: boolean } | null>(null);
   const [meId, setMeId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [ended, setEnded] = useState(roomStatus === "finished");
   const load = async () => {
     if (!supabase) return;
     const [{ data: gs }, { data: role }, { data: pid }] = await Promise.all([
@@ -1313,13 +1376,6 @@ export function MafiaHostScreen({ roomId, roomCode, roomStatus }: { roomId: stri
     setBusy(false);
     void load();
   }
-  async function endRoom() {
-    if (!supabase) return;
-    setBusy(true);
-    const { error } = await supabase.from("game_rooms").update({ status: "finished" }).eq("id", roomId);
-    setBusy(false);
-    if (!error) setEnded(true);
-  }
   return (
     <section className="mx-auto mt-2 max-w-2xl">
       <MafiaPlayerPanel roomId={roomId} meId={meId} state={state} roomCode={roomCode} roomStatus={roomStatus} />
@@ -1331,15 +1387,7 @@ export function MafiaHostScreen({ roomId, roomCode, roomStatus }: { roomId: stri
           </Button>
         </div>
       ) : null}
-      <div className="mt-6 text-center">
-        {ended ? (
-          <p className="text-sm text-muted">انتهت الغرفة.</p>
-        ) : (
-          <Button type="button" tone="violet" onClick={endRoom} disabled={busy}>
-            إنهاء الغرفة للجميع
-          </Button>
-        )}
-      </div>
+      {roomStatus === "finished" ? <p className="mt-6 text-center text-sm text-muted">انتهت الغرفة.</p> : null}
     </section>
   );
 }

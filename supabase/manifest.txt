@@ -1,0 +1,48 @@
+# ترتيب تشغيل ملفات Supabase من الصفر (مشروع جديد). سطر لكل ملف، والتعليقات تبدأ بـ #.
+# لا تضع هنا ملفات الحذف (drop_games_tables.sql, clear_games_settings.sql) ولا schema.sql (مخطط Better Auth القديم).
+# أي ملف SQL جديد يُضاف في آخر القائمة، ويُختبر بـ: npm run db:replay
+schema_al3sh_core.sql
+# جداول الألعاب الأولى (في مجلد migrations/ في جذر المشروع):
+../migrations/0019_bluff_master.sql
+../migrations/0020_outsider.sql
+../migrations/0021_heads_up.sql
+../migrations/0022_heads_up_categories.sql
+../migrations/0023_social_mafia.sql
+mafia_v2.sql
+mafia_v3.sql
+admin_panel.sql
+schema_alhalba.sql
+alhalba_v2.sql
+alhalba_v3.sql
+alhalba_v4.sql
+admin_v2.sql
+admin_v3.sql
+mafia_v4.sql
+guests_v1.sql
+guests_v2.sql
+polish_v1.sql
+rooms_v1.sql
+grid_v1.sql
+mafia_v5.sql
+mafia_v6.sql
+alhalba_v5.sql
+alhalba_v6.sql
+alhalba_content_v1.sql
+admin_v4.sql
+court_v1.sql
+court_cases_v1.sql
+court_v2.sql
+court_cases_v2.sql
+court_v3.sql
+court_cases_v3.sql
+court_v4.sql
+court_cases_v4.sql
+court_cases_v5.sql
+court_v5.sql
+court_cases_v6.sql
+court_v6.sql
+rooms_v2.sql
+mafia_v7.sql
+app_v1.sql
+court_v7.sql
+mafia_v8.sql

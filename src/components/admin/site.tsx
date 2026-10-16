@@ -240,6 +240,7 @@ function DefaultsEditor({ initial }: { initial: GameDefaults }) {
   const [mafiaCount, setMafiaCount] = useState(m0.mafia_count ?? 0);
   const [daySeconds, setDaySeconds] = useState(m0.day_seconds ?? 120);
   const [voteSeconds, setVoteSeconds] = useState(m0.vote_seconds ?? 60);
+  const [nightSeconds, setNightSeconds] = useState(m0.night_seconds ?? 60);
   const [reveal, setReveal] = useState(m0.reveal ?? false);
   const [deadSee, setDeadSee] = useState(m0.dead_see_roles ?? true);
   const [roles, setRoles] = useState<Partial<Record<MafiaRole, boolean>>>(m0.roles ?? {});
@@ -247,7 +248,7 @@ function DefaultsEditor({ initial }: { initial: GameDefaults }) {
   const c0 = initial.court ?? {};
   const [courtHost, setCourtHost] = useState(c0.host_plays ?? true);
   const [courtAuto, setCourtAuto] = useState(c0.auto ?? false);
-  const [courtQuick, setCourtQuick] = useState(c0.quick ?? false);
+  const [courtQuick, setCourtQuick] = useState(c0.quick ?? true);
   const [courtJudge, setCourtJudge] = useState<"host" | "random">(c0.judge ?? "host");
   const [courtQ, setCourtQ] = useState(c0.question_seconds ?? 180);
   const [courtC, setCourtC] = useState(c0.closing_seconds ?? 60);
@@ -284,6 +285,7 @@ function DefaultsEditor({ initial }: { initial: GameDefaults }) {
         mafia_count: mafiaCount,
         day_seconds: daySeconds,
         vote_seconds: voteSeconds,
+        night_seconds: nightSeconds,
         reveal,
         dead_see_roles: deadSee,
         roles: Object.fromEntries(MAFIA_ROLES.map((r) => [r.key, !!roles[r.key]])),
@@ -342,6 +344,7 @@ function DefaultsEditor({ initial }: { initial: GameDefaults }) {
           <Chips label="من الراوي؟" value={randomNarrator ? 1 : 0} onChange={(v) => setRandomNarrator(v === 1)} options={[{ value: 0, label: "المضيف" }, { value: 1, label: "لاعب بالقرعة" }]} />
           <Chips label="عدد المافيا" value={mafiaCount} onChange={setMafiaCount} options={[{ value: 0, label: "تلقائي" }, ...[1, 2, 3, 4].map((n) => ({ value: n, label: String(n) }))]} />
           <Chips label="مؤقت النهار" value={daySeconds} onChange={setDaySeconds} options={[{ value: 0, label: "بدون" }, { value: 60, label: "دقيقة" }, { value: 120, label: "دقيقتان" }, { value: 180, label: "3 د" }, { value: 300, label: "5 د" }]} />
+          <Chips label="مؤقت الليل" value={nightSeconds} onChange={setNightSeconds} options={[{ value: 0, label: "بدون" }, { value: 45, label: "45 ث" }, { value: 60, label: "دقيقة" }, { value: 90, label: "90 ث" }, { value: 120, label: "دقيقتان" }]} />
           <Chips label="مؤقت التصويت" value={voteSeconds} onChange={setVoteSeconds} options={[{ value: 0, label: "بدون" }, { value: 30, label: "30 ث" }, { value: 45, label: "45 ث" }, { value: 60, label: "دقيقة" }, { value: 90, label: "90 ث" }, { value: 120, label: "دقيقتان" }]} />
         </div>
         <p className="-mt-2 text-[13px] text-mist">إذا كان عدد المافيا المختار أكبر مما تسمح به الغرفة، يصير تلقائيًا.</p>

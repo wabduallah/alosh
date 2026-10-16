@@ -12,3 +12,4 @@ dist/
 screenshots/
 .grok/
 coverage/
+supabase/bundle.sql

@@ -12,6 +12,7 @@ import { setVoicePreference, speak, voicePreference } from "@/components/mafia";
 import { phaseGuide, suggestQuestions } from "@/lib/court-phase-guide";
 import { ANSWER_RULES, DETECTIVE_GUIDE, OBJECTION_RULES, answerRulesFor, objectionHint } from "@/lib/court-rules";
 import type { Generated } from "@/lib/court-ai";
+import { GameIntro, type IntroStep } from "@/components/game-intro";
 import type { CourtCase } from "@/components/admin/cases";
 
 // The case editor and the generator load only when a host opens them.
@@ -74,7 +75,7 @@ export type CourtState = {
   votes_count?: number;
   voters_count?: number;
   verdict?: { guilty: boolean; votes_guilty: number; votes_innocent: number; list?: VerdictRow[] } | null;
-  truth?: { guilty: boolean; text: string; correct: boolean; culprit?: string | null; culprit_key?: string | null; list?: TruthRow[] } | null;
+  truth?: { guilty: boolean; text: string; correct: boolean; culprit?: string | null; culprit_key?: string | null; list?: TruthRow[]; no_votes?: boolean } | null;
   points?: PointsRow[] | null;
   cards?: CardReveal[] | null;
   settings?: CourtSettings;
@@ -835,6 +836,13 @@ function DualVerdict({ state, big = false }: { state: CourtState; big?: boolean 
 function TruthCard({ state, big = false }: { state: CourtState; big?: boolean }) {
   const t = state.truth;
   if (!t) return null;
+  if (t.no_votes)
+    return (
+      <div className={cx("grid gap-3 rounded-[24px] border border-line-strong bg-night/60 p-5", big && "p-[2vw]")}>
+        <p className={cx("font-display font-extrabold text-mist", big ? "text-[clamp(22px,2.6vw,52px)]" : "text-[20px]")}>🗳️ لم يصوّت أحد: لا نقاط للحكم هذه المرة</p>
+        <p className={cx("leading-relaxed text-ivory", big ? "text-[clamp(16px,1.7vw,34px)]" : "text-[16px] leading-7")}>{t.text}</p>
+      </div>
+    );
   const list = t.list && t.list.length > 1 ? t.list : null;
   const right = list ? list.filter((r) => r.correct).length : 0;
   return (
@@ -956,7 +964,7 @@ export function courtShare(state: CourtState): ShareResult {
   return {
     slug: "court",
     title: "⚖️ المحكمة",
-    headline: state.truth ? (state.truth.correct ? "تحققت العدالة" : (state.truth.list ?? []).some((r) => r.correct) ? "عدالة ناقصة" : "خطأ قضائي") : "المحكمة",
+    headline: state.truth?.no_votes ? "لم يصوّت أحد" : state.truth ? (state.truth.correct ? "تحققت العدالة" : (state.truth.list ?? []).some((r) => r.correct) ? "عدالة ناقصة" : "خطأ قضائي") : "المحكمة",
     sub: `${state.case?.title ?? ""}${
       v && (v.list?.length ?? 0) > 1 ? ` · ${v.list!.map((a) => `${a.player_name}: ${a.guilty ? "مذنب" : "بريء"}`).join("، ")}` : v ? ` · الحكم: ${v.guilty ? "مذنب" : "بريء"}` : ""
     }`,
@@ -1415,6 +1423,16 @@ function TurnClock({ since, big = false, ms = 45000 }: { since?: string | null; 
   );
 }
 
+/** The first-time intro for a court role: the role, how the session runs, how to score. */
+function courtIntro(kind: CourtKind, win?: Win | null): IntroStep[] {
+  const k = KINDS[kind];
+  return [
+    { icon: k.icon, title: `دورك: ${k.label}`, text: kind === "juror" ? "تستمع للقضية والأدلة، وتسأل، ثم تصوّت. ومعلومتك (إن وصلتك) في بطاقتك." : "معلوماتك السرية في بطاقتك: المس البطاقة مطوّلًا لتقرأها، ولا تُرِها لأحد." },
+    { icon: "⚖️", title: "كيف تجري الجلسة", text: `القضية ← الأدلة ← الاستجواب ← المرافعة ← التصويت ← الحقيقة. في الاستجواب: ${phaseGuide(kind, "question")}` },
+    { icon: "🏆", title: "كيف تكسب النقاط", text: winText(kind, win) },
+  ];
+}
+
 /** Everything after the start, for a phone: the host's (when the host plays) and the players'. */
 function PlayView({ roomId, state, meId, card, reloadCard, host = false }: { roomId: string; state: CourtState; meId: string | null; card: MyCard | null; reloadCard: () => Promise<void>; host?: boolean }) {
   // New information is announced with a vibration until the next phase.
@@ -1431,48 +1449,99 @@ function PlayView({ roomId, state, meId, card, reloadCard, host = false }: { roo
     if (state.phase !== "evidence") setFresh(false);
   }, [state.phase]);
   const over = state.phase === "over";
+
+  // Three tabs keep the phone short: the role, the evidence, the session. The tab follows the phase,
+  // and the player can switch freely until the next phase.
+  type Tab = "role" | "evidence" | "session";
+  const phaseTab = (p?: string): Tab => (p === "evidence" ? "evidence" : p === "question" || p === "closing" || p === "verdict" ? "session" : "role");
+  const [tab, setTab] = useState<Tab>(() => phaseTab(state.phase));
+  const evidenceCount = (state.evidence ?? []).length;
+  const seenEvidence = useRef(evidenceCount);
+  const [newEvidence, setNewEvidence] = useState(false);
+  useEffect(() => {
+    setTab(phaseTab(state.phase));
+  }, [state.phase, state.step]);
+  useEffect(() => {
+    if (evidenceCount > seenEvidence.current && tab !== "evidence") setNewEvidence(true);
+    seenEvidence.current = evidenceCount;
+  }, [evidenceCount, tab]);
+  useEffect(() => {
+    if (tab === "evidence") setNewEvidence(false);
+  }, [tab]);
+
+  if (over)
+    return (
+      <div className="grid gap-4">
+        <PresentedFlash state={state} />
+        <VerdictCard state={state} />
+        <TruthCard state={state} />
+        <GoalVotes roomId={roomId} state={state} card={card} reloadCard={reloadCard} />
+        <EveningBoard state={state} />
+        <PointsTable state={state} meId={meId} />
+        <CardsReveal state={state} />
+      </div>
+    );
+
+  const tabs: Array<{ key: Tab; label: string }> = [
+    { key: "role", label: "🃏 دوري" },
+    { key: "evidence", label: `📁 الأدلة${evidenceCount ? ` (${evidenceCount})` : ""}` },
+    { key: "session", label: "🎙️ الجلسة" },
+  ];
   return (
-    <div className="grid gap-4">
-      {card?.started && !over ? <RoleCard card={card} fresh={fresh} /> : null}
+    <div className="grid gap-3">
+      {card?.started && card.kind ? <GameIntro game="court" role={card.kind} steps={courtIntro(card.kind, card.win)} /> : null}
       {host ? null : <ObjectionFlash state={state} />}
       <PresentedFlash state={state} />
       {state.phase === "verdict" ? <VerdictCard state={state} /> : null}
-      {over ? (
-        <>
-          <VerdictCard state={state} />
-          <TruthCard state={state} />
-          <GoalVotes roomId={roomId} state={state} card={card} reloadCard={reloadCard} />
-          <EveningBoard state={state} />
-          <PointsTable state={state} meId={meId} />
-          <CardsReveal state={state} />
-        </>
-      ) : null}
-      {!over ? <Hint state={state} kind={card?.kind} /> : null}
-      {card?.started && !over ? <RoleGuide state={state} kind={card.kind} /> : null}
-      <SessionBoard state={state} />
-      {state.phase === "closing" ? <ClosingBanner state={state} /> : null}
+      <Hint state={state} kind={card?.kind} />
       <Actions roomId={roomId} state={state} card={card} reloadCard={reloadCard} />
-      {state.phase === "intro" ? (
-        <div className="surface grid gap-2 rounded-[20px] p-4">
-          <p className="text-[13px] font-bold text-gold">القضية</p>
-          <p className="text-[15px] leading-7 text-ivory">{state.case?.intro}</p>
+      <div role="tablist" aria-label="أقسام الجلسة" className="sticky top-0 z-10 grid grid-cols-3 gap-1 rounded-[16px] border border-line bg-night/90 p-1 backdrop-blur">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.key}
+            onClick={() => setTab(t.key)}
+            className={cx("relative min-h-11 rounded-[12px] text-[14px] font-bold transition", tab === t.key ? "btn-gold" : "text-mist hover:text-ivory")}
+          >
+            {t.label}
+            {t.key === "evidence" && newEvidence ? <span className="absolute end-2 top-2 size-2 rounded-full bg-wrong" aria-label="أدلة جديدة" /> : null}
+          </button>
+        ))}
+      </div>
+      {tab === "role" ? (
+        <div role="tabpanel" className="grid gap-3">
+          {card?.started ? <RoleCard card={card} fresh={fresh} /> : null}
+          {card?.started ? <RoleGuide state={state} kind={card.kind} /> : null}
+          {card?.started ? <Notes roomId={roomId} caseId={state.case?.id} /> : null}
         </div>
       ) : null}
-      {!over && (state.evidence ?? []).length ? (
-        <section className="grid gap-2">
-          <h3 className="text-[15px] font-bold text-ivory">📁 الأدلة</h3>
-          <Timeline items={state.evidence ?? []} stage={state.phase === "evidence" ? state.stage : undefined} />
-          <EvidenceGrid items={state.evidence ?? []} stage={state.phase === "evidence" ? state.stage : undefined} compact />
-        </section>
+      {tab === "evidence" ? (
+        <div role="tabpanel" className="grid gap-3">
+          <div className="surface grid gap-2 rounded-[20px] p-4">
+            <p className="text-[13px] font-bold text-gold">القضية</p>
+            <p className="text-[15px] leading-7 text-ivory">{state.case?.intro}</p>
+          </div>
+          {evidenceCount ? (
+            <>
+              <Timeline items={state.evidence ?? []} stage={state.phase === "evidence" ? state.stage : undefined} />
+              <EvidenceGrid items={state.evidence ?? []} stage={state.phase === "evidence" ? state.stage : undefined} compact />
+            </>
+          ) : (
+            <Note>الأدلة تظهر هنا مع كل جولة.</Note>
+          )}
+        </div>
       ) : null}
-      {card?.started && !over ? <Notes roomId={roomId} caseId={state.case?.id} /> : null}
-      {!over ? (
-        <details className="surface rounded-[20px] p-4">
-          <summary className="cursor-pointer text-[15px] font-semibold text-ivory">أطراف القضية</summary>
-          <div className="mt-3">
+      {tab === "session" ? (
+        <div role="tabpanel" className="grid gap-3">
+          <SessionBoard state={state} />
+          {state.phase === "closing" ? <ClosingBanner state={state} /> : null}
+          <div className="surface rounded-[20px] p-4">
+            <p className="mb-3 text-[15px] font-semibold text-ivory">أطراف القضية</p>
             <CastGrid state={state} />
           </div>
-        </details>
+        </div>
       ) : null}
     </div>
   );
@@ -1604,7 +1673,15 @@ function JudgeControls({
       <div className="surface grid gap-3 rounded-[24px] p-4">
         <CaseHeader state={state} />
         {!over ? (
-          <Button tone="primary" className="min-h-14 text-[18px]" disabled={busy} onClick={() => run("court_next", { p_step: step })}>
+          <Button
+            tone="primary"
+            className="min-h-14 text-[18px]"
+            disabled={busy}
+            onClick={() => {
+              if (state.phase === "vote" && !(state.votes_count ?? 0) && !window.confirm("لم يصوّت أحد! إذا أعلنت الحكم الآن يُبرّأ المتهم بلا أصوات، ولا يأخذ أحد نقاط الحكم. تعلنه الآن؟")) return;
+              void run("court_next", { p_step: step });
+            }}
+          >
             {nextAction(next)}
             <Glyph name="forward" />
           </Button>
@@ -1925,7 +2002,7 @@ type SetupPrefs = {
   golden: "jurors" | "all" | "off";
 };
 const PREFS_KEY = "al3sh.court.setup";
-const DEFAULT_PREFS: SetupPrefs = { hostPlays: true, q: 180, c: 60, v: 60, auto: false, quick: false, judge: "host", escalate: true, objections: 2, turn: 45, read: 30, golden: "jurors" };
+const DEFAULT_PREFS: SetupPrefs = { hostPlays: true, q: 180, c: 60, v: 60, auto: false, quick: true, judge: "host", escalate: true, objections: 2, turn: 45, read: 30, golden: "jurors" };
 const PRESETS: Array<{ key: string; title: string; sub: string; prefs: Partial<SetupPrefs> }> = [
   { key: "quick", title: "⚡ سهرة سريعة", sub: "جولة واحدة وانتقال تلقائي", prefs: { quick: true, auto: true, escalate: true, judge: "host" } },
   { key: "full", title: "⚖️ جلسة كاملة", sub: "جولتا أدلة، وأنت تنقل الجلسة", prefs: { quick: false, q: 180, c: 60, v: 60, auto: false, escalate: true, judge: "host" } },
