@@ -360,13 +360,21 @@ function useTimeUpCue(state: CourtState, on: boolean) {
   }, [on, left, state.step]);
 }
 
-/** "9:20", "21:05" or "٩:٢٠" → minutes since midnight, for ordering the timeline. */
+/** The week from Saturday, so «السبت 21:00» comes before «الأحد 06:00» on the timeline. */
+const WEEK = ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"];
+
+/**
+ * Minutes for the timeline. A day may come before the time: a weekday («الأحد 22:10») or the next
+ * day («الغد 09:30»), so a case that spans days or midnight stays in order.
+ */
 export function timeValue(t: string | null | undefined): number | null {
   if (!t) return null;
   const latin = t.replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
   const m = latin.match(/(\d{1,2})[:.](\d{2})/);
   if (!m) return null;
-  return Number(m[1]) * 60 + Number(m[2]);
+  const day = WEEK.findIndex((d) => latin.includes(d));
+  const offset = day >= 0 ? day * 1440 : /الغد|التالي/.test(latin) ? 1440 : 0;
+  return offset + Number(m[1]) * 60 + Number(m[2]);
 }
 
 /** Evidence with a time, as a line from the earliest to the latest: contradictions show at a glance. */
@@ -1610,19 +1618,41 @@ function PlayView({ roomId, state, meId, card, reloadCard, host = false }: { roo
 
 /* ---------------- Host ---------------- */
 
-type CaseItem = { id: string; title: string; category: string | null; difficulty: number; summary: string; min: number; roles: number; versions?: number; accused?: number; parts?: Array<{ k: string; o: boolean }> };
+type CaseItem = {
+  id: string;
+  title: string;
+  category: string | null;
+  difficulty: number;
+  summary: string;
+  min: number;
+  roles: number;
+  versions?: number;
+  accused?: number;
+  parts?: Array<{ k: string; o: boolean }>;
+  /** Evidence rounds and evidence count (court_cases_v7.sql): how long the case takes. */
+  stages?: number;
+  evidence?: number;
+};
 
-/** Rough length of a session: reading the case and cards, rounds, speeches, vote, verdict and truth. */
-export function estimateMinutes({ quick, q, c, v }: { quick: boolean; q: number; c: number; v: number }) {
-  const rounds = quick ? 1 : 2;
+/**
+ * Rough length of a session, in minutes: reading the case and the cards (2 minutes), each evidence
+ * round (reading, about 12 seconds an item, then the questioning timer), the two closing speeches,
+ * the vote, and the verdict with the truth and the cards (2.5 minutes). A second accused adds a
+ * verdict to vote on and a truth to read. Talk runs over the timers: real sessions took about 1.3×.
+ * Without a case: two rounds of seven items. The quick session puts every item in one round.
+ */
+export function estimateMinutes({ quick, q, c, v, stages = 2, evidence = 7, accused = 1 }: { quick: boolean; q: number; c: number; v: number; stages?: number; evidence?: number; accused?: number }) {
+  const rounds = quick ? 1 : Math.max(1, stages);
+  const read = quick ? Math.max(60, evidence * 10) : Math.max(45, Math.ceil(evidence / rounds) * 12);
   const qs = quick ? 120 : q || 150;
   const cs = quick ? 30 : c || 60;
-  const vs = quick ? 30 : v || 45;
-  // Talk runs over the timers: real sessions took about 1.3× the timed parts.
-  const minutes = ((120 + rounds * (60 + qs) + 2 * cs + vs + 150) * 1.3) / 60;
+  const vs = (quick ? 30 : v || 45) + (accused > 1 ? 30 : 0);
+  const end = 150 + (accused > 1 ? 30 : 0);
+  const minutes = ((120 + rounds * (read + qs) + 2 * cs + vs + end) * 1.3) / 60;
   return minutes < 20 ? Math.round(minutes) : Math.round(minutes / 5) * 5;
 }
 const LEVEL = ["", "سهلة", "متوسطة", "صعبة"];
+const roundsText = (n: number) => (n === 1 ? "جولة أدلة واحدة" : n === 2 ? "جولتا أدلة" : `${n} جولات أدلة`);
 
 export function CourtHostPanel({ roomId, tools }: { roomId: string; tools?: ReactNode }) {
   const { state, players, reload } = useCourtLive(roomId);
@@ -2301,7 +2331,7 @@ const PREFS_KEY = "al3sh.court.setup";
 const DEFAULT_PREFS: SetupPrefs = { hostPlays: true, q: 180, c: 60, v: 60, auto: false, quick: true, judge: "host", escalate: true, objections: 2, turn: 45, read: 30, golden: "jurors" };
 const PRESETS: Array<{ key: string; title: string; sub: string; prefs: Partial<SetupPrefs> }> = [
   { key: "quick", title: "⚡ سهرة سريعة", sub: "جولة واحدة وانتقال تلقائي", prefs: { quick: true, auto: true, escalate: true, judge: "host" } },
-  { key: "full", title: "⚖️ جلسة كاملة", sub: "جولتا أدلة، وأنت تنقل الجلسة", prefs: { quick: false, q: 180, c: 60, v: 60, auto: false, escalate: true, judge: "host" } },
+  { key: "full", title: "⚖️ جلسة كاملة", sub: "كل جولات الأدلة، وأنت تنقل الجلسة", prefs: { quick: false, q: 180, c: 60, v: 60, auto: false, escalate: true, judge: "host" } },
   { key: "free", title: "🤝 بدون مضيف", sub: "قاضٍ بالقرعة وانتقال تلقائي، وأنت تلعب", prefs: { judge: "random", hostPlays: true, auto: true, escalate: true } },
 ];
 
@@ -2449,7 +2479,16 @@ function CourtSetup({
   const picked = cases?.find((x) => x.id === caseId) ?? null;
   const fits = (cases ?? []).filter((x) => x.min <= n);
   const ready = n >= 4 && n <= 20 && (picked ? picked.min <= n : fits.length > 0);
-  const minutes = estimateMinutes({ quick: p.quick, q: p.q, c: p.c, v: p.v });
+  const timing = { quick: p.quick, q: p.q, c: p.c, v: p.v };
+  const caseMinutes = (x: CaseItem) => estimateMinutes({ ...timing, stages: x.stages, evidence: x.evidence, accused: x.accused });
+  // The picked case's length; for a random case, the range of the cases that fit.
+  const fitMinutes = fits.map(caseMinutes);
+  const duration = picked
+    ? `قرابة ${caseMinutes(picked)} دقيقة${p.quick ? "" : ` · ${roundsText(picked.stages ?? 2)}`}`
+    : fitMinutes.length && Math.min(...fitMinutes) !== Math.max(...fitMinutes)
+      ? `بين ${Math.min(...fitMinutes)} و${Math.max(...fitMinutes)} دقيقة حسب القضية`
+      : `قرابة ${fitMinutes[0] ?? estimateMinutes(timing)} دقيقة`;
+  const spoilsRounds = p.quick && (picked ? (picked.stages ?? 2) > 2 : false);
   const settings: CourtSettings = {
     case_id: caseId,
     host_plays: p.hostPlays,
@@ -2554,14 +2593,14 @@ function CourtSetup({
             value={p.quick ? "quick" : "full"}
             onChange={(x) => set("quick", x === "quick")}
             options={[
-              { value: "full", label: "كاملة: جولتا أدلة" },
-              { value: "quick", label: "سريعة: جولة واحدة" },
+              { value: "full", label: "كاملة: كل جولات الأدلة" },
+              { value: "quick", label: "سريعة: الأدلة في جولة واحدة" },
             ]}
           />
         ) : (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-[14px] border border-line bg-deep-2/40 p-3">
             <p className="text-[13px] leading-6 text-mist">
-              {p.judge === "random" ? "قاضٍ بالقرعة" : "القاضي: المضيف"} · {p.quick ? "جولة واحدة" : "جولتا أدلة"} · {p.auto ? "انتقال تلقائي" : "القاضي ينقل الجلسة"}
+              {p.judge === "random" ? "قاضٍ بالقرعة" : "القاضي: المضيف"} · {p.quick ? "جولة واحدة" : "كل جولات الأدلة"} · {p.auto ? "انتقال تلقائي" : "القاضي ينقل الجلسة"}
               {p.escalate ? " · منصة تلقائية" : ""}
             </p>
             <button type="button" className="text-[14px] font-semibold text-gold underline-offset-4 hover:underline" onClick={() => setCustom(true)}>
@@ -2569,7 +2608,10 @@ function CourtSetup({
             </button>
           </div>
         )}
-        <p className="rounded-[14px] bg-deep-2/60 p-3 text-center text-[15px] font-bold text-gold">⏱️ المدة المتوقعة: قرابة {minutes} دقيقة</p>
+        <p className="rounded-[14px] bg-deep-2/60 p-3 text-center text-[15px] font-bold text-gold">⏱️ المدة المتوقعة: {duration}</p>
+        {spoilsRounds ? (
+          <p className="-mt-1 text-[13px] leading-6 text-mist">هذه القضية تكشف أدلتها على 3 جولات. في الجلسة السريعة تظهر الأدلة كلها مرة وحدة، والأمتع أن تلعبوها كاملة.</p>
+        ) : null}
         {eveningMatches > 0 ? (
           <label className="flex items-center gap-2 text-[14px] text-ivory">
             <input type="checkbox" className="size-5 accent-[var(--color-gold)]" checked={newEvening} onChange={(e) => setNewEvening(e.target.checked)} />
@@ -2648,7 +2690,7 @@ function CourtSetup({
                 disabled={x.min > n}
                 onClick={() => setCaseId(x.id)}
                 title={`${x.title}${(x.accused ?? 1) > 1 ? " · ⚖️ متهمان" : ""}`}
-                sub={`${x.summary}${x.summary ? " · " : ""}${LEVEL[x.difficulty] ?? ""}${(x.versions ?? 1) > 1 ? ` · ${x.versions} حقائق ممكنة` : ""}${x.min > 4 ? ` · ${x.min} لاعبين على الأقل` : ""}${used.has(x.id) ? " · لُعبت" : ""}`}
+                sub={`${x.summary}${x.summary ? " · " : ""}${LEVEL[x.difficulty] ?? ""} · ⏱️ ${caseMinutes(x)} د${(x.stages ?? 2) > 2 && !p.quick ? ` · ${roundsText(x.stages ?? 2)}` : ""}${(x.versions ?? 1) > 1 ? ` · ${x.versions} حقائق ممكنة` : ""}${x.min > 4 ? ` · ${x.min} لاعبين على الأقل` : ""}${used.has(x.id) ? " · لُعبت" : ""}`}
               />
             </li>
           ))}
