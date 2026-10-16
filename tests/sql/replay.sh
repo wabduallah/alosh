@@ -5,6 +5,10 @@ set -e
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 DB=${1:-al3sh_replay}
 PSQL=${PSQL:-psql}
+# Supabase يرفض DELETE/UPDATE بلا WHERE حتى داخل الدوال، والقاعدة المحلية لا: نفحصه هنا.
+if command -v python3 >/dev/null 2>&1; then
+  python3 "$ROOT/tests/sql/lint_where.py" || exit 1
+fi
 $PSQL -q -d postgres -c "drop database if exists $DB" -c "create database $DB" >/dev/null
 $PSQL -q -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/tests/sql/00_supabase_stub.sql" >/dev/null
 n=0
