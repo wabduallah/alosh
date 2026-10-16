@@ -251,7 +251,7 @@ begin
 
   -- أصوات اللاعبين الأحياء فقط، والأكبر من صفر.
   create temporary table if not exists pg_temp.mafia_t (target_id uuid, c int) on commit drop;
-  delete from pg_temp.mafia_t;
+  delete from pg_temp.mafia_t where true;
   insert into pg_temp.mafia_t
   select (e.key)::uuid, (e.value)::text::int
     from jsonb_each(coalesce(p_counts, '{}'::jsonb)) e
