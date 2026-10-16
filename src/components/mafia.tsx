@@ -22,6 +22,8 @@ export type MafiaSettings = {
   seer?: boolean;
   spy?: boolean;
   vote_seconds?: number;
+  /** Night timer (mafia_v8.sql): the night is settled when it runs out. */
+  night_seconds?: number;
   narrator?: "host" | "random";
   lovers?: boolean;
   dead_see_roles?: boolean;
@@ -44,6 +46,7 @@ export type MafiaPublicState = {
   last_tally?: MafiaTally[] | null;
   day_ends_at?: string | null;
   vote_ends_at?: string | null;
+  night_ends_at?: string | null;
   narrator_id?: string | null;
   narrator_name?: string | null;
   log?: MafiaLogEntry[];

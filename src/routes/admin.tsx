@@ -6,6 +6,7 @@ import { Glyph, Mark } from "@/components/brand";
 import { Button, Field, cx, inputClass } from "@/components/ui";
 import { supabase } from "@/lib/supabase";
 import { Loading, Notice } from "@/components/admin/common";
+import { useSchemaStatus } from "@/lib/schema";
 import { GamesTab } from "@/components/admin/games";
 import { QuestionsTab } from "@/components/admin/questions";
 import { WordsTab } from "@/components/admin/words";
@@ -199,6 +200,8 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => Prom
         </Button>
       </div>
 
+      <SchemaBanner />
+
       <div role="tablist" aria-label="أقسام الإدارة" className="surface grid grid-cols-2 gap-1 rounded-[24px] p-1.5 sm:grid-cols-3 lg:grid-cols-5">
         {TABS.map((t) => (
           <button
@@ -235,6 +238,31 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => Prom
         {tab === "messages" ? <MessagesTab onCount={setNewMessages} /> : null}
         {tab === "site" ? <SiteTab /> : null}
       </div>
+    </div>
+  );
+}
+
+/** The database is missing SQL files that this version of the site uses: say which, in order. */
+function SchemaBanner() {
+  const status = useSchemaStatus(true);
+  if (!status || status.missing.length === 0) return null;
+  return (
+    <div role="alert" className="mb-4 grid gap-2 rounded-[20px] border-2 border-wrong/60 bg-wrong-fill/10 p-4">
+      <p className="text-[16px] font-extrabold text-ivory">⚠️ قاعدة البيانات ناقصة: بعض ميزات هذه النسخة لن تعمل</p>
+      <p className="text-[14px] leading-6 text-mist">
+        شغّل هذه الملفات بالترتيب في Supabase ← SQL Editor، في مشروع الموقع نفسه:
+      </p>
+      <ol className="ms-5 list-decimal text-[14px] leading-7 text-ivory" dir="ltr">
+        {status.missing.map((f) => (
+          <li key={f}>
+            <code>supabase/{f}</code>
+          </li>
+        ))}
+      </ol>
+      <p className="text-[13px] leading-6 text-mist">
+        أو من جهاز فيه المشروع: <code dir="ltr">npm run db:bundle -- {status.missing[0]}</code> ثم الصق الملف الناتج مرة واحدة، أو <code dir="ltr">npm run db:supabase</code> مع
+        SUPABASE_DB_URL.{status.noTracking ? " (سجل الملفات app_v1.sql لم يُشغَّل بعد، فقد تكون بعض هذه الملفات مشغّلة بالفعل.)" : ""}
+      </p>
     </div>
   );
 }
