@@ -52,3 +52,4 @@ grid_fakes_v1.sql
 mafia_v9.sql
 mafia_v10.sql
 court_v8.sql
+court_cases_v7.sql
