@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ROLE_GUIDES, SPEECHES } from "@/lib/court-guide";
 import { supabase } from "@/lib/supabase";
 
 export type Category = "words" | "talk" | "strategy" | "classic";
@@ -13,8 +14,24 @@ export type GameCard = {
   /** The site has a room for this game (host, players, TV). Without one it can only show as «قريبًا». */
   live: boolean;
   /** Short rules shown in the "كيف تُلعب؟" sheet. Only live games have them. */
-  howTo?: { goal: string; minutes: string; steps: string[] };
+  howTo?: { goal: string; minutes: string; steps: string[]; roles?: RoleNote[] };
 };
+
+/** A role on the game page: what it does, and the one thing to remember. */
+export type RoleNote = { icon: string; title: string; text: string; tip?: string };
+
+const speechLine = (k: "prosecutor" | "lawyer") => `المرافعة في دقيقة: ${SPEECHES[k].parts.map((x) => x.title).join(" ← ")}.`;
+
+/** «المحكمة»: the roles, from the same guide the players read in the game (court-guide.ts). */
+const COURT_ROLES: RoleNote[] = [
+  { icon: "🙍", title: "المتهم", text: ROLE_GUIDES.accused.mission, tip: ROLE_GUIDES.accused.dos[0] },
+  { icon: "📂", title: "المدعي العام", text: ROLE_GUIDES.prosecutor.mission, tip: speechLine("prosecutor") },
+  { icon: "💼", title: "المحامي", text: ROLE_GUIDES.lawyer.mission, tip: speechLine("lawyer") },
+  { icon: "🔎", title: "المحقق", text: ROLE_GUIDES.detective.mission, tip: ROLE_GUIDES.detective.dos[0] },
+  { icon: "👁️", title: "الشاهد", text: ROLE_GUIDES.witness.mission, tip: ROLE_GUIDES.witness.dos[0] },
+  { icon: "🗳️", title: "المحلّف", text: ROLE_GUIDES.juror.mission, tip: ROLE_GUIDES.juror.dos[0] },
+  { icon: "⚖️", title: "القاضي (إن لم يكن النظام)", text: ROLE_GUIDES.judge.mission, tip: ROLE_GUIDES.judge.phases.question?.[0] },
+];
 
 /**
  * The games as the site presents them: icon, colours, category, copy and rules.
@@ -200,6 +217,7 @@ export const CATALOG: GameCard[] = [
         "المدة: قراءة القضية والبطاقات دقيقتان، وكل جولة أدلة قرابة دقيقة قراءة ثم الاستجواب (3 دقائق في الإعداد المعتاد)، ثم مرافعتان دقيقة لكل طرف، وتصويت دقيقة، وكشف الحقيقة قرابة دقيقتين ونصف. الجلسة السريعة تجمع الأدلة في جولة واحدة باستجواب دقيقتين. وشاشة الإعداد تحسب لكم مدة كل قضية قبل البدء.",
         "بعد كل قضية تقدرون تبدؤون قضية جديدة، والنقاط تتجمع في «ترتيب السهرة» مع ألقاب: نجم السهرة، ومحامي السهرة، وأذكى محلّف.",
       ],
+      roles: COURT_ROLES,
     },
   },
   {

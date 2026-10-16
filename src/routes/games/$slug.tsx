@@ -113,6 +113,28 @@ function GamePage() {
           </section>
         ) : null}
 
+        {rules?.roles?.length ? (
+          <section aria-labelledby="roles-title" className="surface grid gap-4 rounded-[24px] p-5 sm:p-7">
+            <h2 id="roles-title" className="flex items-center gap-2 text-[22px] leading-8">
+              <Glyph name="users" className="size-6 text-gold" />
+              الأدوار
+            </h2>
+            <ul className="grid gap-3 sm:grid-cols-2">
+              {rules.roles.map((r) => (
+                <li key={r.title} className="grid content-start gap-1.5 rounded-[18px] border border-line bg-deep-2/50 p-4">
+                  <p className="text-[16px] font-bold text-ivory">
+                    <span aria-hidden="true">{r.icon} </span>
+                    {r.title}
+                  </p>
+                  <p className="text-[14px] leading-6 text-mist">{r.text}</p>
+                  {r.tip ? <p className="text-[13px] leading-6 text-gold">💡 {r.tip}</p> : null}
+                </li>
+              ))}
+            </ul>
+            <p className="text-[13px] leading-6 text-faint">وفي الجلسة يجد كل لاعب في جواله دليل دوره كاملًا: خطته في كل مرحلة، وما يفعله وما يتجنبه، وقالب المرافعة للمدعي والمحامي.</p>
+          </section>
+        ) : null}
+
         <section aria-labelledby="start-title" className="surface grid gap-3 rounded-[24px] p-5 sm:p-7">
           <h2 id="start-title" className="flex items-center gap-2 text-[22px] leading-8">
             <Glyph name="tv" className="size-6 text-gold" />

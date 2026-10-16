@@ -10,7 +10,8 @@ import { useLivePoll } from "@/lib/live";
 import { useSiteSettings } from "@/lib/site-settings";
 import { setVoicePreference, speak, voicePreference } from "@/components/mafia";
 import { phaseGuide, suggestQuestions } from "@/lib/court-phase-guide";
-import { ANSWER_RULES, DETECTIVE_GUIDE, OBJECTION_RULES, answerRulesFor, objectionHint } from "@/lib/court-rules";
+import { ANSWER_RULES, OBJECTION_RULES, answerRulesFor, objectionHint } from "@/lib/court-rules";
+import { GUIDE_PHASES, HOST_START, PLAYER_START, ROLE_GUIDES, SPEECHES, fillSpeech, type GuidePhase, type GuideRole } from "@/lib/court-guide";
 import type { Generated } from "@/lib/court-ai";
 import { GameIntro, type IntroStep } from "@/components/game-intro";
 import type { CourtCase } from "@/components/admin/cases";
@@ -1208,78 +1209,157 @@ function Hint({ state, kind }: { state: CourtState; kind?: CourtKind }) {
  * «📘 دليل دورك»: what to do in this phase, questions to ask, and the rules that concern the role
  * (objections for the prosecutor and the lawyer, answers for the accused and witnesses).
  */
-function RoleGuide({ state, kind }: { state: CourtState; kind?: CourtKind }) {
-  if (!kind || !state.phase || state.phase === "over") return null;
-  const tip = phaseGuide(kind, state.phase);
-  const asks = state.phase === "question" && kind !== "accused" && kind !== "witness" ? suggestQuestions(kind, state.stage) : [];
-  const answers = answerRulesFor(kind);
+/** A titled list, the building block of the guides. */
+function GuideList({ title, items, tone = "mist" }: { title?: string; items: string[]; tone?: "mist" | "ivory" }) {
+  if (!items.length) return null;
+  return (
+    <div className="grid gap-1">
+      {title ? <p className="text-[13px] font-bold text-gold">{title}</p> : null}
+      <ul className="grid gap-1">
+        {items.map((x) => (
+          <li key={x} className={cx("ms-4 list-disc text-[13px] leading-6", tone === "ivory" ? "text-ivory" : "text-mist")}>
+            {x}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** The accused names of the case, for the speech template. */
+const accusedNames = (state: CourtState) =>
+  state.accused?.length ? state.accused.map((a) => a.name) : (state.cast ?? []).filter((c) => c.kind === "accused").map((c) => c.name);
+
+/**
+ * «قالب المرافعة»: five parts in a minute for the prosecutor or the lawyer, with the seconds for each,
+ * what to say, and an example with the case's names. Open while it is their turn.
+ */
+function SpeechGuide({ state, side, open = false, live = false }: { state: CourtState; side: "prosecutor" | "lawyer"; open?: boolean; live?: boolean }) {
+  const sp = SPEECHES[side];
+  const names = accusedNames(state);
+  const total = sp.parts.reduce((n, x) => n + x.seconds, 0);
+  return (
+    <details className={cx("rounded-[20px] border p-4", live ? "border-gold bg-gold/10 shadow-glow-gold" : "border-gold/40 bg-night/50")} open={open}>
+      <summary className="cursor-pointer text-[15px] font-bold text-gold">
+        🎤 {live ? "دورك الآن: " : ""}قالب {sp.title} <span className="text-[12px] font-normal text-mist">(خمسة أجزاء في قرابة {total} ثانية)</span>
+      </summary>
+      <ol className="mt-3 grid gap-2">
+        {sp.parts.map((x, i) => (
+          <li key={x.title} className="grid gap-0.5 rounded-[14px] border border-line bg-deep-2/50 p-2.5">
+            <p className="flex items-center gap-2 text-[14px] font-bold text-ivory">
+              <span className="btn-gold grid size-6 shrink-0 place-items-center rounded-full text-[12px]">{i + 1}</span>
+              {x.title}
+              <span className="ms-auto rounded-full bg-deep-2 px-2 text-[11px] font-semibold tabular-nums text-gold">{x.seconds} ث</span>
+            </p>
+            <p className="text-[13px] leading-6 text-mist">{x.hint}</p>
+            <p className="text-[13px] leading-6 text-ivory">«{fillSpeech(x.example, names)}»</p>
+          </li>
+        ))}
+      </ol>
+      <div className="mt-3">
+        <GuideList items={sp.tips} />
+      </div>
+    </details>
+  );
+}
+
+/**
+ * «دليل دورك»: the mission, what to do now, the speech for the prosecutor and the lawyer, the plan
+ * for every phase, habits that win and mistakes that lose, then the rules of objections and answers.
+ */
+function RoleGuide({ state, kind }: { state: CourtState; kind?: CourtKind | "judge" }) {
+  if (!kind || !state.phase || state.phase === "over" || state.phase === "verdict") return null;
+  const doc = ROLE_GUIDES[kind as GuideRole];
+  if (!doc) return null;
+  const phase = state.phase as GuidePhase;
+  const now = phase === "intro" ? doc.first : (doc.phases[phase] ?? []);
+  const phaseLabel = GUIDE_PHASES.find((x) => x.key === phase);
+  const asks = state.phase === "question" && kind !== "accused" && kind !== "witness" && kind !== "judge" ? suggestQuestions(kind, state.stage) : [];
+  const answers = kind === "judge" ? [] : answerRulesFor(kind);
   const objects = kind === "prosecutor" || kind === "lawyer";
   const dual = (state.accused?.length ?? 0) > 1;
-  const li = "ms-4 list-disc text-[13px] leading-6 text-mist";
+  const golden = state.settings?.golden ?? "jurors";
   return (
     <details className="surface rounded-[20px] p-4" open={state.phase === "intro"}>
-      <summary className="cursor-pointer text-[15px] font-semibold text-ivory">📘 دليل دورك: {KINDS[kind].label}</summary>
-      <div className="mt-3 grid gap-3">
-        <p className="rounded-[14px] bg-deep-2/60 p-3 text-[14px] leading-6 text-ivory">{tip}</p>
+      <summary className="cursor-pointer text-[15px] font-semibold text-ivory">📘 دليل {kind === "judge" ? "القاضي" : `دورك: ${KINDS[kind].label}`}</summary>
+      <div className="mt-3 grid gap-4">
+        <p className="rounded-[14px] border border-line bg-deep-2/60 p-3 text-[14px] leading-6 text-ivory">🎯 {doc.mission}</p>
+        {now.length ? (
+          <div className="rounded-[14px] border border-gold/50 bg-gold/5 p-3">
+            <GuideList title={phase === "intro" ? "⏱️ أول دقيقة" : `${phaseLabel?.icon ?? ""} الآن: ${phaseLabel?.label ?? ""}`} items={now} tone="ivory" />
+          </div>
+        ) : null}
         {dual ? (
           <p className="text-[13px] leading-6 text-gold">
             ⚖️ في القضية متهمان، ولكل واحد حكم مستقل وحقيقة مستقلة: {state.accused!.map((a) => a.name).join(" و")}.
             {kind === "accused" ? " تكسب 300 إذا بُرّئت أنت، مهما كان حكم الآخر." : ""}
           </p>
         ) : null}
-        {asks.length ? (
-          <div>
-            <p className="text-[13px] font-bold text-gold">أسئلة تقدر تبدأ بها</p>
-            <ul>
-              {asks.map((q) => (
-                <li key={q} className={li}>
-                  {q}
+        {kind === "juror" && golden === "off" ? <p className="text-[12px] leading-5 text-faint">لا سؤال ذهبي في هذه الجلسة.</p> : null}
+        {asks.length ? <GuideList title="❓ أسئلة تقدر تبدأ بها" items={asks} /> : null}
+        {objects ? <SpeechGuide state={state} side={kind} open={state.phase === "closing"} /> : null}
+        <details className="rounded-[14px] border border-line bg-deep-2/40 p-3">
+          <summary className="cursor-pointer text-[14px] font-semibold text-ivory">🗺️ خطتك مرحلة بمرحلة</summary>
+          <ol className="mt-3 grid gap-3">
+            {GUIDE_PHASES.map((x) => {
+              const items = x.key === "intro" ? doc.first : (doc.phases[x.key] ?? []);
+              if (!items.length) return null;
+              return (
+                <li key={x.key} className={cx("rounded-[12px] p-2", x.key === phase && "bg-gold/10")}>
+                  <GuideList title={`${x.icon} ${x.label}${x.key === phase ? " (الآن)" : ""}`} items={items} />
                 </li>
-              ))}
-            </ul>
+              );
+            })}
+          </ol>
+        </details>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-[14px] border border-correct/40 bg-correct-fill/10 p-3">
+            <GuideList title="✅ افعل" items={doc.dos} />
           </div>
-        ) : null}
-        {kind === "detective" ? (
-          <div>
-            <p className="text-[13px] font-bold text-gold">دليل المحقق</p>
-            <ul>
-              {DETECTIVE_GUIDE.map((x) => (
-                <li key={x} className={li}>
-                  {x}
-                </li>
-              ))}
-            </ul>
+          <div className="rounded-[14px] border border-wrong/40 bg-wrong-fill/10 p-3">
+            <GuideList title="⛔ تجنّب" items={doc.donts} />
           </div>
-        ) : null}
-        {objects ? (
-          <div>
-            <p className="text-[13px] font-bold text-gold">قواعد الاعتراض</p>
-            <p className="text-[13px] leading-6 text-mist">{OBJECTION_RULES.who}</p>
-            <ul>
-              {OBJECTION_RULES.when.map((x) => (
-                <li key={x} className={li}>
-                  {x}
-                </li>
-              ))}
-            </ul>
-            <p className="text-[13px] leading-6 text-mist">{OBJECTION_RULES.how}</p>
-            <p className="text-[13px] font-semibold leading-6 text-ivory">{objectionHint(kind)}</p>
-          </div>
-        ) : null}
-        {answers.length ? (
-          <div>
-            <p className="text-[13px] font-bold text-gold">{kind === "accused" ? "قواعد إجابة المتهم" : "قواعد إجابة الشاهد"}</p>
-            <ul>
-              {answers.map((x) => (
-                <li key={x} className={li}>
-                  {x}
-                </li>
-              ))}
-            </ul>
-          </div>
+        </div>
+        {objects || answers.length ? (
+          <details className="rounded-[14px] border border-line bg-deep-2/40 p-3">
+            <summary className="cursor-pointer text-[14px] font-semibold text-ivory">📏 القواعد</summary>
+            <div className="mt-3 grid gap-3">
+              {objects ? (
+                <div className="grid gap-1">
+                  <p className="text-[13px] font-bold text-gold">الاعتراض</p>
+                  <p className="text-[13px] leading-6 text-mist">{OBJECTION_RULES.who}</p>
+                  <GuideList items={[...OBJECTION_RULES.when]} />
+                  <p className="text-[13px] leading-6 text-mist">
+                    {systemJudge(state)
+                      ? "اضغط «اعتراض!» ويصوّت المحلّفون والشهود والمحقق خلال 15 ثانية: الأكثرية تقبله فيُلغى السؤال وتأخذ 50 نقطة."
+                      : OBJECTION_RULES.how}
+                  </p>
+                  <p className="text-[13px] font-semibold leading-6 text-ivory">{objectionHint(kind)}</p>
+                </div>
+              ) : null}
+              {answers.length ? <GuideList title={kind === "accused" ? "إجابات المتهم" : "إجابات الشاهد"} items={answers} /> : null}
+            </div>
+          </details>
         ) : null}
         <p className="text-[12px] leading-5 text-faint">{ANSWER_RULES.general}</p>
       </div>
+    </details>
+  );
+}
+
+/** «كيف نبدأ»: what a player does from joining to the verdict. */
+function StartGuide({ items, title, open = false }: { items: string[]; title: string; open?: boolean }) {
+  return (
+    <details className="surface rounded-[20px] p-4" open={open}>
+      <summary className="cursor-pointer text-[15px] font-semibold text-ivory">{title}</summary>
+      <ol className="mt-3 grid gap-2">
+        {items.map((x, i) => (
+          <li key={x} className="flex gap-2.5 text-[14px] leading-6 text-mist">
+            <span className="btn-gold grid size-6 shrink-0 place-items-center rounded-full text-[12px] font-bold">{i + 1}</span>
+            <span>{x}</span>
+          </li>
+        ))}
+      </ol>
     </details>
   );
 }
@@ -1349,6 +1429,13 @@ function Actions({ roomId, state, card, reloadCard }: { roomId: string; state: C
   const voted = ballots.every((b) => verdictOf(b.key) !== null && verdictOf(b.key) !== undefined) && (!suspects.length || !!card.pick) && (!rates || !!card.pleading);
   return (
     <div className="grid gap-3">
+      {state.phase === "closing" && (card.kind === "prosecutor" || card.kind === "lawyer") ? (
+        state.side === card.kind ? (
+          <SpeechGuide state={state} side={card.kind} open live />
+        ) : state.side === "prosecutor" && card.kind === "lawyer" ? (
+          <SpeechGuide state={state} side="lawyer" />
+        ) : null
+      ) : null}
       {systemJudge(state) && state.objection?.status === "pending" && (card.kind === "juror" || card.kind === "witness" || card.kind === "detective") && state.objection.by !== me ? (
         <ObjectionVote state={state} mine={state.objection.votes?.[me]} busy={busy} onVote={(v) => run("court_objection_vote", { p_accept: v })} />
       ) : null}
@@ -2047,6 +2134,8 @@ function JudgeControls({
 
       {state.phase === "question" ? <QuestioningPanel state={state} busy={busy} run={run} /> : null}
 
+      <RoleGuide state={state} kind="judge" />
+
       {!over && state.phase !== "verdict" ? <ReplacePanel state={state} players={players} busy={busy} onReplace={(from, to) => run("court_replace", { p_from: from, p_to: to })} /> : null}
 
       {!over && matches > 0 ? (
@@ -2598,6 +2687,7 @@ function CourtSetup({
 
   return (
     <section className="mx-auto mt-2 grid max-w-3xl gap-4">
+      <StartGuide title="🚀 كيف تبدأ الجلسة؟ خمس خطوات" items={HOST_START} open={!last} />
       <div className="surface grid gap-3 rounded-[24px] p-5">
         <h2 className="text-[20px] leading-8">⚖️ جلسة جديدة</h2>
         <p className="text-[14px] leading-6 text-mist">
@@ -2957,7 +3047,13 @@ export function CourtPlayerPanel({ roomId, meId }: { roomId: string; meId: strin
     void supabase.rpc("court_join_jury", { p_room_id: roomId }).then(() => reloadCard());
   }, [card, state.phase, roomId, reloadCard]);
 
-  if (!isCourt(state) || !state.phase) return <Note>المضيف يجهّز الجلسة ويختار القضية. ستصلك بطاقة دورك هنا.</Note>;
+  if (!isCourt(state) || !state.phase)
+    return (
+      <section className="grid gap-4">
+        <Note>المضيف يجهّز الجلسة ويختار القضية. ستصلك بطاقة دورك هنا.</Note>
+        <StartGuide title="🚀 كيف نلعب؟ ست خطوات" items={PLAYER_START} open />
+      </section>
+    );
   if (card?.judge) return <JudgeView roomId={roomId} state={state} players={players} reload={reload} />;
   if (card && !card.started && card.late && state.phase !== "over") return <Note>دخلت بعد توزيع الأدوار. ننضمك إلى هيئة المحلفين…</Note>;
   return (
