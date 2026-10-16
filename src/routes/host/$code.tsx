@@ -11,7 +11,7 @@ import { useRoomSession } from "@/lib/room-session";
 import { Button, buttonBase, buttonTone, cx } from "@/components/ui";
 import { Glyph } from "@/components/brand";
 import { ShareRoom } from "@/components/share";
-import { HostRoomTools } from "@/components/room-tools";
+import { HostRoomTools, TestGuestsBar } from "@/components/room-tools";
 import { HalbaHostPanel } from "@/components/halba";
 import { MafiaHostScreen } from "@/components/mafia-play";
 import { adaptivePoll } from "@/lib/live";
@@ -410,6 +410,7 @@ function HostBoard() {
         <ShareRoom code={room.room_code} />
         <TvLink code={room.room_code} />
         <HostRoomTools roomId={room.id} status={liveStatus ?? room.status} onEnded={() => setRoom({ ...room, status: "finished" })} />
+        <TestGuestsBar roomId={room.id} roomCode={room.room_code} onHost />
         <OutsiderHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
         {nextGame}
       </Shell>
@@ -422,6 +423,7 @@ function HostBoard() {
         <ShareRoom code={room.room_code} />
         <TvLink code={room.room_code} />
         <HostRoomTools roomId={room.id} status={liveStatus ?? room.status} onEnded={() => setRoom({ ...room, status: "finished" })} />
+        <TestGuestsBar roomId={room.id} roomCode={room.room_code} onHost />
         <MafiaHostScreen roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
         {nextGame}
       </Shell>
@@ -434,6 +436,7 @@ function HostBoard() {
         <ShareRoom code={room.room_code} />
         <TvLink code={room.room_code} />
         <HostRoomTools roomId={room.id} status={liveStatus ?? room.status} onEnded={() => setRoom({ ...room, status: "finished" })} />
+        <TestGuestsBar roomId={room.id} roomCode={room.room_code} onHost />
         <CourtHostPanel roomId={room.id} />
         {nextGame}
       </Shell>
@@ -446,6 +449,7 @@ function HostBoard() {
         <ShareRoom code={room.room_code} />
         <TvLink code={room.room_code} />
         <HostRoomTools roomId={room.id} status={liveStatus ?? room.status} onEnded={() => setRoom({ ...room, status: "finished" })} />
+        <TestGuestsBar roomId={room.id} roomCode={room.room_code} onHost />
         <GridHostPanel roomId={room.id} />
         {nextGame}
       </Shell>
@@ -458,6 +462,7 @@ function HostBoard() {
         <ShareRoom code={room.room_code} />
         <TvLink code={room.room_code} />
         <HostRoomTools roomId={room.id} status={liveStatus ?? room.status} onEnded={() => setRoom({ ...room, status: "finished" })} />
+        <TestGuestsBar roomId={room.id} roomCode={room.room_code} onHost />
         <HalbaHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
         {nextGame}
       </Shell>
@@ -470,6 +475,7 @@ function HostBoard() {
         <ShareRoom code={room.room_code} />
         <TvLink code={room.room_code} />
         <HostRoomTools roomId={room.id} status={liveStatus ?? room.status} onEnded={() => setRoom({ ...room, status: "finished" })} />
+        <TestGuestsBar roomId={room.id} roomCode={room.room_code} onHost />
         <HeadsHostPanel roomId={room.id} roomCode={room.room_code} roomStatus={room.status} />
         {nextGame}
       </Shell>
@@ -491,6 +497,7 @@ function HostBoard() {
         <ShareRoom code={room.room_code} />
         <TvLink code={room.room_code} />
         <HostRoomTools roomId={room.id} status={liveStatus ?? room.status} onEnded={() => setRoom({ ...room, status: "finished" })} />
+        <TestGuestsBar roomId={room.id} roomCode={room.room_code} onHost />
 
         {error ? <p className="mb-4 text-sm text-wrong">{error}</p> : null}
 

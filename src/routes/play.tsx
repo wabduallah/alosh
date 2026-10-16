@@ -567,6 +567,7 @@ function friendlyError(err: unknown): string {
   if (message.includes("ANON_SIGNIN_FAILED") || message.toLowerCase().includes("anonymous"))
     return "تعذّر تسجيل الدخول المؤقت. تأكد من تفعيل Anonymous Sign-Ins في Supabase.";
   if (message.includes("ROOM_FULL")) return "الغرفة ممتلئة.";
+  if (message.includes("TOO_MANY_ROOMS")) return "أنشأت غرفًا كثيرة في ساعة واحدة. انتظر قليلًا ثم جرّب، أو ارجع لغرفتك الحالية.";
   if (message.includes("NAME_NOT_ALLOWED")) return "هذا الاسم غير مسموح. اختر اسمًا آخر.";
   if (message.includes("ROOM_FINISHED")) return "انتهت هذه الغرفة.";
   return "تعذّر إنشاء الغرفة، حاول مرة أخرى.";

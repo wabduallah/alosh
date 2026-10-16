@@ -7,6 +7,7 @@ import { Button, buttonBase, buttonTone, cx } from "@/components/ui";
 import { CodeCells, Glyph, GlyphBadge, HeroArt, Mark, Wordmark } from "@/components/brand";
 import { GamesGrid } from "@/components/games-grid";
 import { START_STEPS } from "@/lib/catalog";
+import { homeSections, useSiteSettings, type HomeSettings } from "@/lib/site-settings";
 
 
 /** Room codes use this alphabet only (no I, O, 0, 1), matching the join page. */
@@ -46,16 +47,27 @@ const FEATURES = [
   { icon: "heart", label: "مجانًا" },
 ];
 
+/** The admin's text, or the built-in one when the admin left it empty. */
+const pick = (v: string | undefined, fallback: string) => (v?.trim() ? v.trim() : fallback);
+
 function Home() {
+  const home = useSiteSettings()?.home;
   return (
     <Shell>
       <RejoinCard />
-      <Hero />
-      <HowItWorks />
-      <div className="mt-8 lg:mt-14">
-        <GamesGrid />
-      </div>
-      <CallToAction />
+      {homeSections(home)
+        .filter((x) => x.visible)
+        .map((x) => {
+          if (x.key === "hero") return <Hero key="hero" home={home} />;
+          if (x.key === "how") return <HowItWorks key="how" />;
+          if (x.key === "games")
+            return (
+              <div key="games" className="mt-8 first:mt-0 lg:mt-14">
+                <GamesGrid />
+              </div>
+            );
+          return <CallToAction key="cta" home={home} />;
+        })}
     </Shell>
   );
 }
@@ -119,7 +131,8 @@ function JoinByCode({ compact = false }: { compact?: boolean }) {
   );
 }
 
-function Hero() {
+function Hero({ home }: { home?: HomeSettings }) {
+  const features = FEATURES.map((f, i) => ({ ...f, label: pick(home?.features?.[i], f.label) }));
   return (
     <section aria-labelledby="hero-title">
       <div className="forest-bg relative overflow-hidden rounded-[28px] border border-glow/30 shadow-glow-line">
@@ -130,10 +143,10 @@ function Hero() {
             </h1>
             <Wordmark height={72} className="sm:h-[104px]! lg:h-[150px]!" />
             <p className="font-display text-[21px] font-extrabold leading-[32px] text-balance text-ivory sm:text-[26px] sm:leading-[40px] lg:text-[38px] lg:leading-[56px]">
-              حيث تلتقي التحديات بالمتعة الجماعية
+              {pick(home?.tagline, "حيث تلتقي التحديات بالمتعة الجماعية")}
             </p>
             <p className="max-w-md text-[15px] leading-[26px] text-mist sm:rounded-2xl sm:bg-night/40 sm:px-4 sm:py-3 sm:text-[16px] sm:leading-[29px] lg:bg-transparent lg:p-0 lg:text-[18px] lg:leading-8">
-              تلفزيون أو لابتوب في الوسط وجوالاتكم حواليه، وإن ما توفّر فالجوال يكفي. بدون تسجيل وبدون تحميل، افتحوا الغرفة وابدأوا السهرة.
+              {pick(home?.subtitle, "تلفزيون أو لابتوب في الوسط وجوالاتكم حواليه، وإن ما توفّر فالجوال يكفي. بدون تسجيل وبدون تحميل، افتحوا الغرفة وابدأوا السهرة.")}
             </p>
             <div className="grid w-full grid-cols-2 gap-2 sm:mt-1 sm:flex sm:w-auto sm:flex-wrap sm:justify-center sm:gap-3 lg:justify-start">
               <Link to="/play" search={{ game: "" }} className={cx(buttonBase, buttonTone("primary"), "min-h-12 px-3 text-[16px] sm:min-h-14 sm:px-8 sm:text-[17px]")}>
@@ -160,9 +173,9 @@ function Hero() {
       </div>
 
       <ul className="mt-3 grid grid-cols-2 gap-2 sm:gap-3 lg:surface lg:mt-6 lg:grid-cols-4 lg:gap-0 lg:rounded-[22px] lg:py-5">
-        {FEATURES.map((f, i) => (
+        {features.map((f, i) => (
           <li
-            key={f.label}
+            key={f.icon}
             className={cx(
               "surface flex items-center gap-2.5 rounded-[16px] px-3 py-2.5 lg:grid lg:justify-items-center lg:rounded-none lg:border-0 lg:bg-none lg:py-0 lg:text-center lg:shadow-none",
               i > 0 && "lg:border-s lg:border-line",
@@ -188,7 +201,7 @@ function SectionTitle({ id, icon, children }: { id: string; icon: string; childr
 
 function HowItWorks() {
   return (
-    <section aria-labelledby="how-title" className="mt-8 lg:mt-14">
+    <section aria-labelledby="how-title" className="mt-8 first:mt-0 lg:mt-14">
       <div className="mb-5">
         <SectionTitle id="how-title" icon="question">
           كيف تبدأ؟
@@ -209,12 +222,12 @@ function HowItWorks() {
   );
 }
 
-function CallToAction() {
+function CallToAction({ home }: { home?: HomeSettings }) {
   return (
-    <section className="surface mt-10 grid justify-items-center gap-3 rounded-[28px] px-4 py-8 text-center lg:mt-14">
+    <section className="surface mt-10 first:mt-0 grid justify-items-center gap-3 rounded-[28px] px-4 py-8 text-center lg:mt-14">
       <Mark height={96} className="bob" />
-      <h2 className="text-[24px] lg:text-[30px]">جاهزون للسهرة؟</h2>
-      <p className="text-[17px] leading-[31px] text-mist">أنشئوا الغرفة الآن، وشاركوا الرمز مع أصدقائكم.</p>
+      <h2 className="text-[24px] lg:text-[30px]">{pick(home?.cta_title, "جاهزون للسهرة؟")}</h2>
+      <p className="text-[17px] leading-[31px] text-mist">{pick(home?.cta_text, "أنشئوا الغرفة الآن، وشاركوا الرمز مع أصدقائكم.")}</p>
       <div className="mt-2 flex flex-wrap justify-center gap-3">
         <Link to="/play" search={{ game: "" }} className={cx(buttonBase, buttonTone("primary"), "min-h-14 px-8 text-[17px]")}>
           <Glyph name="users" />

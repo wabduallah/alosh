@@ -104,3 +104,131 @@ export function HostRoomTools({ roomId, status, onEnded }: { roomId: string; sta
     </details>
   );
 }
+
+/* ---------------- الضيوف التجريبيون (supabase/site_v1.sql) ---------------- */
+
+type GuestStatus = { allowed: boolean; seat?: string | null; guests?: Array<{ id: string; name: string }> };
+
+const GUEST_ERRORS: Record<string, string> = {
+  ROOM_FULL: "الغرفة ممتلئة.",
+  ROOM_FINISHED: "الغرفة انتهت.",
+  NOT_ALLOWED: "الضيوف التجريبيون غير مفعّلين لهذه اللعبة.",
+  NOT_A_GUEST: "هذا ليس ضيفًا تجريبيًا.",
+};
+
+/**
+ * For the admin only, in games where «الضيوف التجريبيون» is on (admin → الموقع): add fake players
+ * to the room and play as any of them from this device. Every game finds the current player with
+ * my_player_id(), which follows the chosen guest, so this works in every game, new ones included.
+ * Shows nothing for everyone else.
+ */
+export function TestGuestsBar({ roomId, roomCode, onHost = false }: { roomId: string; roomCode?: string; onHost?: boolean }) {
+  const [s, setS] = useState<GuestStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase.rpc("test_guests_status", { p_room_id: roomId });
+    if (!error && data) setS(data as GuestStatus);
+  }, [roomId]);
+  useLivePoll(`test-guests-${roomId}`, [{ table: "room_players", filter: `room_id=eq.${roomId}` }], load);
+
+  const guests = s?.guests ?? [];
+  const seat = s?.seat ?? null;
+  const seatName = guests.find((g) => g.id === seat)?.name;
+
+  async function run(fn: string, args: Record<string, unknown>, reload: boolean) {
+    if (!supabase) return;
+    setBusy(true);
+    setNote(null);
+    const { data, error } = await supabase.rpc(fn, { p_room_id: roomId, ...args });
+    setBusy(false);
+    const res = data as { ok?: boolean; reason?: string } | null;
+    if (error || res?.ok === false) {
+      setNote(GUEST_ERRORS[res?.reason ?? ""] ?? "تعذّر التنفيذ، حاول مرة أخرى.");
+      return;
+    }
+    // The game screens read the current player once: reload so they follow the new seat.
+    if (reload && !onHost) window.location.reload();
+    else await load();
+  }
+
+  if (!s?.allowed) {
+    // The game was switched off while playing as a guest: only the way back is left.
+    if (!seat) return null;
+    return (
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-[18px] border border-dashed border-violet-text/60 p-3">
+        <p className="text-[13px] text-mist">🧪 ما زلت تلعب بدور ضيف تجريبي.</p>
+        <Button tone="outline" className="min-h-10 px-3 text-[13px]" disabled={busy} onClick={() => void run("test_guest_act", { p_player_id: null }, true)}>
+          ارجع لنفسي
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <section aria-label="الضيوف التجريبيون" className="mb-4 grid gap-2.5 rounded-[18px] border border-dashed border-violet-text/60 bg-violet-fill/10 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[14px] font-bold text-ivory">🧪 ضيوف تجريبيون <span className="font-normal text-muted">(تراه أنت فقط)</span></p>
+        <p className="text-[13px] text-mist">{seatName ? `تلعب الآن بدور: ${seatName}` : "تلعب بنفسك"}</p>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        <Button tone="quiet" className="min-h-10 px-3 text-[13px]" disabled={busy} onClick={() => void run("test_guest_add", { p_count: 1 }, false)}>
+          + ضيف
+        </Button>
+        <Button tone="quiet" className="min-h-10 px-3 text-[13px]" disabled={busy} onClick={() => void run("test_guest_add", { p_count: 3 }, false)}>
+          + 3 ضيوف
+        </Button>
+        {seat ? (
+          <Button tone="outline" className="min-h-10 px-3 text-[13px]" disabled={busy} onClick={() => void run("test_guest_act", { p_player_id: null }, true)}>
+            ارجع لنفسي
+          </Button>
+        ) : null}
+        {guests.length ? (
+          <Button
+            tone="danger"
+            className="min-h-10 px-3 text-[13px]"
+            disabled={busy}
+            onClick={() => window.confirm("حذف كل الضيوف التجريبيين من الغرفة؟") && void run("test_guest_remove", {}, !!seat)}
+          >
+            احذف الضيوف
+          </Button>
+        ) : null}
+      </div>
+      {guests.length ? (
+        <ul className="flex flex-wrap gap-1.5">
+          {guests.map((g) => (
+            <li key={g.id}>
+              <button
+                type="button"
+                disabled={busy || g.id === seat}
+                onClick={() => void run("test_guest_act", { p_player_id: g.id }, true)}
+                className={cx(
+                  "min-h-10 rounded-full border px-3 text-[13px] font-semibold transition",
+                  g.id === seat ? "border-gold bg-gold/15 text-gold" : "border-line-strong/70 text-mist hover:text-ivory",
+                )}
+              >
+                {g.id === seat ? `● ${g.name}` : `العب بدور ${g.name}`}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {onHost && roomCode ? (
+        <p className="text-[12px] leading-5 text-muted">
+          اختر ضيفًا ثم افتح{" "}
+          <a href={`/room/${roomCode}`} target="_blank" rel="noopener" className="font-bold text-gold underline-offset-4 hover:underline">
+            شاشة اللاعب
+          </a>{" "}
+          في تبويب آخر لتلعب بدوره.
+        </p>
+      ) : null}
+      {note ? (
+        <p role="alert" className="text-[13px] font-semibold text-wrong">
+          {note}
+        </p>
+      ) : null}
+    </section>
+  );
+}

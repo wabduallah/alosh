@@ -12,6 +12,7 @@ import { ResultShare, rankingShare } from "@/components/result-share";
 import { MafiaPlayerPanel } from "@/components/mafia-play";
 import { adaptivePoll } from "@/lib/live";
 import { supabase } from "@/lib/supabase";
+import { TestGuestsBar } from "@/components/room-tools";
 
 /**
  * Player screen for a room (phones). Shows the game board, the active question,
@@ -51,6 +52,8 @@ function PlayerBoard() {
   const [stateData, setStateData] = useState<StateData>({});
   const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [myUserId, setMyUserId] = useState<string | null>(null);
+  // The current player as the server sees it: follows the admin's test-guest seat (supabase/site_v1.sql).
+  const [myPid, setMyPid] = useState<string | null>(null);
   const [buzzMessage, setBuzzMessage] = useState<string | null>(null);
   const [buzzing, setBuzzing] = useState(false);
   const [gameSlug, setGameSlug] = useState<string | null>(null);
@@ -101,6 +104,7 @@ function PlayerBoard() {
         .select("id, user_id, player_name, score, is_host")
         .eq("room_id", r.id);
       const { data: sessionData } = await client.auth.getSession();
+      const { data: pid } = await client.rpc("my_player_id", { p_room_id: r.id });
 
       if (cancelled) return;
       setRoom(r);
@@ -109,6 +113,7 @@ function PlayerBoard() {
       setStateData(((state?.state_data as StateData) ?? {}) as StateData);
       setPlayers((ps ?? []) as PlayerRow[]);
       setMyUserId(sessionData.session?.user.id ?? null);
+      setMyPid(typeof pid === "string" ? pid : null);
       setGameSlug(game?.slug ?? null);
     }
 
@@ -208,7 +213,7 @@ function PlayerBoard() {
 
   const answered = new Set(stateData.answered ?? []);
   const active = questions.find((q) => q.id === activeId) ?? null;
-  const me = players.find((p) => p.user_id && p.user_id === myUserId) ?? null;
+  const me = (myPid ? players.find((p) => p.id === myPid) : undefined) ?? players.find((p) => p.user_id && p.user_id === myUserId) ?? null;
   // Was in the room, and the host removed them (supabase/rooms_v2.sql, room_kick).
   const [wasIn, setWasIn] = useState(false);
   useEffect(() => {
@@ -293,6 +298,7 @@ function PlayerBoard() {
   return (
     <Shell play>
       <section className="mx-auto mt-4 max-w-md">
+        <TestGuestsBar roomId={room.id} />
         <div className="mb-4 flex items-center justify-between">
           <h1 className="text-lg font-extrabold text-ivory">
             الغرفة <span className="room-code text-gold">{room.room_code}</span>

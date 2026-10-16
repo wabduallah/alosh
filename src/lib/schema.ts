@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
  * supabase/app_v1.sql. Add a file here in the same change that adds the code using it, and add it
  * to the end of supabase/manifest.txt. The admin panel warns while any of them has not run.
  */
-export const REQUIRED_SQL = ["app_v1.sql", "court_v7.sql", "mafia_v8.sql"];
+export const REQUIRED_SQL = ["app_v1.sql", "court_v7.sql", "mafia_v8.sql", "site_v1.sql"];
 
 export type SchemaStatus = { missing: string[]; last?: string | null; noTracking?: boolean } | null;
 
