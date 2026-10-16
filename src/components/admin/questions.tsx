@@ -392,7 +392,7 @@ function QuestionEditor({
         <Field label="الخيارات (اختياري)" hint="خيار في كل سطر. إذا كتبت خيارات، لازم تكون الإجابة الصحيحة بينها.">
           <textarea className={textareaClass} value={options} onChange={(e) => setOptions(e.target.value)} />
         </Field>
-        <Field label="إجابات مزيفة (اختياري)" hint="لسيد الخداع: إجابة في كل سطر.">
+        <Field label="إجابات مزيفة (اختياري)" hint="لسيد الخداع، وخيارات تحديات العش: إجابة في كل سطر.">
           <textarea className={textareaClass} value={fakes} onChange={(e) => setFakes(e.target.value)} />
         </Field>
         <div className="grid grid-cols-2 gap-3">

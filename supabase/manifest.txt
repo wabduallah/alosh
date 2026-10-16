@@ -47,3 +47,5 @@ app_v1.sql
 court_v7.sql
 mafia_v8.sql
 site_v1.sql
+grid_v2.sql
+grid_fakes_v1.sql
