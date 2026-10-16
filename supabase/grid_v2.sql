@@ -2,14 +2,15 @@
 -- «تحديات العش»، الإصدار 3. يُشغَّل بعد site_v1.sql، وتشغيله مرة ثانية آمن.
 --
 -- 1) من 2 إلى 6 فرق بأسماء افتراضية (عش النسور، عش الصقور…) يقدر المضيف يغيّرها.
---    كل فريق يختار من 1 إلى 3 فئات (العدد نفسه للكل)، فتزيد الفئات بزيادة الفرق.
+--    فئات كل فريق حسب عدد الفرق: فريقان 3 لكل فريق، 3 أو 4 فرق فئتان، 5 أو 6 فرق فئة واحدة (8 فئات حدًّا أعلى).
 -- 2) لا أحد يرى الإجابة قبل الحسم، ولا المضيف. الفريق صاحب الدور يصوّت من جوالاته:
 --      - سؤال عادي: 6 خيارات، الصحيح في مكان عشوائي.
 --      - سؤال صح أو خطأ: خياران.
 --    يُعتمد الخيار الأكثر أصواتًا (وعند التعادل: الذي صُوّت له أولًا). يُحسم حين يصوّت كل
 --    أعضاء الفريق، أو عند انتهاء الوقت.
--- 3) السرقة: إذا أخطأ الفريق ينتقل السؤال للفريق التالي ويُشطب الخيار الخطأ، وهكذا حتى
---    يجرّب كل فريق مرة. أسئلة صح أو خطأ بلا سرقة (الخطأ يكشف الجواب).
+-- 3) السرقة: لكل فريق سرقة واحدة في اللعبة كلها. إذا أخطأ الفريق ينتقل السؤال للفريق التالي الذي
+--    ما زالت سرقته معه، ويُشطب الخيار الخطأ. التصويت يستهلك السرقة، و«تخطَّ» أو انتهاء الوقت بلا
+--    تصويت يُبقيها. أسئلة صح أو خطأ بلا سرقة (الخطأ يكشف الجواب).
 -- 4) المضيف يقدر يلعب مع الفرق ويصوّت مثل أي لاعب.
 --
 -- الخيارات الخاطئة: من fake_answers ثم options للسؤال إن وُجدت، وإلا من إجابات أسئلة
@@ -223,6 +224,7 @@ declare
   v_order jsonb := '[]'::jsonb;
   v_scores jsonb := '{}'::jsonb;
   v_aids jsonb := '{}'::jsonb;
+  v_steals jsonb := '{}'::jsonb;
   v_cats text[] := '{}';
   v_cat_team jsonb := '[]'::jsonb;
   v_cells jsonb := '[]'::jsonb;
@@ -247,8 +249,9 @@ begin
   if v_nteams < 2 or v_nteams > 6 then
     return jsonb_build_object('ok', false, 'reason', 'TEAMS_COUNT');
   end if;
-  v_per := coalesce(jsonb_array_length(p_setup->'cats'->0), 0);
-  if v_per < 1 or v_per > 3 or jsonb_array_length(p_setup->'cats') <> v_nteams or v_per * v_nteams > 12 then
+  -- فئات كل فريق تقل كلما زادت الفرق، والحد 8 فئات.
+  v_per := case v_nteams when 2 then 3 when 3 then 2 when 4 then 2 else 1 end;
+  if jsonb_typeof(p_setup->'cats') is distinct from 'array' or jsonb_array_length(p_setup->'cats') <> v_nteams then
     return jsonb_build_object('ok', false, 'reason', 'PICK_CATEGORIES');
   end if;
 
@@ -264,6 +267,7 @@ begin
     v_order := v_order || to_jsonb(v_key);
     v_scores := v_scores || jsonb_build_object(v_key, 0);
     v_aids := v_aids || jsonb_build_object(v_key, jsonb_build_array('double', 'two', 'time'));
+    v_steals := v_steals || jsonb_build_object(v_key, true);
     for v_pid in select jsonb_array_elements_text(case when jsonb_typeof(v_t->'members') = 'array' then v_t->'members' else '[]'::jsonb end) loop
       if v_members ? v_pid then
         return jsonb_build_object('ok', false, 'reason', 'TWO_TEAMS');
@@ -328,7 +332,7 @@ begin
                                           'categories', to_jsonb(v_cats)),
            'teams', v_teams, 'order', v_order, 'members', v_members,
            'cats', to_jsonb(v_cats), 'cat_team', v_cat_team, 'cells', v_cells,
-           'scores', v_scores, 'aids', v_aids,
+           'scores', v_scores, 'aids', v_aids, 'steals', v_steals,
            'turn', 't1', 'cur', null, 'reveal', null, 'winner', null)
    where room_id = p_room_id;
   return jsonb_build_object('ok', true);
@@ -446,6 +450,10 @@ begin
   v_cur := v_cur || jsonb_build_object('picks', coalesce(v_cur->'picks', '[]'::jsonb)
              || jsonb_build_array(jsonb_build_object('team', v_team, 'o', v_pick, 'ok', v_ok)));
   v_secs := greatest(10, least(30, coalesce((v_sd->'settings'->>'seconds')::int, 60) / 3));
+  -- السرقة تُستهلك حين يصوّت الفريق السارق، أصاب أو أخطأ.
+  if v_sd->>'phase' = 'steal' and v_pick is not null then
+    v_sd := jsonb_set(v_sd, array['steals', v_team], 'false'::jsonb);
+  end if;
 
   if v_ok then
     v_by := v_team;
@@ -462,14 +470,14 @@ begin
       update public.room_game_state set state_data = v_sd || jsonb_build_object('cur', v_cur) where room_id = p_room_id;
       return jsonb_build_object('ok', true, 'retry', true);
     end if;
-    -- السرقة: الفريق التالي الذي لم يجرّب، ما دام في الخيارات أكثر من واحد.
+    -- السرقة: الفريق التالي الذي لم يجرّب وما زالت سرقته معه، ما دام في الخيارات أكثر من واحد.
     if v_cur->>'kind' = 'mc' and v_left > 1 then
       v_next := v_team;
       for i in 1 .. jsonb_array_length(v_sd->'order') loop
         v_next := public.grid_after(v_sd, v_next);
-        exit when not (v_cur->'tried' ? v_next);
+        exit when not (v_cur->'tried' ? v_next) and coalesce((v_sd->'steals'->>v_next)::boolean, false);
       end loop;
-      if v_next is not null and not (v_cur->'tried' ? v_next) then
+      if v_next is not null and not (v_cur->'tried' ? v_next) and coalesce((v_sd->'steals'->>v_next)::boolean, false) then
         v_cur := v_cur || jsonb_build_object('answering', v_next, 'tried', (v_cur->'tried') || to_jsonb(v_next),
                    'votes', '{}'::jsonb, 'steal', true, 'ends_at', now() + make_interval(secs => v_secs));
         update public.room_game_state set state_data = v_sd || jsonb_build_object('phase', 'steal', 'cur', v_cur) where room_id = p_room_id;
@@ -545,6 +553,31 @@ end;
 $$;
 revoke all on function public.grid_vote(uuid, int) from public, anon;
 grant execute on function public.grid_vote(uuid, int) to authenticated;
+
+-- «تخطَّ»: الفريق السارق يترك السؤال ويحتفظ بسرقته لسؤال آخر.
+create or replace function public.grid_pass(p_room_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_sd jsonb;
+  v_me uuid := public.my_player_id(p_room_id);
+begin
+  select state_data into v_sd from public.room_game_state where room_id = p_room_id for update;
+  if v_sd->>'game' is distinct from 'grid' or v_sd->>'phase' <> 'steal' then
+    return jsonb_build_object('ok', false, 'reason', 'WRONG_PHASE');
+  end if;
+  if not (public.is_room_host(p_room_id) or (v_me is not null and v_sd->'members'->>v_me::text = v_sd->'cur'->>'answering')) then
+    return jsonb_build_object('ok', false, 'reason', 'NOT_YOUR_TURN');
+  end if;
+  update public.room_game_state set state_data = jsonb_set(v_sd, '{cur,votes}', '{}'::jsonb) where room_id = p_room_id;
+  return public.grid_settle(p_room_id);
+end;
+$$;
+revoke all on function public.grid_pass(uuid) from public, anon;
+grant execute on function public.grid_pass(uuid) to authenticated;
 
 -- انتهى الوقت: أي جهاز في الغرفة يطلب الحسم، والخادم يتأكد من الوقت.
 create or replace function public.grid_timeout(p_room_id uuid)

@@ -32,6 +32,8 @@ export type GridState = {
   cells?: GridCell[][];
   scores?: Record<string, number>;
   aids?: Record<string, string[]>;
+  /** One steal per team for the whole game: true while it is still unused. */
+  steals?: Record<string, boolean>;
   turn?: string;
   cur?: {
     c: number;
@@ -200,7 +202,7 @@ export function Scoreboard({ state, big = false }: { state: GridState; big?: boo
               {state.scores?.[t.key] ?? 0}
             </p>
             <p className={cx("mt-1 truncate text-mist", big ? "text-[clamp(12px,1.1vw,20px)]" : "text-[11px]")}>
-              {(state.aids?.[t.key] ?? []).length ? (state.aids?.[t.key] ?? []).map((a) => AIDS[a]?.name).join(" · ") : "بلا وسائل"}
+              {[...(state.aids?.[t.key] ?? []).map((a) => AIDS[a]?.name), ...(state.steals?.[t.key] ? ["سرقة"] : [])].join(" · ") || "بلا وسائل"}
             </p>
           </div>
         );
@@ -293,6 +295,14 @@ function QuestionCard({ roomId, state, meId, big = false }: { roomId: string; st
   for (const [, v] of teamVotes) counts.set(v.o, (counts.get(v.o) ?? 0) + 1);
   const teamSize = Object.values(state.members ?? {}).filter((k) => k === cur.answering).length;
 
+  async function pass() {
+    setSending(-1);
+    setError(null);
+    const e = await gridRpc("grid_pass", { p_room_id: roomId });
+    setSending(null);
+    if (e) setError(e);
+  }
+
   async function vote(i: number) {
     setSending(i);
     setError(null);
@@ -315,7 +325,7 @@ function QuestionCard({ roomId, state, meId, big = false }: { roomId: string; st
       {live && answering ? (
         <div className="mt-3 grid justify-items-center gap-1">
           <p className={cx("font-bold", big ? "text-[clamp(18px,2vw,38px)]" : "text-[17px]")} style={{ color: colorOf(answering).color }}>
-            {cur.steal ? `فرصة سرقة: ${answering.name}` : `يصوّت ${answering.name}`}
+            {cur.steal ? `سرقة ${answering.name} (مرة واحدة في اللعبة)` : `يصوّت ${answering.name}`}
             {state.phase === "question" && cur.tries > 1 ? " · محاولتان" : ""}
           </p>
           <Timer seconds={left} label="الوقت" sound={big} />
@@ -359,6 +369,11 @@ function QuestionCard({ roomId, state, meId, big = false }: { roomId: string; st
           );
         })}
       </ul>
+      {canVote && cur.steal ? (
+        <Button tone="quiet" className="mt-3 min-h-11 w-full text-[15px]" disabled={sending !== null} onClick={() => void pass()}>
+          تخطَّ واحتفظ بسرقتكم لسؤال آخر
+        </Button>
+      ) : null}
       {live ? (
         <p className={cx("mt-3 text-mist", big ? "text-[clamp(14px,1.3vw,24px)]" : "text-[13px]")}>
           صوّت {teamVotes.length} من {teamSize}
@@ -559,7 +574,7 @@ export function GridHostPanel({ roomId }: { roomId: string }) {
           <QuestionCard roomId={roomId} state={state} meId={hostId} />
           <p className="text-center text-[13px] text-mist">
             الإجابة مخفية عن الجميع، وأنت منهم. يُحسم السؤال حين يصوّت كل الفريق أو ينتهي الوقت.
-            {state.cur?.kind === "mc" ? " إذا أخطأ الفريق ينتقل السؤال للفريق التالي ويُشطب خياره." : " أسئلة صح أو خطأ بلا سرقة."}
+            {state.cur?.kind === "mc" ? " إذا أخطأ الفريق ينتقل السؤال للفريق التالي اللي سرقته معه، ويُشطب خياره. لكل فريق سرقة واحدة في اللعبة." : " أسئلة صح أو خطأ بلا سرقة."}
           </p>
         </>
       ) : null}
@@ -678,6 +693,7 @@ function TeamsManager({ roomId, state, players, onDone }: { roomId: string; stat
 
 type Category = { name: string; easy: number; medium: number; hard: number; total: number };
 const SECONDS = [30, 45, 60, 90];
+const PER_TEAM: Record<number, number> = { 2: 3, 3: 2, 4: 2, 5: 1, 6: 1 };
 
 function GridSetup({
   roomId,
@@ -703,7 +719,6 @@ function GridSetup({
     const saved = last?.team_names ?? [];
     return saved.length >= 2 ? saved.slice(0, 6) : DEFAULT_TEAM_NAMES.slice(0, 2);
   });
-  const [per, setPer] = useState<number>(last?.per_team ?? 3);
   const [picks, setPicks] = useState<string[][]>([]);
   const [active, setActive] = useState(0);
   const [teamOfPlayer, setTeamOfPlayer] = useState<Record<string, number>>({});
@@ -728,8 +743,8 @@ function GridSetup({
 
   const n = names.length;
   const available = cats?.length ?? 0;
-  const maxPer = Math.max(1, Math.min(3, Math.floor(Math.min(12, available || 12) / n)));
-  const perTeam = Math.min(per, maxPer);
+  // Fewer categories per team as teams grow: 2 teams 3 each, 3-4 teams 2 each, 5-6 teams 1 each (8 at most).
+  const perTeam = PER_TEAM[n] ?? 1;
   const playing = useMemo(() => players.filter((p) => !p.is_host || hostPlays), [players, hostPlays]);
 
   // Keep the picks in shape when the team count or the per-team count changes.
@@ -796,7 +811,7 @@ function GridSetup({
 
   const sizes = names.map((_, i) => playing.filter((p) => teamOfPlayer[p.id] === i).length);
   const catsReady = picks.length === n && picks.every((l) => l.length === perTeam);
-  const ready = catsReady && sizes.every((s) => s > 0) && available >= n;
+  const ready = catsReady && sizes.every((s) => s > 0) && available >= perTeam * n;
 
   function start() {
     void onStart({
@@ -884,27 +899,9 @@ function GridSetup({
 
       {/* الفئات */}
       <div className="surface grid gap-3 rounded-[24px] p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-[20px] leading-8">فئات كل فريق</h2>
-          <div role="radiogroup" aria-label="عدد فئات كل فريق" className="flex gap-1.5">
-            {[1, 2, 3].map((k) => (
-              <button
-                key={k}
-                type="button"
-                role="radio"
-                aria-checked={perTeam === k}
-                disabled={k > maxPer}
-                onClick={() => setPer(k)}
-                className={cx("min-h-10 rounded-full border px-4 text-[14px] font-semibold disabled:opacity-35", perTeam === k ? "border-gold bg-gold/15 text-gold" : "border-line-strong/70 text-mist")}
-              >
-                {k}
-              </button>
-            ))}
-          </div>
-        </div>
+        <h2 className="text-[20px] leading-8">فئات كل فريق</h2>
         <p className="text-[13px] text-mist">
-          اللوحة {perTeam * n} فئات: {perTeam} لكل فريق. اختر الفريق ثم فئاته
-          {maxPer < 3 && cats ? ` (الفئات المتاحة ${available}، فالحد ${maxPer} لكل فريق)` : ""}.
+          {n} فرق: كل فريق يختار {perTeam === 1 ? "فئة واحدة" : perTeam === 2 ? "فئتين" : "3 فئات"}، واللوحة {perTeam * n} فئات. كلما زادت الفرق قلّت فئات كل فريق. اختر الفريق ثم فئاته.
         </p>
         <div role="tablist" className="flex flex-wrap gap-1.5">
           {names.map((name, i) => (
@@ -923,7 +920,7 @@ function GridSetup({
         </div>
         {loadError ? <p className="text-[14px] text-wrong">{loadError}</p> : null}
         {cats === null && !loadError ? <p className="text-[14px] text-mist">جارٍ تحميل الفئات…</p> : null}
-        {cats && cats.length < n ? <p className="text-[14px] text-wrong">الفئات المتاحة ({cats.length}) أقل من عدد الفرق. أضف أسئلة من لوحة الإدارة.</p> : null}
+        {cats && cats.length < perTeam * n ? <p className="text-[14px] text-wrong">الفئات المتاحة ({cats.length}) أقل من المطلوب ({perTeam * n}). أضف أسئلة من لوحة الإدارة.</p> : null}
         <div className="flex flex-wrap gap-2">
           {(cats ?? []).map((c) => {
             const o = owner(c.name);
@@ -1038,7 +1035,7 @@ export function GridPlayerPanel({ roomId, meId }: { roomId: string; meId: string
         <>
           {answering && answering.key === myKey ? (
             <p className="beat rounded-[16px] border-2 p-3 text-center text-[18px] font-extrabold" style={{ borderColor: colorOf(answering).color, color: colorOf(answering).color }}>
-              {state.phase === "steal" ? "فرصة سرقة لفريقك! صوّتوا" : "فريقك يجاوب! صوّت على الإجابة"}
+              {state.phase === "steal" ? "فرصة سرقة لفريقك! صوّتوا وتُستهلك سرقتكم، أو تخطّوا" : "فريقك يجاوب! صوّت على الإجابة"}
             </p>
           ) : null}
           <QuestionCard roomId={roomId} state={state} meId={meId} />

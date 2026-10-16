@@ -12,6 +12,10 @@ select 'tactical-grid', 'اختبار صح', 'اختبار: صح أم خطأ ' |
 insert into questions_bank (game_slug, category_ar, question_text, correct_answer, difficulty, points)
 select 'tactical-grid', 'اختبار أرقام', 'اختبار: كم عدد ' || n || '؟', (n * 7)::text, (array['easy', 'easy', 'medium', 'medium', 'hard', 'hard'])[n], 200
   from generate_series(1, 6) n;
+delete from questions_bank where game_slug = 'tactical-grid' and category_ar like 'اختبار حشو%';
+insert into questions_bank (game_slug, category_ar, question_text, correct_answer, difficulty, points)
+select 'tactical-grid', 'اختبار حشو ' || c, 'اختبار حشو ' || c || ': ما الكلمة ' || n || '؟', 'كلمة ' || c || n, (array['easy', 'easy', 'medium', 'medium', 'hard', 'hard'])[n], 200
+  from generate_series(1, 4) c, generate_series(1, 6) n;
 select public.test_room('e0000000-0000-0000-0000-000000000001', 'tactical-grid', 4);
 
 create or replace function public.test_pid(p_room uuid, p_n int) returns text language sql as $$
@@ -70,10 +74,11 @@ begin
              jsonb_build_object('name', '', 'members', jsonb_build_array(p1, p2)),
              jsonb_build_object('name', 'المتحدون', 'members', jsonb_build_array(p3, p1)),
              jsonb_build_object('name', 'عش ثالث', 'members', jsonb_build_array(p4))),
-           'cats', '[["اختبار عواصم"], ["اختبار صح"], ["اختبار أرقام"]]'::jsonb, 'seconds', 30);
+           'cats', '[["اختبار عواصم", "اختبار حشو 1"], ["اختبار صح", "اختبار حشو 2"], ["اختبار أرقام", "اختبار حشو 3"]]'::jsonb, 'seconds', 30);
   assert public.grid_start(r, setup)->>'reason' = 'TWO_TEAMS', 'player in two teams';
   setup := jsonb_set(setup, '{teams,1,members}', jsonb_build_array(p3));
-  assert public.grid_start(r, jsonb_set(setup, '{cats}', '[["اختبار عواصم", "اختبار صح"], ["اختبار أرقام"], []]'))->>'reason' = 'PICK_CATEGORIES', 'uneven cats';
+  assert public.grid_start(r, jsonb_set(setup, '{cats}', '[["اختبار عواصم", "اختبار صح"], ["اختبار أرقام"], ["اختبار حشو 1", "اختبار حشو 2"]]'))->>'reason' = 'PICK_CATEGORIES', 'uneven cats';
+  assert public.grid_start(r, jsonb_set(setup, '{cats}', '[["اختبار عواصم", "اختبار صح", "اختبار حشو 4"], ["اختبار أرقام", "اختبار حشو 1", "اختبار حشو 5"], ["اختبار حشو 2", "اختبار حشو 3", "اختبار حشو 6"]]'))->>'reason' = 'PICK_CATEGORIES', '3 teams: 2 each';
   assert public.grid_start(r, jsonb_set(setup, '{teams,2,members}', jsonb_build_array(host)))->>'reason' = 'TEAMS', 'host not playing';
   -- البداية.
   perform public.test_as(1);
@@ -83,8 +88,9 @@ begin
   assert (res->>'ok')::boolean, 'start: ' || res::text;
   st := public.test_gs(r);
   assert st->'teams'->0->>'name' = 'عش النسور' and st->'teams'->1->>'name' = 'المتحدون', 'names';
-  assert st->>'turn' = 't1' and st->'members'->>p3 = 't2' and jsonb_array_length(st->'cells') = 3, 'board';
-  assert st->'cat_team' = '["t1", "t2", "t3"]', 'cat owners';
+  assert st->>'turn' = 't1' and st->'members'->>p3 = 't2' and jsonb_array_length(st->'cells') = 6, 'board';
+  assert st->'cat_team' = '["t1", "t1", "t2", "t2", "t3", "t3"]', 'cat owners';
+  assert st->'steals' = '{"t1": true, "t2": true, "t3": true}', 'one steal each';
 
   -- السؤال الأول (عواصم): فريق آخر لا يفتح، عضو الفريق يفتح بوسيلة «ضاعِف».
   perform public.test_as(3);
@@ -113,12 +119,13 @@ begin
   st := public.test_gs(r);
   assert st->>'phase' = 'reveal' and st->'reveal'->>'by' = 't2' and (st->'reveal'->>'stolen')::boolean, 'stolen';
   assert (st->'reveal'->>'gain')::int = 200 and (st->'scores'->>'t2')::int = 200, 'steal earns plain points';
+  assert st->'steals'->>'t2' = 'false' and st->'steals'->>'t3' = 'true', 't2 used its steal';
   assert (st->'reveal'->>'correct')::int = public.test_right(r), 'reveal points at correct option';
   perform public.test_as(0);
   assert (public.grid_next(r)->>'ok')::boolean and public.test_gs(r)->>'turn' = 't2', 'turn t2';
 
   -- صح أو خطأ: خطأ = لا سرقة.
-  assert (public.grid_open(r, 1, 0, '{}')->>'ok')::boolean, 'host opens for t2';
+  assert (public.grid_open(r, 2, 0, '{}')->>'ok')::boolean, 'host opens for t2';
   assert public.test_gs(r)->'cur'->>'kind' = 'tf', 'tf';
   perform public.test_as(3);
   res := public.grid_vote(r, public.test_wrong(r));
@@ -135,10 +142,9 @@ begin
   update room_game_state set state_data = jsonb_set(state_data, '{cur,ends_at}', to_jsonb(now() - interval '5 seconds')) where room_id = r;
   assert public.grid_timeout(r)->>'steal' = 't1', 'timeout → t1';
   update room_game_state set state_data = jsonb_set(state_data, '{cur,ends_at}', to_jsonb(now() - interval '5 seconds')) where room_id = r;
-  assert public.grid_timeout(r)->>'steal' = 't2', 'timeout → t2';
-  update room_game_state set state_data = jsonb_set(state_data, '{cur,ends_at}', to_jsonb(now() - interval '5 seconds')) where room_id = r;
   res := public.grid_timeout(r);
-  assert (res->>'done')::boolean and public.test_gs(r)->'reveal'->'by' = 'null', 'all tried: nobody';
+  assert (res->>'done')::boolean and public.test_gs(r)->'reveal'->'by' = 'null', 't2 has no steal left: nobody';
+  assert public.test_gs(r)->'steals'->>'t1' = 'true', 'no vote keeps the steal';
   perform public.test_as(0);
   perform public.grid_next(r);
 
@@ -155,6 +161,26 @@ begin
   perform public.test_as(1);
   res := public.grid_vote(r, public.test_right(r));
   assert public.test_gs(r)->'reveal'->>'by' = 't1', 'second try correct';
+
+  -- «تخطَّ»: الفريق السارق يحتفظ بسرقته.
+  perform public.test_as(0);
+  perform public.grid_next(r);
+  assert public.test_gs(r)->>'turn' = 't2', 'turn t2 again';
+  perform public.test_as(3);
+  assert (public.grid_open(r, 3, 0, '{}')->>'ok')::boolean, 't2 opens';
+  perform public.grid_vote(r, public.test_wrong(r));
+  assert public.test_gs(r)->>'phase' = 'steal' and public.test_gs(r)->'cur'->>'answering' = 't3', 'steal → t3';
+  perform public.test_as(4);
+  assert (public.grid_pass(r)->>'ok')::boolean, 'pass';
+  st := public.test_gs(r);
+  assert st->>'phase' = 'steal' and st->'cur'->>'answering' = 't1' and st->'steals'->>'t3' = 'true', 'pass keeps the steal, next is t1';
+  perform public.test_as(1);
+  perform public.grid_vote(r, public.test_wrong(r));
+  perform public.test_as(2);
+  perform public.grid_vote(r, public.test_wrong(r));
+  st := public.test_gs(r);
+  assert st->>'phase' = 'reveal' and st->'steals'->>'t1' = 'false', 'voting uses the steal';
+  perform public.test_as(0);
 
   -- الاسم والنقل والنهاية.
   perform public.test_as(0);
@@ -176,9 +202,9 @@ begin
   perform public.test_as(0);
   assert (public.grid_start(r, jsonb_build_object('host_plays', true, 'teams', jsonb_build_array(
             jsonb_build_object('members', jsonb_build_array(host)), jsonb_build_object('members', jsonb_build_array(p1))),
-          'cats', '[["اختبار عواصم"], ["اختبار أرقام"]]'::jsonb))->>'ok')::boolean, 'host plays';
+          'cats', '[["اختبار عواصم", "اختبار حشو 1", "اختبار حشو 2"], ["اختبار أرقام", "اختبار حشو 3", "اختبار حشو 4"]]'::jsonb))->>'ok')::boolean, 'host plays';
   assert public.test_gs(r)->'members'->>host = 't1', 'host in t1';
-  perform public.grid_open(r, 1, 0, '{}');
+  perform public.grid_open(r, 3, 0, '{}');
   assert (public.grid_vote(r, public.test_right(r))->>'done')::boolean, 'host vote settles (only member)';
   assert public.test_gs(r)->'reveal'->>'by' = 't1', 'host team scores';
 end $$;
