@@ -28,7 +28,7 @@ export function Shell({ children, paper = false, play = false, wide = false }: {
         {play ? null : <PageBack />}
         {children}
       </div>
-      {paper ? null : <SiteFooter brand={brand} t={t} />}
+      {paper || play ? null : <SiteFooter brand={brand} t={t} />}
       {paper || play ? null : <TabBar t={t} />}
       {menuOpen ? <MenuSheet t={t} lang={lang} setLang={setLang} onClose={() => setMenuOpen(false)} /> : null}
     </div>
@@ -221,20 +221,20 @@ function TabBar({ t }: { t: T }) {
 }
 
 /** Compact bar for the game screens: the logo, back and home, so the game owns the screen. */
+/** In a game: the logo and one «خروج» that asks first, so a stray tap mid-game doesn't leave the room. */
 function PlayBar() {
+  const leave = (e: { preventDefault: () => void }) => {
+    if (!window.confirm("تطلع من اللعبة؟ تقدر ترجع لها من الرئيسية.")) e.preventDefault();
+  };
   return (
     <header className="border-b border-line bg-night/70 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
-      <div className="mx-auto flex min-h-14 max-w-[1240px] items-center gap-2 px-4 sm:px-6 lg:px-8 tv:max-w-[1520px]">
-        <Link to="/" aria-label="العش — الرئيسية" className="me-auto inline-flex">
-          <Lockup height={38} className="tv:h-[48px]!" />
+      <div className="mx-auto flex min-h-12 max-w-[1240px] items-center gap-2 px-4 sm:px-6 lg:px-8 tv:max-w-[1520px]">
+        <Link to="/" aria-label="العش — الرئيسية" className="me-auto inline-flex" onClick={leave}>
+          <Lockup height={32} className="tv:h-[48px]!" />
         </Link>
-        <button type="button" className={cx(backClass, "min-h-10 px-3")} onClick={() => window.history.back()}>
-          <Glyph name="back" className="size-[18px]" />
-          رجوع
-        </button>
-        <Link to="/" className={cx(homeClass, "min-h-10 px-3")}>
-          <Glyph name="home" className="size-[18px]" />
-          الرئيسية
+        <Link to="/" className={cx(homeClass, "min-h-10 px-3")} onClick={leave}>
+          <Glyph name="x" className="size-[18px]" />
+          خروج
         </Link>
       </div>
     </header>

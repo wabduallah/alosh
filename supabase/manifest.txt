@@ -49,3 +49,4 @@ mafia_v8.sql
 site_v1.sql
 grid_v2.sql
 grid_fakes_v1.sql
+mafia_v9.sql

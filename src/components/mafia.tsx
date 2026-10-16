@@ -29,6 +29,11 @@ export type MafiaSettings = {
   dead_see_roles?: boolean;
   /** «المتخفي» (mafia_v7.sql). */
   disguised?: boolean;
+  /** mafia_v9.sql: nominations before the vote, the oral vote, a first night without a kill, and the preset used. */
+  nominate?: boolean;
+  vote_mode?: "phone" | "pick" | "count";
+  no_first_kill?: boolean;
+  preset?: "quick" | "diwaniya" | "beginners" | null;
 };
 export type MafiaVote = { voter: string; target: string; weight: number; auto?: boolean };
 /** What everyone sees after a vote: how many votes each player got, without who cast them. */
@@ -54,6 +59,8 @@ export type MafiaPublicState = {
   last_settings?: MafiaSettings | null;
   /** The disguised players already unmasked by a vote (mafia_v7.sql): the next vote eliminates them. */
   unmasked?: string[];
+  /** The narrator's nominees for this vote (mafia_v9.sql). */
+  nominees?: string[] | null;
 };
 export type MafiaPlayerRow = { player_id: string; player_name: string; alive: boolean; player_role: string | null; is_mayor?: boolean };
 
@@ -198,14 +205,17 @@ export const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padSt
 export function narratorLine(state: MafiaPublicState, rows: MafiaPlayerRow[]) {
   const phase = state.phase ?? "";
   const s = state.settings ?? {};
+  const oral = s.vote_mode === "pick" || s.vote_mode === "count";
   if (phase === "") return "مرحبًا بكم في المافيا. ستصل أدواركم على جوالاتكم؛ احفظوها سرًّا ولا تُروها لأحد.";
   if (phase === "night") {
     const parts = [
-      state.round && state.round > 1 ? "حلّ الليل من جديد… أغمضوا أعينكم جميعًا." : "حلّ الليل… أغمضوا أعينكم جميعًا.",
+      state.round && state.round > 1 ? "حلّ الليل من جديد… أغمضوا أعينكم جميعًا، وكل واحد يفتح لوحته الليلية." : "حلّ الليل… أغمضوا أعينكم جميعًا، وكل واحد يفتح لوحته الليلية.",
       // The spy meets the mafia on the first night only.
-      s.spy && (state.round ?? 1) <= 1
-        ? "المافيا والجاسوس: افتحوا أعينكم وتعرّفوا على بعض. المافيا تختار ضحيتها من الجوال."
-        : "المافيا: افتحوا جوالاتكم بهدوء واختاروا ضحيتكم.",
+      s.no_first_kill && (state.round ?? 1) <= 1
+        ? `المافيا${s.spy ? " والجاسوس" : ""}: تعرّفوا على بعض، ولا ضحية الليلة.`
+        : s.spy && (state.round ?? 1) <= 1
+          ? "المافيا والجاسوس: افتحوا أعينكم وتعرّفوا على بعض. المافيا تختار ضحيتها من الجوال."
+          : "المافيا: افتحوا جوالاتكم بهدوء واختاروا ضحيتكم.",
       "الطبيب: من تحمي الليلة؟",
       "المحقق: من تشكّ فيه؟",
     ];
@@ -215,12 +225,16 @@ export function narratorLine(state: MafiaPublicState, rows: MafiaPlayerRow[]) {
   }
   if (phase === "day") {
     const night = [...(state.log ?? [])].reverse().find((l) => l.type === "night")?.text ?? (state.last_shot ? "" : (state.last_result ?? ""));
-    return `طلع الصباح… افتحوا أعينكم. ${night} والآن ناقشوا: من بينكم المافيا؟`;
+    return `طلع الصباح… افتحوا أعينكم. ${night} والآن ناقشوا: من بينكم المافيا؟${oral ? " وحين ينتهي النقاش نصوّت برفع اليد." : ""}`;
   }
   if (phase === "vote") {
     if (Array.isArray(state.runoff)) {
       const names = rows.filter((r) => state.runoff?.includes(r.player_id)).map((r) => r.player_name).join(" و");
-      return `تعادل! أعيدوا التصويت بين ${names} فقط.`;
+      return `تعادل! أعيدوا التصويت بين ${names} فقط${oral ? " برفع اليد" : ""}.`;
+    }
+    if (Array.isArray(state.nominees)) {
+      const names = rows.filter((r) => state.nominees?.includes(r.player_id)).map((r) => r.player_name).join(" و");
+      return `المرشحون: ${names}. صوّتوا من جوالاتكم على واحد منهم.`;
     }
     return "انتهى النقاش. صوّتوا من جوالاتكم لإقصاء من تظنونه من المافيا.";
   }
