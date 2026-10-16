@@ -441,11 +441,17 @@ function HostBoard() {
   if (isCourt) {
     return (
       <Shell play>
-        <ShareRoom code={room.room_code} />
-        <TvLink code={room.room_code} />
-        <HostRoomTools roomId={room.id} status={liveStatus ?? room.status} onEnded={() => setRoom({ ...room, status: "finished" })} />
-        <TestGuestsBar roomId={room.id} roomCode={room.room_code} onHost />
-        <CourtHostPanel roomId={room.id} />
+        <CourtHostPanel
+          roomId={room.id}
+          tools={
+            <>
+              <ShareRoom code={room.room_code} />
+              <TvLink code={room.room_code} />
+              <HostRoomTools roomId={room.id} status={liveStatus ?? room.status} onEnded={() => setRoom({ ...room, status: "finished" })} />
+              <TestGuestsBar roomId={room.id} roomCode={room.room_code} onHost />
+            </>
+          }
+        />
         {nextGame}
       </Shell>
     );

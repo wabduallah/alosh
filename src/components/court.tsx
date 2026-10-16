@@ -80,6 +80,12 @@ export type CourtState = {
   cards?: CardReveal[] | null;
   settings?: CourtSettings;
   last_settings?: CourtSettings | null;
+  /** How many turns to ask each player took in this case (court_v8.sql). */
+  asked?: Record<string, number>;
+  /** The last «التالي»: the judge can take it back for a few seconds (court_v8.sql). */
+  undo?: { step: number; at: string } | null;
+  /** «نظام في المحكمة!» or the evening ranking on every screen (court_v8.sql). */
+  flash?: { kind: "order" | "evening"; at: string } | null;
 };
 type EveningRow = { name: string; points: number; matches: number; smart: number; speaker: number };
 type CourtSettings = {
@@ -173,9 +179,11 @@ const ERRORS: Record<string, string> = {
   NO_ROLE: "تعذّر إيجاد الدور في القضية.",
   OVER: "انتهت المحاكمة.",
   NO_TIMER: "لا يوجد مؤقت في هذه المرحلة.",
+  NO_UNDO: "لا توجد خطوة للتراجع عنها.",
+  TOO_LATE: "فات وقت التراجع.",
   BAD_CASE: "القضية ناقصة، راجعها:",
 };
-const SETUP_HINT = "لعبة المحكمة تحتاج تشغيل ملفات المحكمة في supabase (حتى court_v6.sql).";
+const SETUP_HINT = "لعبة المحكمة تحتاج تشغيل ملفات المحكمة في supabase (حتى court_v8.sql).";
 
 const isCourt = (s: CourtState) => s.game === "court";
 
@@ -281,6 +289,17 @@ function useCourtCues(state: CourtState, opts: { sound?: boolean; vibe?: boolean
     if (opts.sound) playCue("gavel");
     if (opts.vibe) vibrate(120);
   }, [state.objection?.at, opts.sound, opts.vibe]);
+  // «🔨 نظام في المحكمة!» (court_v8.sql): the gavel on the big screen, a buzz on phones.
+  const lastFlash = useRef<string | null>(null);
+  useEffect(() => {
+    const f = state.flash;
+    if (!f?.at || f.at === lastFlash.current) return;
+    const first = lastFlash.current === null && Date.now() - Date.parse(f.at) > 6000;
+    lastFlash.current = f.at;
+    if (first || f.kind !== "order") return;
+    if (opts.sound) playCue("gavel");
+    if (opts.vibe) vibrate([80, 40, 80, 40, 80]);
+  }, [state.flash?.at, state.flash?.kind, opts.sound, opts.vibe]);
 }
 
 /** The judge paused this step (court_v6.sql). A pause from an earlier step no longer counts. */
@@ -601,7 +620,7 @@ function escalation(state: CourtState) {
  * «لوحة الجلسة»: who is on the stand, who asks (and for how long), who waits, and who the stand
  * goes to next. The same board on phones, the host screen and the TV.
  */
-function SessionBoard({ state, big = false }: { state: CourtState; big?: boolean }) {
+function SessionBoard({ state, big = false, queue: showQueue = true }: { state: CourtState; big?: boolean; queue?: boolean }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = window.setInterval(() => setNow(Date.now()), 1000);
@@ -647,7 +666,7 @@ function SessionBoard({ state, big = false }: { state: CourtState; big?: boolean
           {goldenNow ? <span className={cx("text-ivory", t("text-[13px]", "text-[clamp(13px,1.3vw,26px)]"))}>{g.target_name} يجب أن يجيب</span> : null}
         </div>
       </div>
-      {queue.length ? (
+      {queue.length && showQueue ? (
         <p className={cx("text-center text-mist", t("text-[13px]", "text-[clamp(13px,1.3vw,26px)]"))}>✋ ينتظرون الدور: {queue.map((q, i) => `${i + 1}. ${q.name}`).join("  ·  ")}</p>
       ) : null}
       {esc?.next ? (
@@ -728,11 +747,49 @@ function PresentedFlash({ state, big = false }: { state: CourtState; big?: boole
   );
 }
 
+/**
+ * What the judge put on every screen (court_v8.sql): «🔨 نظام في المحكمة!» for a few seconds, or the
+ * evening ranking until it is hidden (or after 15 seconds).
+ */
+function CourtFlash({ state, big = false }: { state: CourtState; big?: boolean }) {
+  const f = state.flash;
+  const at = f?.at ? Date.parse(f.at) : 0;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!at) return;
+    setNow(Date.now());
+    const t = window.setInterval(() => setNow(Date.now()), 500);
+    return () => window.clearInterval(t);
+  }, [at]);
+  if (!f || !at) return null;
+  if (f.kind === "order") {
+    if (now - at > 4000) return null;
+    return (
+      <div
+        role="status"
+        className={cx(
+          "beat rounded-[20px] border-2 border-gold bg-[#2a1d08] p-3 text-center",
+          big && "fixed inset-x-[12vw] top-[28vh] z-40 rounded-[2vw] p-[2.4vw] shadow-[0_30px_120px_#000c]",
+        )}
+      >
+        <p className={cx("font-display font-extrabold text-gold", big ? "text-[clamp(48px,7vw,140px)] leading-none" : "text-[28px]")}>🔨 نظام في المحكمة!</p>
+        <p className={cx("font-bold text-ivory", big ? "text-[clamp(18px,2vw,40px)]" : "text-[15px]")}>هدوء، والكلام بإذن القاضي.</p>
+      </div>
+    );
+  }
+  if (now - at > 15000) return null;
+  return (
+    <div className={cx(big && "fixed inset-x-[20vw] top-[14vh] z-40 rounded-[1.6vw] bg-night shadow-[0_30px_120px_#000c] [&_ol]:grid-cols-1")}>
+      <EveningBoard state={state} big={big} min={1} />
+    </div>
+  );
+}
+
 /** «ترتيب السهرة»: points from case to case, with titles. */
-function EveningBoard({ state, big = false }: { state: CourtState; big?: boolean }) {
+function EveningBoard({ state, big = false, min = 2 }: { state: CourtState; big?: boolean; min?: number }) {
   const ev = state.settings?.evening;
-  const rows = Object.entries(ev?.totals ?? {}).map(([id, r]) => ({ id, ...r }));
-  if ((ev?.matches ?? 0) < 2 || rows.length === 0) return null;
+  const rows = Object.entries(ev?.totals ?? {}).map(([id, r]) => ({ id, ...(r as EveningRow) }));
+  if ((ev?.matches ?? 0) < min || rows.length === 0) return null;
   rows.sort((a, b) => b.points - a.points);
   const best = (k: "smart" | "speaker") => {
     const top = [...rows].sort((a, b) => b[k] - a[k])[0];
@@ -742,7 +799,10 @@ function EveningBoard({ state, big = false }: { state: CourtState; big?: boolean
   const speaker = best("speaker");
   return (
     <div className={cx("grid gap-3 rounded-[24px] border border-gold/40 bg-night/60 p-4", big && "rounded-[1.6vw] p-[1.4vw]")}>
-      <p className={cx("font-display font-extrabold text-gold", big ? "text-[clamp(18px,2vw,40px)]" : "text-[18px]")}>🌙 ترتيب السهرة · {ev?.matches} قضايا</p>
+      <p className={cx("font-display font-extrabold text-gold", big ? "text-[clamp(18px,2vw,40px)]" : "text-[18px]")}>
+        🌙 ترتيب السهرة ·{" "}
+        {(ev?.matches ?? 0) === 1 ? "قضية واحدة" : (ev?.matches ?? 0) === 2 ? "قضيتان" : `${ev?.matches} ${(ev?.matches ?? 0) <= 10 ? "قضايا" : "قضية"}`}
+      </p>
       <div className="flex flex-wrap gap-2">
         <span className={cx("rounded-full bg-gold/15 px-3 py-1 font-bold text-gold", big ? "text-[clamp(13px,1.3vw,26px)]" : "text-[13px]")}>⭐ نجم السهرة: {rows[0].name}</span>
         {speaker ? <span className={cx("rounded-full bg-deep-2 px-3 py-1 font-bold text-ivory", big ? "text-[clamp(13px,1.3vw,26px)]" : "text-[13px]")}>💼 محامي السهرة: {speaker.name}</span> : null}
@@ -1491,6 +1551,7 @@ function PlayView({ roomId, state, meId, card, reloadCard, host = false }: { roo
     <div className="grid gap-3">
       {card?.started && card.kind ? <GameIntro game="court" role={card.kind} steps={courtIntro(card.kind, card.win)} /> : null}
       {host ? null : <ObjectionFlash state={state} />}
+      <CourtFlash state={state} />
       <PresentedFlash state={state} />
       {state.phase === "verdict" ? <VerdictCard state={state} /> : null}
       <Hint state={state} kind={card?.kind} />
@@ -1563,7 +1624,7 @@ export function estimateMinutes({ quick, q, c, v }: { quick: boolean; q: number;
 }
 const LEVEL = ["", "سهلة", "متوسطة", "صعبة"];
 
-export function CourtHostPanel({ roomId }: { roomId: string }) {
+export function CourtHostPanel({ roomId, tools }: { roomId: string; tools?: ReactNode }) {
   const { state, players, reload } = useCourtLive(roomId);
   const { card, reload: reloadCard } = useMyCard(roomId, state);
   const { run, busy, error } = useRun(roomId, reload);
@@ -1590,11 +1651,32 @@ export function CourtHostPanel({ roomId }: { roomId: string }) {
   };
 
   if (!isCourt(state) || !state.phase)
-    return <CourtSetup state={state} players={players} busy={busy} error={error} onStart={(settings) => run("court_start", { p_settings: settings })} onStartCustom={startCustom} />;
+    return (
+      <>
+        {tools}
+        <CourtSetup state={state} players={players} busy={busy} error={error} onStart={(settings) => run("court_start", { p_settings: settings })} onStartCustom={startCustom} />
+      </>
+    );
 
   const judgeIsOther = !!state.judge_id && state.judge_id !== me?.id;
+  const over = state.phase === "over";
   const controls = <JudgeControls state={state} players={players} run={run} busy={busy} error={error} />;
+  // The host judges and plays a role: one screen, the judge's tools first and the card folded below.
+  const judgePlaying = !judgeIsOther && !!card?.started && !card.judge && !over;
+  // During the case the room tools (share, TV, players) fold into one line under the session.
+  const toolsView = tools ? (
+    over ? (
+      tools
+    ) : (
+      <details className="surface mx-auto w-full max-w-3xl rounded-[20px] p-3">
+        <summary className="cursor-pointer text-[14px] font-bold text-mist">⋯ أدوات الغرفة (المشاركة، التلفزيون، اللاعبون)</summary>
+        <div className="mt-3">{tools}</div>
+      </details>
+    )
+  ) : null;
   return (
+    <>
+    {over ? toolsView : null}
     <section className="mx-auto mt-2 grid max-w-3xl gap-4">
       {judgeIsOther ? (
         <>
@@ -1610,24 +1692,54 @@ export function CourtHostPanel({ roomId }: { roomId: string }) {
       ) : (
         controls
       )}
-      {card?.started && !card.judge ? (
+      {judgePlaying && card ? (
+        <>
+          <MyCardFold roomId={roomId} state={state} card={card} reloadCard={reloadCard} />
+          <Spectator state={state} judge />
+        </>
+      ) : card?.started && !card.judge ? (
         <PlayView roomId={roomId} state={state} meId={me?.id ?? null} card={card} reloadCard={reloadCard} host={!judgeIsOther} />
       ) : (
-        <Spectator state={state} />
+        <Spectator state={state} judge={!judgeIsOther} />
       )}
-      {state.phase === "over" ? <ResultShare result={courtShare(state)} fileName="al3sh-court.png" /> : null}
+      {over ? <ResultShare result={courtShare(state)} fileName="al3sh-court.png" /> : null}
     </section>
+    {over ? null : toolsView}
+    </>
+  );
+}
+
+/** The judge's own role, when the host judges and plays: the actions at hand, the card folded. */
+function MyCardFold({ roomId, state, card, reloadCard }: { roomId: string; state: CourtState; card: MyCard; reloadCard: () => Promise<void> }) {
+  return (
+    <div className="grid gap-3">
+      {/* The role's introduction only before the first step, so it never covers the judge's tools mid-session. */}
+      {state.phase === "intro" && card.kind ? <GameIntro game="court" role={card.kind} steps={courtIntro(card.kind, card.win)} /> : null}
+      <Actions roomId={roomId} state={state} card={card} reloadCard={reloadCard} />
+      <details className="surface rounded-[20px] p-4">
+        <summary className="cursor-pointer text-[15px] font-semibold text-ivory">
+          🃏 بطاقتي ودوري <span className="text-[13px] font-normal text-mist">({card.kind_ar}{card.name ? `: ${card.name}` : ""})</span>
+        </summary>
+        <div className="mt-3 grid gap-3">
+          <RoleCard card={card} fresh={false} />
+          <RoleGuide state={state} kind={card.kind} />
+          <Notes roomId={roomId} caseId={state.case?.id} />
+        </div>
+      </details>
+    </div>
   );
 }
 
 /** What someone without a role sees (the judge, or a host who only runs the session). */
-function Spectator({ state }: { state: CourtState }) {
+function Spectator({ state, judge = false }: { state: CourtState; judge?: boolean }) {
   const over = state.phase === "over";
+  // The judge has the objection and the questioning in their own panels above.
   return (
     <>
-      <ObjectionFlash state={state} />
+      {judge ? null : <ObjectionFlash state={state} />}
+      <CourtFlash state={state} />
       <PresentedFlash state={state} />
-      <SessionBoard state={state} />
+      {judge ? null : <SessionBoard state={state} />}
       {state.phase === "closing" ? <ClosingBanner state={state} /> : null}
       {state.phase === "verdict" || over ? <VerdictCard state={state} /> : null}
       {over ? (
@@ -1650,6 +1762,110 @@ function Spectator({ state }: { state: CourtState }) {
   );
 }
 
+/** What the judge says aloud now, in their own voice: one line per phase (the session is spoken in a diwaniya). */
+function judgeLine(state: CourtState): string {
+  const cast = state.cast ?? [];
+  const of = (k: CourtKind) => cast.filter((c) => c.kind === k);
+  switch (state.phase) {
+    case "intro": {
+      const accused = of("accused");
+      const pros = of("prosecutor")[0];
+      const law = of("lawyer")[0];
+      return `محكمة! تُفتح الآن جلسة قضية «${state.case?.title ?? ""}». ${accused.length > 1 ? "المتهمان" : "المتهم"}: ${accused.map((c) => `${c.name} (${c.player_name})`).join(" و")}.${pros ? ` الادعاء: ${pros.player_name}.` : ""}${law ? ` الدفاع: ${law.player_name}.` : ""} اقرؤوا بطاقاتكم بصمت، ولا يكشف أحد سرّه.`;
+    }
+    case "evidence":
+      return `أمام المحكمة أدلة الجولة ${state.stage ?? 1}. اقرؤوها على الشاشة بتمعّن، وكل طرف يدوّن ما يخدمه.`;
+    case "question": {
+      const stand = cast.find((c) => c.player_id === state.stand);
+      return `بدأ الاستجواب. من عنده سؤال يضغط «أبي أسأل»، والكلام بإذن المحكمة.${stand ? ` ${stand.name}، تفضّل إلى المنصة وأجب بما تعرفه.` : ""}`;
+    }
+    case "closing": {
+      const side = state.side ?? "prosecutor";
+      const who = of(side)[0];
+      return `${side === "prosecutor" ? "الكلمة للمدعي العام" : "الكلمة للدفاع"}${who ? `، ${who.player_name}` : ""}. تفضّل بمرافعتك، والجميع يستمع بلا مقاطعة.`;
+    }
+    case "vote":
+      return "انتهت المرافعات. على هيئة المحلفين أن تحكم: مذنب أم بريء؟ صوّتوا من جوالاتكم، والأصوات سرية.";
+    case "verdict": {
+      const list = state.verdict?.list ?? [];
+      if (list.length > 1) return `بعد المداولة، حكمت هيئة المحلفين: ${list.map((a) => `${a.name} ${a.guilty ? "مذنب" : "بريء"}`).join("، و")}.`;
+      const v = state.verdict;
+      if (!v) return "";
+      return `بعد المداولة، حكمت هيئة المحلفين بأن المتهم ${v.guilty ? "مذنب" : "بريء"}، بـ ${v.guilty ? v.votes_guilty : v.votes_innocent} مقابل ${v.guilty ? v.votes_innocent : v.votes_guilty}.${v.votes_guilty === v.votes_innocent ? " والتعادل لصالح المتهم." : ""}`;
+    }
+    case "over":
+      return "رُفعت الجلسة. والآن… الحقيقة على الشاشة.";
+    default:
+      return "";
+  }
+}
+
+const SCRIPT_KEY = "al3sh.court.script";
+
+/** «📜 قل الآن»: the judge's line for this phase. Hidden or shown, remembered on this device. */
+function JudgeScript({ state }: { state: CourtState }) {
+  const [on, setOn] = useState(true);
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(SCRIPT_KEY) === "off") setOn(false);
+    } catch {
+      // Private mode: shown.
+    }
+  }, []);
+  const toggle = (next: boolean) => {
+    setOn(next);
+    try {
+      window.localStorage.setItem(SCRIPT_KEY, next ? "on" : "off");
+    } catch {
+      // Private mode: for this visit only.
+    }
+  };
+  const line = judgeLine(state);
+  if (!line) return null;
+  if (!on)
+    return (
+      <button type="button" className="justify-self-start text-[13px] font-semibold text-gold underline-offset-4 hover:underline" onClick={() => toggle(true)}>
+        📜 نص القاضي
+      </button>
+    );
+  return (
+    <div className="grid gap-1 rounded-[16px] border border-gold/40 bg-gold/5 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[12px] font-bold text-gold">📜 قل الآن بصوتك</span>
+        <button type="button" className="text-[12px] text-mist hover:text-ivory" onClick={() => toggle(false)}>
+          إخفاء
+        </button>
+      </div>
+      <p className="text-[16px] leading-7 text-ivory">«{line}»</p>
+    </div>
+  );
+}
+
+/** «↩️ تراجع»: for 10 seconds after «التالي» (court_v8.sql). Counted from when this screen saw it, so clocks need not agree. */
+function useUndoLeft(state: CourtState) {
+  const u = state.undo;
+  const valid = !!u && u.step === state.step && state.phase !== "over";
+  const seen = useRef<{ at: string; local: number } | null>(null);
+  if (valid && u && seen.current?.at !== u.at) {
+    // A step taken long ago (a page opened later) is not offered.
+    const age = Date.now() - Date.parse(u.at);
+    seen.current = { at: u.at, local: age > 15000 || age < -15000 ? 0 : Date.now() };
+  }
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!valid) return;
+    setNow(Date.now());
+    const t = window.setInterval(() => setNow(Date.now()), 500);
+    const stop = window.setTimeout(() => window.clearInterval(t), 11000);
+    return () => {
+      window.clearInterval(t);
+      window.clearTimeout(stop);
+    };
+  }, [valid, u?.at]);
+  if (!valid || !seen.current?.local) return 0;
+  return Math.max(0, Math.ceil((seen.current.local + 10000 - now) / 1000));
+}
+
 /** The judge's tools: the host's, or a player's when the judge was drawn by lot. */
 function JudgeControls({
   state,
@@ -1668,23 +1884,52 @@ function JudgeControls({
   const step = state.step ?? 0;
   const next = steps[step + 1];
   const over = state.phase === "over";
+  const left = useStepLeft(state);
+  const undoLeft = useUndoLeft(state);
+  const matches = state.settings?.evening?.matches ?? 0;
+  const eveningOn = state.flash?.kind === "evening" && Date.now() - Date.parse(state.flash.at) < 15000;
+
+  // A pending objection asks for the judge at once: a buzz, and the panel stays at the top.
+  const buzzed = useRef<string | null>(null);
+  useEffect(() => {
+    const o = state.objection;
+    if (o?.status !== "pending" || !o.at || buzzed.current === o.at) return;
+    buzzed.current = o.at;
+    if (Date.now() - Date.parse(o.at) < 8000) vibrate([200, 80, 200]);
+  }, [state.objection?.at, state.objection?.status]);
+
+  const goNext = () => {
+    if (state.phase === "vote" && !(state.votes_count ?? 0) && !window.confirm("لم يصوّت أحد! إذا أعلنت الحكم الآن يُبرّأ المتهم بلا أصوات، ولا يأخذ أحد نقاط الحكم. تعلنه الآن؟")) return;
+    if (["evidence", "question", "closing"].includes(state.phase ?? "") && left !== null && left > 15 && !window.confirm(`باقي ${mmss(left)} على هذه المرحلة. تنتقل الآن؟`)) return;
+    void run("court_next", { p_step: step });
+  };
+
   return (
     <>
+      {state.objection?.status === "pending" ? (
+        <div className="sticky top-2 z-30">
+          <RulingPanel state={state} busy={busy} onRule={(accept) => run("court_rule", { p_accept: accept })} />
+        </div>
+      ) : null}
+
       <div className="surface grid gap-3 rounded-[24px] p-4">
         <CaseHeader state={state} />
+        <JudgeScript state={state} />
         {!over ? (
-          <Button
-            tone="primary"
-            className="min-h-14 text-[18px]"
-            disabled={busy}
-            onClick={() => {
-              if (state.phase === "vote" && !(state.votes_count ?? 0) && !window.confirm("لم يصوّت أحد! إذا أعلنت الحكم الآن يُبرّأ المتهم بلا أصوات، ولا يأخذ أحد نقاط الحكم. تعلنه الآن؟")) return;
-              void run("court_next", { p_step: step });
-            }}
-          >
+          <Button tone="primary" className="min-h-14 text-[18px]" disabled={busy} onClick={goNext}>
             {nextAction(next)}
             <Glyph name="forward" />
           </Button>
+        ) : null}
+        {undoLeft > 0 ? (
+          <button
+            type="button"
+            disabled={busy}
+            className="mx-auto min-h-10 rounded-full border border-line-strong/70 px-4 text-[14px] font-semibold text-ivory hover:border-gold"
+            onClick={() => void run("court_undo", { p_step: step })}
+          >
+            ↩️ تراجع عن «{stepLabel(steps[step])}» <span className="tabular-nums text-mist">({undoLeft})</span>
+          </button>
         ) : null}
         {state.phase === "vote" ? (
           <p className="text-center text-[14px] text-mist">
@@ -1694,21 +1939,29 @@ function JudgeControls({
           <p className="text-center text-[13px] text-mist">⏩ الانتقال تلقائي حين ينتهي الوقت.</p>
         ) : null}
         <TimerControls state={state} busy={busy} run={run} />
+        {!over ? (
+          <Button tone="quiet" className="min-h-12" disabled={busy} onClick={() => run("court_flash", { p_kind: "order" })}>
+            🔨 نظام في المحكمة!
+          </Button>
+        ) : null}
         <ErrorLine error={error} />
       </div>
 
-      {state.objection?.status === "pending" ? <RulingPanel state={state} busy={busy} onRule={(accept) => run("court_rule", { p_accept: accept })} /> : null}
-
-      {state.phase === "question" ? <QueuePanel state={state} busy={busy} onCall={(id, drop) => run("court_call", { p_player_id: id, p_drop: drop })} /> : null}
-
-      {state.phase === "question" ? (
-        <div className="surface grid gap-3 rounded-[24px] p-4">
-          <p className="text-[15px] font-bold text-ivory">🎙️ من على المنصة؟ <span className="text-[13px] font-normal text-mist">اضغط اسمًا ليظهر على الشاشة، واضغطه مرة ثانية لإنزاله.</span></p>
-          <CastGrid state={state} onPick={(id) => void run("court_stand", { p_player_id: id })} busy={busy} />
-        </div>
-      ) : null}
+      {state.phase === "question" ? <QuestioningPanel state={state} busy={busy} run={run} /> : null}
 
       {!over && state.phase !== "verdict" ? <ReplacePanel state={state} players={players} busy={busy} onReplace={(from, to) => run("court_replace", { p_from: from, p_to: to })} /> : null}
+
+      {!over && matches > 0 ? (
+        <details className="surface rounded-[20px] p-4">
+          <summary className="cursor-pointer text-[15px] font-semibold text-ivory">🌙 ترتيب السهرة</summary>
+          <div className="mt-3 grid gap-3">
+            <EveningBoard state={state} min={1} />
+            <Button tone="quiet" className="min-h-11" disabled={busy} onClick={() => run("court_flash", { p_kind: eveningOn ? "hide" : "evening" })}>
+              {eveningOn ? "أخفِه من الشاشات" : "📺 اعرضه على الشاشات (15 ث)"}
+            </Button>
+          </div>
+        </details>
+      ) : null}
 
       {over && (state.goals ?? []).length ? <GoalsPanel state={state} busy={busy} onToggle={(id, on) => run("court_goal", { p_player_id: id, p_on: on })} /> : null}
 
@@ -1772,7 +2025,7 @@ function RulingPanel({ state, busy, onRule }: { state: CourtState; busy: boolean
   const left = useSecondsLeft(at ? new Date(at + 10000).toISOString() : null);
   if (!state.objection) return null;
   return (
-    <div className="beat grid gap-3 rounded-[24px] border-2 border-wrong bg-[#2b0f1d] p-4 text-center">
+    <div className="beat grid gap-3 rounded-[24px] border-2 border-wrong bg-[#2b0f1d] p-4 text-center shadow-[0_16px_50px_#000a]">
       <p className="font-display text-[22px] font-extrabold text-wrong">
         ✋ اعتراض من {KINDS[state.objection.kind]?.label}: {state.objection.name}
       </p>
@@ -1791,43 +2044,86 @@ function RulingPanel({ state, busy, onRule }: { state: CourtState; busy: boolean
   );
 }
 
-/** The host hands out the turn to ask: the next in line, anyone in the line, or ends the turn. */
-function QueuePanel({ state, busy, onCall }: { state: CourtState; busy: boolean; onCall: (id: string | null, drop: boolean) => Promise<boolean> }) {
+/**
+ * «إدارة الاستجواب»: one card for the questioning. Who is on the stand and who asks (the session
+ * board), the line to ask, the stand itself, and how many turns each player took (court_v8.sql).
+ */
+function QuestioningPanel({ state, busy, run }: { state: CourtState; busy: boolean; run: (fn: string, args?: Record<string, unknown>) => Promise<boolean> }) {
   const queue = state.queue ?? [];
-  const asker = (state.cast ?? []).find((c) => c.player_id === state.asking);
+  const cast = state.cast ?? [];
+  const asker = cast.find((c) => c.player_id === state.asking);
+  const call = (id: string | null, drop: boolean) => run("court_call", { p_player_id: id, p_drop: drop });
+  const asked = state.asked ?? {};
+  const counts = cast.map((c) => ({ id: c.player_id, name: c.player_name, n: asked[c.player_id] ?? 0 })).sort((a, b) => a.n - b.n || a.name.localeCompare(b.name, "ar"));
+  const inQueue = new Set(queue.map((q) => q.player_id));
   return (
     <div className="surface grid gap-3 rounded-[24px] p-4">
-      <p className="text-[15px] font-bold text-ivory">
-        ✋ دور الأسئلة <span className="text-[13px] font-normal text-mist">من يضغط «أبي أسأل» يظهر هنا.</span>
-      </p>
+      <p className="text-[16px] font-bold text-ivory">🎙️ إدارة الاستجواب</p>
+      <SessionBoard state={state} queue={false} />
+
       <div className="flex flex-wrap gap-2">
         {queue.length ? (
-          <Button tone="primary" className="min-h-11" disabled={busy} onClick={() => onCall(queue[0].player_id, false)}>
+          <Button tone="primary" className="min-h-11" disabled={busy} onClick={() => call(queue[0].player_id, false)}>
             الدور لـ {queue[0].name}
           </Button>
         ) : null}
         {asker ? (
-          <Button tone="quiet" className="min-h-11" disabled={busy} onClick={() => onCall(null, false)}>
+          <Button tone="quiet" className="min-h-11" disabled={busy} onClick={() => call(null, false)}>
             انتهى سؤال {asker.player_name}
           </Button>
         ) : null}
+        {!queue.length && !asker ? <p className="text-[13px] text-mist">من يضغط «✋ أبي أسأل» يظهر هنا بالدور.</p> : null}
       </div>
       {queue.length > 1 ? (
         <ul className="grid gap-1.5">
           {queue.slice(1).map((q, i) => (
             <li key={q.player_id} className="flex items-center gap-2 rounded-[14px] bg-deep-2/50 px-3 py-1.5 text-[14px] text-ivory">
               <span className="w-5 text-mist tabular-nums">{i + 2}</span>
-              <span className="min-w-0 flex-1 truncate">{q.name}</span>
-              <button type="button" disabled={busy} className="text-[13px] font-semibold text-gold" onClick={() => onCall(q.player_id, false)}>
+              <span className="min-w-0 flex-1 truncate">
+                {q.name}
+                {!asked[q.player_id] ? <span className="ms-2 text-[12px] text-gold">لم يسأل بعد</span> : null}
+              </span>
+              <button type="button" disabled={busy} className="text-[13px] font-semibold text-gold" onClick={() => call(q.player_id, false)}>
                 أعطه الدور
               </button>
-              <button type="button" disabled={busy} className="px-1 text-mist hover:text-wrong" aria-label={`أخرج ${q.name} من الدور`} onClick={() => onCall(q.player_id, true)}>
+              <button type="button" disabled={busy} className="px-1 text-mist hover:text-wrong" aria-label={`أخرج ${q.name} من الدور`} onClick={() => call(q.player_id, true)}>
                 ✕
               </button>
             </li>
           ))}
         </ul>
       ) : null}
+
+      <div className="grid gap-2 border-t border-line pt-3">
+        <p className="text-[14px] font-bold text-ivory">
+          من على المنصة؟ <span className="text-[13px] font-normal text-mist">اضغط اسمًا ليصعد، ومرة ثانية لينزل.</span>
+        </p>
+        <CastGrid state={state} onPick={(id) => void run("court_stand", { p_player_id: id })} busy={busy} />
+      </div>
+
+      <div className="grid gap-2 border-t border-line pt-3">
+        <p className="text-[14px] font-bold text-ivory">
+          🙋 عدد الأسئلة <span className="text-[13px] font-normal text-mist">أعطِ الدور لمن سأل أقل. اضغط اسمًا لتعطيه الدور.</span>
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {counts.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              disabled={busy || c.id === state.asking}
+              onClick={() => call(c.id, false)}
+              className={cx(
+                "inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-[13px] font-semibold transition",
+                c.id === state.asking ? "border-gold bg-gold/15 text-gold" : c.n === 0 ? "border-gold/50 text-ivory hover:border-gold" : "border-line-strong/70 text-mist hover:text-ivory",
+              )}
+            >
+              {c.name}
+              <span className="tabular-nums">{c.n}</span>
+              {inQueue.has(c.id) ? <span aria-label="في الدور">✋</span> : null}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -2083,6 +2379,8 @@ function CourtSetup({
   }));
   const set = <K extends keyof SetupPrefs>(k: K, val: SetupPrefs[K]) => setP((x) => ({ ...x, [k]: val }));
   const [newEvening, setNewEvening] = useState(false);
+  // After picking a ready preset the details fold under «تخصيص»; opened by hand, they stay open.
+  const [custom, setCustom] = useState<boolean | null>(null);
   const [generating, setGenerating] = useState(false);
   const [draft, setDraft] = useState<Generated | null>(null);
   const [query, setQuery] = useState("");
@@ -2170,6 +2468,7 @@ function CourtSetup({
   };
   const conflict = p.hostPlays && p.judge === "host";
   const preset = PRESETS.find((x) => Object.entries(x.prefs).every(([k, val]) => p[k as keyof SetupPrefs] === val))?.key ?? null;
+  const open = custom ?? !preset;
 
   const categories = [...new Set((cases ?? []).map((x) => x.category).filter((x): x is string => !!x))];
   const q = query.trim();
@@ -2199,7 +2498,10 @@ function CourtSetup({
               key={x.key}
               type="button"
               aria-pressed={preset === x.key}
-              onClick={() => setP((cur) => ({ ...cur, ...x.prefs }))}
+              onClick={() => {
+                setP((cur) => ({ ...cur, ...x.prefs }));
+                setCustom(false);
+              }}
               className={cx(
                 "grid gap-0.5 rounded-[16px] border p-3 text-start transition",
                 preset === x.key ? "border-gold bg-gold/10 shadow-[0_0_0_2px_#ffa53a33]" : "border-line bg-deep-2/50 hover:border-glow",
@@ -2219,6 +2521,7 @@ function CourtSetup({
             { value: "judge", label: "لا يلعب" },
           ]}
         />
+        {open ? (
         <Choice
           label="القاضي (يدير الأسئلة والاعتراضات وينقل الجلسة)"
           value={p.judge}
@@ -2228,7 +2531,8 @@ function CourtSetup({
             { value: "random", label: "لاعب بالقرعة" },
           ]}
         />
-        {p.judge === "random" ? <p className="-mt-1 text-[13px] text-mist">القاضي يُختار بالقرعة، ويدير الجلسة من جواله ولا يأخذ دورًا. وأنت تبقى معك أدوات احتياطية.</p> : null}
+        ) : null}
+        {p.judge === "random" && open ? <p className="-mt-1 text-[13px] text-mist">القاضي يُختار بالقرعة، ويدير الجلسة من جواله ولا يأخذ دورًا. وأنت تبقى معك أدوات احتياطية.</p> : null}
         {conflict ? (
           <div role="alert" className="grid gap-2 rounded-[16px] border border-gold/60 bg-gold/10 p-3">
             <p className="text-[14px] leading-6 text-ivory">
@@ -2244,15 +2548,27 @@ function CourtSetup({
             </div>
           </div>
         ) : null}
-        <Choice
-          label="نوع الجلسة"
-          value={p.quick ? "quick" : "full"}
-          onChange={(x) => set("quick", x === "quick")}
-          options={[
-            { value: "full", label: "كاملة: جولتا أدلة" },
-            { value: "quick", label: "سريعة: جولة واحدة" },
-          ]}
-        />
+        {open ? (
+          <Choice
+            label="نوع الجلسة"
+            value={p.quick ? "quick" : "full"}
+            onChange={(x) => set("quick", x === "quick")}
+            options={[
+              { value: "full", label: "كاملة: جولتا أدلة" },
+              { value: "quick", label: "سريعة: جولة واحدة" },
+            ]}
+          />
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-[14px] border border-line bg-deep-2/40 p-3">
+            <p className="text-[13px] leading-6 text-mist">
+              {p.judge === "random" ? "قاضٍ بالقرعة" : "القاضي: المضيف"} · {p.quick ? "جولة واحدة" : "جولتا أدلة"} · {p.auto ? "انتقال تلقائي" : "القاضي ينقل الجلسة"}
+              {p.escalate ? " · منصة تلقائية" : ""}
+            </p>
+            <button type="button" className="text-[14px] font-semibold text-gold underline-offset-4 hover:underline" onClick={() => setCustom(true)}>
+              ⚙️ تخصيص
+            </button>
+          </div>
+        )}
         <p className="rounded-[14px] bg-deep-2/60 p-3 text-center text-[15px] font-bold text-gold">⏱️ المدة المتوقعة: قرابة {minutes} دقيقة</p>
         {eveningMatches > 0 ? (
           <label className="flex items-center gap-2 text-[14px] text-ivory">
@@ -2339,6 +2655,7 @@ function CourtSetup({
         </ul>
       </div>
 
+      {open ? (
       <div className={cx("surface grid gap-4 rounded-[24px] p-5")}>
         <h2 className="text-[18px] leading-7">المؤقتات {p.quick ? <span className="text-[13px] font-normal text-mist">(السريعة تثبّتها: استجواب دقيقتان، مرافعة 30 ث، تصويت 30 ث)</span> : null}</h2>
         {p.quick ? null : (
@@ -2395,7 +2712,13 @@ function CourtSetup({
             <p className="text-[13px] text-mist">هذه الإعدادات تحتاج ملف court_v6.sql. وبدونه تعمل الجلسة بالقيم المعتادة.</p>
           </div>
         </details>
+        {preset ? (
+          <button type="button" className="justify-self-start text-[13px] text-mist underline-offset-4 hover:text-ivory hover:underline" onClick={() => setCustom(false)}>
+            طيّ الإعدادات
+          </button>
+        ) : null}
       </div>
+      ) : null}
 
       <div className="sticky bottom-0 z-20 -mx-4 grid gap-2 border-t border-line bg-night/90 px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] backdrop-blur sm:mx-0 sm:rounded-[20px] sm:border">
         <ErrorLine error={error} />
@@ -2528,7 +2851,7 @@ function JudgeView({ roomId, state, players, reload }: { roomId: string; state: 
     <section className="grid gap-4">
       <p className="rounded-[18px] border border-gold/50 bg-gold/10 p-3 text-center text-[17px] font-extrabold text-gold">⚖️ أنت القاضي: تدير الجلسة ولا تلعب دورًا</p>
       <JudgeControls state={state} players={players} run={run} busy={busy} error={error} />
-      <Spectator state={state} />
+      <Spectator state={state} judge />
     </section>
   );
 }
@@ -2653,6 +2976,7 @@ export function CourtTv({ roomId }: { roomId: string }) {
         <VoiceToggle on={voice} onChange={toggleVoice} />
       </CaseHeader>
       <ObjectionFlash state={state} big />
+      <CourtFlash state={state} big />
       <PresentedFlash state={state} big />
       {p === "intro" ? (
         <>
