@@ -13,3 +13,4 @@ screenshots/
 .grok/
 coverage/
 supabase/bundle.sql
+__pycache__/
