@@ -1,4 +1,5 @@
-/** دليل المرحلة × الدور للعبة المحكمة + أسئلة مقترحة. */
+/** دليل المرحلة × الدور للعبة المحكمة + أسئلة مقترحة. النصوص الكاملة في court-guide.ts. */
+import { ROLE_GUIDES, type GuidePhase } from "@/lib/court-guide";
 
 export type CourtPhaseKey =
   | "intro"
@@ -37,68 +38,13 @@ export const PHASE_LABELS: Record<CourtPhaseKey, string> = {
   over: "الحقيقة",
 };
 
-const GUIDE: Record<CourtRoleKey, Partial<Record<CourtPhaseKey, string>>> = {
-  accused: {
-    intro: "استمع للقصة. حضّر دفاعك دون كشف ما لا يلزم.",
-    evidence: "راقب الأدلة. سجّل ما يضعف التهمة أو يدعم براءتك.",
-    question: "أجب بوضوح. لا تتطوع بمعلومات تضرّك بلا داعٍ. التزم بقواعد الإجابة.",
-    closing: "استمع للمرافعات. جهّز جملة أخيرة قصيرة إن سُمح لك.",
-    vote: "المتهم لا يصوّت. انتظر الحكم.",
-    verdict: "انتظر إعلان الحكم.",
-    over: "ستُكشف الحقيقة وبطاقة دورك.",
-  },
-  prosecutor: {
-    intro: "افهم القصة. حدّد نقطة اتهام واضحة مرتبطة بدليل.",
-    evidence: "اربط كل دليل بالاتهام. حضّر أسئلة قصيرة للمتهم والشهود.",
-    question: "اسأل مباشرة. استخدم الاعتراض عند التضليل أو الخروج عن الموضوع (العدد في زر الاعتراض).",
-    closing: "لخّص الأدلة في أقل من دقيقة. اطلب الإدانة بثقة.",
-    vote: "صوّت مذنب إن اقتنعت بالأدلة.",
-    verdict: "انتظر نتيجة التصويت.",
-    over: "راجع إن أصاب الحكم الحقيقة.",
-  },
-  lawyer: {
-    intro: "ابحث عن ثغرات القصة والشك المعقول منذ البداية.",
-    evidence: "ارصد تناقض الأوقات والروايات. كل ثغرة سلاح في المرافعة.",
-    question: "اضغط على التناقضات. اعتراض عند الافتراض غير المثبت أو الضغط غير العادل (العدد في زر الاعتراض).",
-    closing: "ركّز على الشك المعقول. اطلب البراءة بجمل قصيرة قوية.",
-    vote: "صوّت بريء إن بقي شك معقول أو كان ذلك هدف دورك.",
-    verdict: "انتظر الحكم.",
-    over: "ستُكشف الحقيقة ونجاح دفاعك.",
-  },
-  detective: {
-    intro: "استمع كمن يبني خطًا زمنيًا لا قصة عاطفية.",
-    evidence: "رتّب الأدلة زمنيًا. أين الفجوة؟ أي دليل يعتمد على شهادة فقط؟",
-    question: "اسأل لتأكيد أو نفي التسلسل. لا تقاطع بلا هدف؛ سؤال واحد واضح أفضل من خمسة مشتتة.",
-    closing: "لخّص ما ثبت وما بقي غامضًا بصوت هادئ.",
-    vote: "صوّت حسب ما تدعمه الأدلة لا الانطباع الأول.",
-    verdict: "انتظر الحكم.",
-    over: "قارن استنتاجك بالحقيقة.",
-  },
-  witness: {
-    intro: "راجع معلومتك السرية فقط. لا تشاركها قبل السؤال.",
-    evidence: "استمع. لا تكشف سرك أثناء عرض الأدلة.",
-    question: "أجب عمّا رأيت أو سمعت فقط. «لا أعلم» أفضل من الاختلاق.",
-    closing: "استمع. تدخلك محدود الآن.",
-    vote: "صوّت بصدق حسب ما سمعت في الجلسة.",
-    verdict: "انتظر الحكم.",
-    over: "ستُكشف البطاقات والحقيقة.",
-  },
-  juror: {
-    intro: "استمع بدون انحياز مسبق.",
-    evidence: "دوّن ذهنيًا ما يقوي الإدانة أو البراءة.",
-    question: "لك سؤال ذهبي واحد — استخدمه بحكمة على من يملك معلومة حاسمة.",
-    closing: "وزّن حجج الطرفين بهدوء.",
-    vote: "صوّت مذنب أو بريء. صوتك الصحيح = 100 نقطة.",
-    verdict: "انتظر إعلان الحكم.",
-    over: "راجع قرارك مقابل الحقيقة.",
-  },
-};
-
+/** One line for the current phase: the first step of the role's guide (court-guide.ts). */
 export function phaseGuide(role: CourtRoleKey | string | undefined, phase: CourtPhaseKey | string | undefined): string {
-  if (!role || !phase) return "تابع الشاشة وتعليمات المضيف.";
-  const byRole = GUIDE[role as CourtRoleKey];
-  if (!byRole) return "تابع المرحلة الحالية على الشاشة.";
-  return byRole[phase as CourtPhaseKey] ?? "تابع المرحلة الحالية على الشاشة.";
+  if (!role || !phase) return "تابع الشاشة وتعليمات القاضي.";
+  const doc = ROLE_GUIDES[role as CourtRoleKey];
+  if (!doc) return "تابع المرحلة الحالية على الشاشة.";
+  if (phase === "intro") return doc.first[0];
+  return doc.phases[phase as GuidePhase]?.[0] ?? "تابع المرحلة الحالية على الشاشة.";
 }
 
 export function phaseIndex(phase: CourtPhaseKey | string | undefined): number {
