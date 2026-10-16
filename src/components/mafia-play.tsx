@@ -46,6 +46,9 @@ const MAFIA_HOST_ERRORS: Record<string, string> = {
   NOT_YET: "لم ينتهِ وقت التصويت بعد.",
   TOO_MANY_ROLES: "الأدوار أكثر من اللاعبين. قلّل الأدوار الإضافية أو عدد المافيا.",
   NOT_OVER: "المباراة لم تنتهِ بعد.",
+  NOMINEES: "اختر مرشحَين أو ثلاثة.",
+  BAD_COUNTS: "تحقق من الأرقام.",
+  NOT_IN_RUNOFF: "الإعادة بين المتعادلين فقط.",
 };
 
 /** mafia_progress(): votes for everyone, night actions for the host only (mafia_v2.sql). */
@@ -237,6 +240,87 @@ function SecretAbility({ children, has }: { children: ReactNode; has: boolean })
 }
 
 /**
+ * The night, the same on every phone: a neutral button that opens on a long press. Inside, each
+ * role finds its own choice (citizens pick whom they suspect), so a glance at a phone or the sound
+ * of tapping gives nothing away. Closes by itself after 30 seconds, or when the phone is locked.
+ */
+function NightPanel({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const timer = useRef<number | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const t = window.setTimeout(() => setOpen(false), 30000);
+    const hide = () => setOpen(false);
+    document.addEventListener("visibilitychange", hide);
+    return () => {
+      window.clearTimeout(t);
+      document.removeEventListener("visibilitychange", hide);
+    };
+  }, [open]);
+  const start = () => {
+    timer.current = window.setTimeout(() => setOpen(true), 500);
+  };
+  const cancel = () => {
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = null;
+  };
+  if (!open)
+    return (
+      <button
+        type="button"
+        onPointerDown={start}
+        onPointerUp={cancel}
+        onPointerLeave={cancel}
+        onPointerCancel={cancel}
+        onContextMenu={(e) => e.preventDefault()}
+        onKeyDown={(e) => (e.key === " " || e.key === "Enter") && setOpen(true)}
+        className="mt-4 grid min-h-24 w-full touch-none select-none place-items-center gap-1 rounded-[22px] border-2 border-dashed border-violet-text/50 bg-violet-fill/10 p-4 [-webkit-touch-callout:none]"
+      >
+        <span aria-hidden="true" className="text-[28px] leading-none">
+          🌙
+        </span>
+        <span className="text-[15px] font-extrabold text-ivory">لوحتك الليلية</span>
+        <span className="text-[12px] text-muted">المس مطوّلًا لتفتحها. كل اللاعبين يختارون الليلة.</span>
+      </button>
+    );
+  return (
+    <div className="mt-4 rounded-[22px] border-2 border-gold/50 bg-night/70 p-4">
+      {children}
+      <button type="button" onClick={() => setOpen(false)} className="mt-3 min-h-10 text-xs text-muted underline">
+        أخفِ اللوحة
+      </button>
+    </div>
+  );
+}
+
+/** Hidden until held: for anything a neighbour must not read (the roles a ghost sees). */
+function HoldToSee({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const hide = () => setOpen(false);
+    document.addEventListener("visibilitychange", hide);
+    return () => document.removeEventListener("visibilitychange", hide);
+  }, []);
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-pressed={open}
+      onPointerDown={() => setOpen(true)}
+      onPointerUp={() => setOpen(false)}
+      onPointerLeave={() => setOpen(false)}
+      onPointerCancel={() => setOpen(false)}
+      onContextMenu={(e) => e.preventDefault()}
+      onKeyDown={(e) => (e.key === " " || e.key === "Enter") && setOpen(true)}
+      onKeyUp={() => setOpen(false)}
+      className="touch-none select-none [-webkit-touch-callout:none]"
+    >
+      {open ? children : <p className="rounded-xl border border-dashed border-line px-3 py-3 text-center text-sm text-muted">{label}</p>}
+    </div>
+  );
+}
+
+/**
  * The narrator's screen: setup (host only), each phase's controls, the roles of everyone
  * and who voted for whom (narrator only). Used by the host, or by the player the draw
  * picked as narrator.
@@ -254,7 +338,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
   // Setup
   const [mafiaCount, setMafiaCount] = useState(0);
   const [reveal, setReveal] = useState(false);
-  const [daySeconds, setDaySeconds] = useState(120);
+  const [daySeconds, setDaySeconds] = useState(0);
   const [jester, setJester] = useState(false);
   const [mayor, setMayor] = useState(false);
   const [bodyguard, setBodyguard] = useState(false);
@@ -265,7 +349,12 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
   const [nightSeconds, setNightSeconds] = useState(60);
   const [randomNarrator, setRandomNarrator] = useState(0);
   const [lovers, setLovers] = useState(false);
-  const [deadSee, setDeadSee] = useState(true);
+  const [deadSee, setDeadSee] = useState(false);
+  const [nominate, setNominate] = useState(false);
+  const [voteMode, setVoteMode] = useState<VoteMode>("phone");
+  const [noFirstKill, setNoFirstKill] = useState(false);
+  const [preset, setPreset] = useState<Preset | null>(null);
+  const [suspicions, setSuspicions] = useState<Suspicion[]>([]);
   const [disguised, setDisguised] = useState(false);
   const [nightLive, setNightLive] = useState<NightLive[]>([]);
   const [roles, setRoles] = useState<NarratorRole[]>([]);
@@ -300,7 +389,10 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
   };
   useLivePoll(`mafia-narrator-${roomId}`, [{ table: "room_game_state", filter: `room_id=eq.${roomId}` }, { table: "room_players", filter: `room_id=eq.${roomId}` }], loadAll);
 
-  async function step(fn: "mafia_start" | "mafia_resolve_night" | "mafia_open_vote" | "mafia_close_vote" | "mafia_reset" | "mafia_vote_timeout", args: Record<string, unknown> = {}) {
+  async function step(
+    fn: "mafia_start" | "mafia_resolve_night" | "mafia_open_vote" | "mafia_close_vote" | "mafia_reset" | "mafia_vote_timeout" | "mafia_nominate" | "mafia_oral_result",
+    args: Record<string, unknown> = {},
+  ) {
     if (!supabase || busy) return;
     setBusy(true);
     setError(null);
@@ -322,6 +414,10 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
   const alive = rows.filter((p) => p.alive).length;
   const runoff = Array.isArray(state.runoff) ? state.runoff : null;
   const recap = useMafiaRecap(roomId, over);
+  useEffect(() => {
+    if (!supabase || !over) return;
+    void supabase.rpc("mafia_suspicions", { p_room_id: roomId }).then(({ data }) => setSuspicions(Array.isArray(data) ? (data as Suspicion[]) : []));
+  }, [roomId, over]);
 
   // Who has chosen or voted so far: every 2.5 seconds, during the night and the vote only.
   useEffect(() => {
@@ -336,6 +432,11 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
       if (phase === "night")
         void client.rpc("mafia_night_live", { p_room_id: roomId }).then(({ data }) => {
           if (live) setNightLive(Array.isArray(data) ? (data as NightLive[]) : []);
+        });
+      // Who voted for whom, as it happens (mafia_v9.sql).
+      if (phase === "vote")
+        void client.rpc("mafia_vote_details", { p_room_id: roomId }).then(({ data }) => {
+          if (live && Array.isArray(data)) setDetails(data as typeof details);
         });
     };
     tick();
@@ -354,7 +455,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
     prefilled.current = true;
     setMafiaCount(last.auto_mafia === false ? (last.mafia ?? 0) : 0);
     setReveal(!!last.reveal_roles);
-    setDaySeconds(last.day_seconds ?? 120);
+    setDaySeconds(last.day_seconds ?? 0);
     setJester(!!last.jester);
     setMayor(!!last.mayor);
     setBodyguard(!!last.bodyguard);
@@ -365,8 +466,12 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
     setNightSeconds(last.night_seconds ?? 0);
     setRandomNarrator(last.narrator === "random" ? 1 : 0);
     setLovers(!!last.lovers);
-    setDeadSee(last.dead_see_roles !== false);
+    setDeadSee(last.dead_see_roles === true);
     setDisguised(!!last.disguised);
+    setNominate(!!last.nominate);
+    setVoteMode(last.vote_mode === "pick" || last.vote_mode === "count" ? last.vote_mode : "phone");
+    setNoFirstKill(!!last.no_first_kill);
+    setPreset(last.preset ?? null);
   }, [phase, state.last_settings]);
   useEffect(() => {
     if (phase !== "") prefilled.current = false;
@@ -466,6 +571,54 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, voteLeft, stepKey]);
 
+  /** One tap sets everything for a kind of evening; «إعدادات متقدمة» still changes any of it. */
+  function applyPreset(k: Preset) {
+    setPreset(k);
+    setMafiaCount(0);
+    setReveal(false);
+    setDaySeconds(0);
+    setDeadSee(false);
+    setVoteMode("phone");
+    setNoFirstKill(false);
+    const roles = { jester: false, mayor: false, bodyguard: false, sniper: false, seer: false, spy: false, lovers: false, disguised: false };
+    if (k === "quick") {
+      setNightSeconds(60);
+      setVoteSeconds(45);
+      setNominate(false);
+    } else if (k === "beginners") {
+      setNightSeconds(0);
+      setVoteSeconds(0);
+      setNominate(false);
+    } else {
+      setNightSeconds(90);
+      setVoteSeconds(0);
+      setNominate(true);
+      // As many extra roles as the room fits, in this order.
+      const order: Array<keyof typeof roles> = ["bodyguard", "mayor", "jester", "sniper", "seer", "spy", "disguised", "lovers"];
+      const mafia = guests >= 10 ? 3 : guests >= 7 ? 2 : 1;
+      let special = 2;
+      for (const r of order) {
+        const cost = r === "lovers" ? 0 : 1;
+        const spyTooMany = r === "spy" && (mafia + 1) * 2 >= guests;
+        if (mafia + special + cost < guests && !spyTooMany) {
+          roles[r] = true;
+          special += cost;
+        }
+      }
+    }
+    setJester(roles.jester);
+    setMayor(roles.mayor);
+    setBodyguard(roles.bodyguard);
+    setSniper(roles.sniper);
+    setSeer(roles.seer);
+    setSpy(roles.spy);
+    setLovers(roles.lovers);
+    setDisguised(roles.disguised);
+  }
+
+  const settingsNow = (state.settings ?? {}) as { vote_mode?: string; nominate?: boolean; no_first_kill?: boolean; spy?: boolean; bodyguard?: boolean };
+  const oralMode = settingsNow.vote_mode === "pick" || settingsNow.vote_mode === "count" ? (settingsNow.vote_mode as "pick" | "count") : null;
+
   const headline =
     phase === "" ? "جاهزون للبدء؟"
     : phase === "night" ? `🌙 ليل الجولة ${round}`
@@ -491,7 +644,8 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
         {!isHost ? <p className="mt-1 text-xs font-bold text-violet-text">🎙️ أنت الراوي: لا تلعب، وتدير الجولات من هنا.</p> : null}
         {state.last_result ? <p className="mt-3 text-sm font-bold text-ivory">{state.last_result}</p> : null}
 
-        {narratorLine(state, rows) ? (
+        {phase === "night" ? <NightSteps state={state} /> : null}
+        {phase !== "night" && narratorLine(state, rows) ? (
           <div className="mt-4 rounded-2xl border border-violet-text/40 bg-violet-fill/10 p-3 text-start">
             <p className="text-xs font-bold text-violet-text">🎙️ اقرأ بصوت عالٍ</p>
             <p className="mt-1 text-[15px] leading-7 text-ivory">{narratorLine(state, rows)}</p>
@@ -504,6 +658,24 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
             <p className="text-center text-sm text-muted">
               يلعب {guests} {guests > 2 && guests < 11 ? "لاعبين" : "لاعبًا"}، والراوي لا يلعب.
             </p>
+            <div className="grid gap-1.5">
+              <span className="text-sm font-bold text-ivory">جلسة جاهزة</span>
+              <div className="grid grid-cols-3 gap-2">
+                {PRESETS.map((x) => (
+                  <button
+                    key={x.key}
+                    type="button"
+                    aria-pressed={preset === x.key}
+                    onClick={() => applyPreset(x.key)}
+                    className={cx("grid min-h-20 content-center gap-0.5 rounded-2xl border p-2 text-center", preset === x.key ? "border-gold bg-gold/10" : "border-line bg-deep-2/50")}
+                  >
+                    <span className="text-[20px] leading-none">{x.icon}</span>
+                    <b className="text-[14px] text-ivory">{x.label}</b>
+                    <span className="text-[11px] leading-4 text-muted">{x.text}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
             <MafiaChoice
               label="من الراوي؟"
               value={randomNarrator}
@@ -516,6 +688,33 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
             {randomNarrator ? (
               <p className="-mt-2 text-xs text-muted">يُختار الراوي عشوائيًا من الجميع (والمضيف معهم)، ويلعب المضيف مثل الباقين إن لم يقع عليه الاختيار. يظهر للراوي أزرار التحكم في جواله.</p>
             ) : null}
+            <details className="group grid gap-4 rounded-2xl border border-line p-3" open={preset === null}>
+            <summary className="cursor-pointer text-sm font-bold text-ivory">⚙️ إعدادات متقدمة</summary>
+            <div className="mt-3 grid gap-4">
+            <MafiaChoice
+              label="طريقة التصويت"
+              value={voteMode === "phone" ? 0 : voteMode === "pick" ? 1 : 2}
+              onChange={(v) => setVoteMode(v === 1 ? "pick" : v === 2 ? "count" : "phone")}
+              options={[
+                { value: 0, label: "بالجوال" },
+                { value: 1, label: "شفوي: الراوي يختار الخارج" },
+                { value: 2, label: "شفوي: الراوي يكتب الأصوات" },
+              ]}
+            />
+            <label className="flex items-start gap-3 rounded-2xl border border-line bg-deep-2/50 p-3">
+              <input type="checkbox" checked={nominate} onChange={(e) => setNominate(e.target.checked)} className="mt-1 size-5 accent-[var(--color-gold)]" />
+              <span>
+                <b className="text-ivory">🗳️ ترشيح قبل التصويت</b>
+                <span className="block text-xs text-muted">الراوي يختار مرشحَين أو ثلاثة حسب النقاش، والتصويت عليهم فقط.</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-3 rounded-2xl border border-line bg-deep-2/50 p-3">
+              <input type="checkbox" checked={noFirstKill} onChange={(e) => setNoFirstKill(e.target.checked)} className="mt-1 size-5 accent-[var(--color-gold)]" />
+              <span>
+                <b className="text-ivory">🌙 الليلة الأولى بلا قتل</b>
+                <span className="block text-xs text-muted">ليلة تعارف: المافيا تتعرف على بعضها ولا تختار ضحية.</span>
+              </span>
+            </label>
             <MafiaChoice
               label="عدد المافيا"
               value={mafiaCount <= maxMafia ? mafiaCount : 0}
@@ -527,7 +726,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
               value={daySeconds}
               onChange={setDaySeconds}
               options={[
-                { value: 0, label: "بدون" },
+                { value: 0, label: "بدون (الراوي يفتح التصويت)" },
                 { value: 60, label: "دقيقة" },
                 { value: 120, label: "دقيقتان" },
                 { value: 180, label: "3 دقائق" },
@@ -560,7 +759,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
                 { value: 120, label: "دقيقتان" },
               ]}
             />
-            {voteSeconds ? <p className="-mt-2 text-xs text-muted">إذا انتهى الوقت ولم يصوّت أحدهم، يصوّت النظام عنه عشوائيًا وتظهر النتيجة مباشرة.</p> : null}
+            {voteSeconds ? <p className="-mt-2 text-xs text-muted">إذا انتهى الوقت، من لم يصوّت يُحسب ممتنعًا وتظهر النتيجة مباشرة.</p> : null}
             <label className="flex items-start gap-3 rounded-2xl border border-line bg-deep-2/50 p-3">
               <input type="checkbox" checked={reveal} onChange={(e) => setReveal(e.target.checked)} className="mt-1 size-5 accent-[var(--color-gold)]" />
               <span>
@@ -593,9 +792,11 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
               <input type="checkbox" checked={deadSee} onChange={(e) => setDeadSee(e.target.checked)} className="mt-1 size-5 accent-[var(--color-gold)]" />
               <span>
                 <b className="text-ivory">👻 المقتولون يرون الأدوار</b>
-                <span className="block text-xs text-muted">من يخرج يتابع اللعبة ويرى أدوار الجميع في جواله، بشرط ألا يتكلم أو يلمّح.</span>
+                <span className="block text-xs text-muted">من يخرج يتابع اللعبة ويرى أدوار الجميع في جواله (بلمس مطوّل)، بشرط ألا يتكلم أو يلمّح.</span>
               </span>
             </label>
+            </div>
+            </details>
             <p className={cx("text-center text-xs", fits ? "text-muted" : "text-gold")}>
               {guests < 5
                 ? "تحتاجون 5 لاعبين على الأقل غير الراوي."
@@ -695,6 +896,19 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
           </details>
         ) : null}
 
+        {phase === "day" && !oralMode && settingsNow.nominate ? (
+          <Nominate rows={rows} busy={busy} onNominate={(ids) => step("mafia_nominate", { p_nominees: ids })} onAll={() => step("mafia_open_vote")} />
+        ) : null}
+        {oralMode && (phase === "day" || phase === "vote") ? (
+          <OralVote
+            mode={oralMode}
+            rows={rows.filter((p) => p.alive && (!runoff || runoff.includes(p.player_id)))}
+            nominate={!!settingsNow.nominate && !runoff}
+            busy={busy}
+            onSubmit={(counts, pick) => step("mafia_oral_result", { p_counts: counts, p_pick: pick })}
+          />
+        ) : null}
+
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           {phase === "" && isHost ? (
             <Button
@@ -718,6 +932,10 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
                     lovers,
                     disguised,
                     dead_see_roles: deadSee,
+                    nominate,
+                    vote_mode: voteMode,
+                    no_first_kill: noFirstKill,
+                    preset,
                   },
                 })
               }
@@ -731,12 +949,12 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
               الفجر: احسم الليل
             </Button>
           ) : null}
-          {phase === "day" ? (
+          {phase === "day" && !oralMode && !settingsNow.nominate ? (
             <Button type="button" tone="primary" onClick={() => step("mafia_open_vote")} disabled={busy}>
               افتح التصويت
             </Button>
           ) : null}
-          {phase === "vote" ? (
+          {phase === "vote" && !oralMode ? (
             <Button type="button" tone="primary" onClick={() => confirmMissing("vote") && step("mafia_close_vote")} disabled={busy}>
               أغلق التصويت
             </Button>
@@ -747,6 +965,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
           <div className="mt-5 grid gap-4">
             <p className="text-2xl font-extrabold text-ivory">{WINNERS[state.winner ?? ""] ?? "انتهت اللعبة"}</p>
             <MafiaSummary state={state} rows={rows} />
+            <SuspicionsView list={suspicions} />
             <MafiaRecapView recap={recap} />
             <MafiaShare state={state} rows={rows} recap={recap} />
             {isHost ? (
@@ -790,6 +1009,204 @@ function MafiaChoice({ label, value, options, onChange }: { label: string; value
   );
 }
 
+type VoteMode = "phone" | "pick" | "count";
+type Preset = "quick" | "diwaniya" | "beginners";
+type Suspicion = { name: string; times: number; role: string | null };
+
+const PRESETS: Array<{ key: Preset; icon: string; label: string; text: string }> = [
+  { key: "quick", icon: "⚡", label: "سريعة", text: "بلا أدوار إضافية، ومؤقتات قصيرة" },
+  { key: "diwaniya", icon: "🏠", label: "ديوانية كاملة", text: "كل الأدوار، بلا مؤقت للنقاش، مع ترشيح" },
+  { key: "beginners", icon: "🌱", label: "مبتدئين", text: "مافيا وطبيب ومحقق فقط" },
+];
+
+/** The night, one call at a time: the narrator reads a line, waits, then taps «التالي». */
+function NightSteps({ state }: { state: MafiaState }) {
+  const s = (state.settings ?? {}) as { spy?: boolean; bodyguard?: boolean; no_first_kill?: boolean };
+  const round = state.round ?? 1;
+  const firstSafe = !!s.no_first_kill && round === 1;
+  const steps = [
+    round > 1 ? "حلّ الليل من جديد… أغمضوا أعينكم جميعًا. كل واحد يفتح لوحته الليلية من جواله." : "حلّ الليل… أغمضوا أعينكم جميعًا. كل واحد يفتح لوحته الليلية من جواله.",
+    firstSafe
+      ? `المافيا${s.spy ? " والجاسوس" : ""}: افتحوا أعينكم وتعرّفوا على بعض… لا ضحية الليلة. أغمضوا.`
+      : s.spy && round <= 1
+        ? "المافيا والجاسوس: افتحوا أعينكم وتعرّفوا على بعض. المافيا تختار ضحيتها من الجوال… ثم أغمضوا."
+        : "المافيا: اختاروا ضحيتكم من الجوال بهدوء… ثم أغمضوا.",
+    "الطبيب: من تحمي الليلة؟",
+    "المحقق: من تشكّ فيه؟",
+    ...(s.bodyguard ? ["الحارس: من تحرس؟"] : []),
+    ...(s.spy ? ["الجاسوس: إن حان دورك (كل جولتين) تحقّق من لاعب."] : []),
+    "والباقون: اختاروا من تشكّون فيه، ثم ضعوا جوالاتكم.",
+  ];
+  const [i, setI] = useState(0);
+  useEffect(() => setI(0), [round]);
+  return (
+    <div className="mt-4 rounded-2xl border border-violet-text/40 bg-violet-fill/10 p-3 text-start">
+      <p className="text-xs font-bold text-violet-text">
+        🎙️ اقرأ بصوت عالٍ · {i + 1} من {steps.length}
+      </p>
+      <p className="mt-1 min-h-14 text-[17px] font-bold leading-8 text-ivory">{steps[i]}</p>
+      <div className="mt-2 grid grid-cols-[auto_1fr] gap-2">
+        <Button type="button" tone="quiet" className="min-h-11 px-4" disabled={i === 0} onClick={() => setI(i - 1)}>
+          السابق
+        </Button>
+        <Button type="button" tone="secondary" className="min-h-11" disabled={i === steps.length - 1} onClick={() => setI(i + 1)}>
+          التالي
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Nominations: the narrator picks 2 or 3 players from the discussion; the vote is on them only. */
+function Nominate({ rows, busy, onNominate, onAll }: { rows: MafiaPlayerRow[]; busy: boolean; onNominate: (ids: string[]) => void; onAll: () => void }) {
+  const [picked, setPicked] = useState<string[]>([]);
+  return (
+    <div className="mx-auto mt-4 grid max-w-md gap-2 rounded-2xl border border-gold/40 bg-gold/5 p-3 text-start">
+      <p className="text-sm font-bold text-ivory">🗳️ المرشحون ({picked.length} من 3)</p>
+      <p className="text-xs text-muted">اختر مرشحَين أو ثلاثة حسب النقاش، ثم افتح التصويت عليهم.</p>
+      <div className="flex flex-wrap gap-2">
+        {rows
+          .filter((p) => p.alive)
+          .map((p) => {
+            const on = picked.includes(p.player_id);
+            return (
+              <button
+                key={p.player_id}
+                type="button"
+                aria-pressed={on}
+                disabled={!on && picked.length >= 3}
+                onClick={() => setPicked(on ? picked.filter((x) => x !== p.player_id) : [...picked, p.player_id])}
+                className={cx("min-h-11 rounded-full border px-4 text-sm font-bold disabled:opacity-40", on ? "border-gold bg-gold/15 text-gold" : "border-line text-ivory")}
+              >
+                {p.player_name}
+              </button>
+            );
+          })}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" tone="primary" disabled={busy || picked.length < 2} onClick={() => onNominate(picked)}>
+          افتح التصويت على المرشحين
+        </Button>
+        <Button type="button" tone="quiet" disabled={busy} onClick={onAll}>
+          تصويت على الكل
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** The oral vote: hands go up, and the narrator records who goes out, or the count for each player. */
+function OralVote({ mode, rows, nominate, busy, onSubmit }: { mode: "pick" | "count"; rows: MafiaPlayerRow[]; nominate: boolean; busy: boolean; onSubmit: (counts: Record<string, number>, pick: boolean) => void }) {
+  const [pick, setPick] = useState<string | null>(null);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [nominees, setNominees] = useState<string[]>([]);
+  const list = nominate && nominees.length >= 2 ? rows.filter((p) => nominees.includes(p.player_id)) : rows;
+  const total = (Object.values(counts) as number[]).reduce((a, b) => a + b, 0);
+  return (
+    <div className="mx-auto mt-4 grid max-w-md gap-3 rounded-2xl border border-gold/40 bg-gold/5 p-3 text-start">
+      <p className="text-sm font-bold text-ivory">✋ التصويت برفع اليد</p>
+      {nominate ? (
+        <div className="grid gap-1.5">
+          <p className="text-xs text-muted">المرشحون (اختياري، 2 أو 3):</p>
+          <div className="flex flex-wrap gap-1.5">
+            {rows.map((p) => {
+              const on = nominees.includes(p.player_id);
+              return (
+                <button
+                  key={p.player_id}
+                  type="button"
+                  aria-pressed={on}
+                  disabled={!on && nominees.length >= 3}
+                  onClick={() => setNominees(on ? nominees.filter((x) => x !== p.player_id) : [...nominees, p.player_id])}
+                  className={cx("min-h-10 rounded-full border px-3 text-[13px] font-bold disabled:opacity-40", on ? "border-gold bg-gold/15 text-gold" : "border-line text-mist")}
+                >
+                  {p.player_name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+      {mode === "pick" ? (
+        <>
+          <p className="text-xs text-muted">من خرج بالتصويت؟</p>
+          <div className="flex flex-wrap gap-2">
+            {list.map((p) => (
+              <button
+                key={p.player_id}
+                type="button"
+                aria-pressed={pick === p.player_id}
+                onClick={() => setPick(pick === p.player_id ? null : p.player_id)}
+                className={cx("min-h-11 rounded-full border px-4 text-sm font-bold", pick === p.player_id ? "border-wrong bg-wrong-fill/20 text-ivory" : "border-line text-ivory")}
+              >
+                {p.is_mayor ? "👑 " : ""}
+                {p.player_name}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" tone="primary" disabled={busy || !pick} onClick={() => pick && onSubmit({ [pick]: 1 }, true)}>
+              أعلن خروجه
+            </Button>
+            <Button type="button" tone="quiet" disabled={busy} onClick={() => window.confirm("لا إقصاء اليوم؟") && onSubmit({}, true)}>
+              لا إقصاء
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-xs text-muted">عدد الأيدي لكل لاعب (صوت العمدة بصوتين). التعادل يعيد التصويت بين المتعادلين.</p>
+          <ul className="grid gap-1.5">
+            {list.map((p) => (
+              <li key={p.player_id} className="flex items-center gap-2 rounded-xl bg-deep-2/60 px-3 py-1.5">
+                <span className="min-w-0 flex-1 truncate text-sm font-bold text-ivory">
+                  {p.is_mayor ? "👑 " : ""}
+                  {p.player_name}
+                </span>
+                <button type="button" aria-label={`أنقص ${p.player_name}`} className="grid size-10 place-items-center rounded-full border border-line text-ivory" onClick={() => setCounts({ ...counts, [p.player_id]: Math.max(0, (counts[p.player_id] ?? 0) - 1) })}>
+                  −
+                </button>
+                <span dir="ltr" className="w-8 text-center font-display text-xl font-extrabold tabular-nums text-gold">
+                  {counts[p.player_id] ?? 0}
+                </span>
+                <button type="button" aria-label={`زِد ${p.player_name}`} className="grid size-10 place-items-center rounded-full border border-line text-ivory" onClick={() => setCounts({ ...counts, [p.player_id]: (counts[p.player_id] ?? 0) + 1 })}>
+                  +
+                </button>
+              </li>
+            ))}
+          </ul>
+          <Button
+            type="button"
+            tone="primary"
+            disabled={busy}
+            onClick={() => (total > 0 || window.confirm("لم تسجّل أي صوت. ينتهي اليوم بلا إقصاء؟")) && onSubmit(Object.fromEntries((Object.entries(counts) as Array<[string, number]>).filter(([, n]) => n > 0)), false)}
+          >
+            أعلن النتيجة ({total} {total === 1 ? "صوت" : "أصوات"})
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** At the end: who the players suspected most at night, and what they really were. */
+function SuspicionsView({ list }: { list: Suspicion[] }) {
+  if (!list.length) return null;
+  return (
+    <div className="rounded-[14px] border border-violet-text/40 bg-violet-fill/10 px-3 py-2 text-start text-[13px]">
+      <p className="font-bold text-violet-text">🤔 أكثر من اشتبهتم فيه ليلًا</p>
+      <ul className="mt-1 grid gap-1">
+        {list.map((x) => (
+          <li key={x.name} className="text-ivory">
+            {x.name}: {x.times === 1 ? "مرة" : x.times === 2 ? "مرتان" : `${x.times} مرات`}
+            {x.role ? <span className="text-mist"> · وكان {ROLE_NAMES[x.role] ?? ""}</span> : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 type MafiaInspection = { round: number; name: string; mafia: boolean };
 type MafiaMe = {
   started: boolean;
@@ -829,6 +1246,8 @@ const MAFIA_PLAYER_ERRORS: Record<string, string> = {
   NOT_IN_RUNOFF: "إعادة التصويت بين المتعادلين فقط.",
   USED: "استخدمتها من قبل في هذه المباراة.",
   NOT_DEAD: "اختر لاعبًا خرج من اللعبة.",
+  NOT_NOMINEE: "التصويت على المرشحين فقط.",
+  FIRST_NIGHT: "الليلة الأولى للتعارف: لا ضحية الليلة.",
 };
 
 /** A player's screen: their role card, night choices, votes. The drawn narrator gets the narrator's screen. */
@@ -858,6 +1277,10 @@ export function MafiaPlayerPanel({
   const winner = typeof state.winner === "string" ? state.winner : null;
   const lastResult = typeof state.last_result === "string" ? state.last_result : null;
   const runoff = Array.isArray(state.runoff) ? (state.runoff as string[]) : null;
+  const nominees = Array.isArray(state.nominees) ? (state.nominees as string[]) : null;
+  const settings = (state.settings ?? {}) as { vote_mode?: string; no_first_kill?: boolean };
+  const oral = settings.vote_mode === "pick" || settings.vote_mode === "count";
+  const firstSafe = !!settings.no_first_kill && round === 1;
   const tally = Array.isArray(state.last_tally) ? (state.last_tally as MafiaTally[]) : [];
   const dayLeft = useCountdown(phase === "day" ? (state.day_ends_at as string | null | undefined) : null);
   const voteLeft = useCountdown(phase === "vote" ? (state.vote_ends_at as string | null | undefined) : null);
@@ -948,12 +1371,13 @@ export function MafiaPlayerPanel({
   const teammates = me?.teammates ?? [];
   const inspectLocked = role === "detective" && phase === "night" && !!me?.pending_inspect;
   const canAct =
-    iAmAlive && ((phase === "night" && ["mafia", "doctor", "detective", "bodyguard"].includes(role) && !inspectLocked) || phase === "vote");
+    iAmAlive && ((phase === "night" && ["mafia", "doctor", "detective", "bodyguard"].includes(role) && !inspectLocked && !(role === "mafia" && firstSafe)) || (phase === "vote" && !oral));
+  const suspects = rows.filter((p) => p.alive && p.player_id !== meId);
   const picked = chosen ?? me?.my_pick ?? null;
 
   const targets = rows.filter((p) => {
     if (!p.alive) return false;
-    if (phase === "vote") return p.player_id !== meId && (!runoff || runoff.includes(p.player_id));
+    if (phase === "vote") return p.player_id !== meId && (runoff ? runoff.includes(p.player_id) : !nominees || nominees.includes(p.player_id));
     if (phase === "night") {
       if (role === "doctor") return true;
       if (p.player_id === meId) return false;
@@ -990,6 +1414,23 @@ export function MafiaPlayerPanel({
   }
 
   const [aim, setAim] = useState<string | null>(null);
+  // Night suspicion for players without a night role (mafia_v9.sql): no effect on the game.
+  const [suspect, setSuspect] = useState<string | null>(null);
+  useEffect(() => {
+    setSuspect(null);
+    if (!supabase || phase !== "night") return;
+    void supabase.rpc("mafia_my_suspect", { p_room_id: roomId }).then(({ data }) => typeof data === "string" && setSuspect(data));
+  }, [roomId, phase, round]);
+  async function pickSuspect(target: string) {
+    if (!supabase || busy) return;
+    setBusy(true);
+    setMessage(null);
+    const { data, error } = await supabase.rpc("mafia_suspect", { p_room_id: roomId, p_target_id: target });
+    setBusy(false);
+    const r = data as { ok?: boolean; reason?: string } | null;
+    if (error || r?.ok === false) setMessage(MAFIA_PLAYER_ERRORS[r?.reason ?? ""] ?? "تعذّر الاختيار.");
+    else setSuspect(target);
+  }
   async function special(fn: "mafia_shoot" | "mafia_seer", target: string) {
     if (!supabase || busy) return;
     setBusy(true);
@@ -1030,6 +1471,45 @@ export function MafiaPlayerPanel({
   const over = phase === "over";
   const recap = useMafiaRecap(roomId, over);
   const split = role === "mafia" && phase === "night" && new Set(picks.map((x) => x.target_id)).size > 1;
+
+  /** The target buttons, for the vote and the night roles. */
+  function renderTargets() {
+    return (
+      <>
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            {targets.map((p) => {
+              const why = blocked(p.player_id);
+              const team = role === "mafia" && phase === "night" ? picks.filter((x) => x.target_id === p.player_id) : [];
+              return (
+                <button
+                  key={p.player_id}
+                  type="button"
+                  disabled={busy || !!why}
+                  onClick={() => pick(p.player_id)}
+                  aria-pressed={picked === p.player_id}
+                  className={cx(
+                    "grid min-h-11 place-items-center rounded-full border px-4 py-1 text-sm font-bold transition disabled:opacity-45",
+                    picked === p.player_id ? "border-gold bg-gold/10 text-gold" : "border-line text-ivory",
+                  )}
+                >
+                  {p.is_mayor ? "👑 " : ""}
+                  {isUnmasked(state, p.player_id) ? "🎭 " : ""}
+                  {p.player_name}
+                  {why ? <span className="text-[11px] font-normal text-muted">{why}</span> : null}
+                  {team.length > 0 ? <span className="text-[11px] font-normal text-wrong">🔪 {team.map((x) => x.player_name).join("، ")}</span> : null}
+                </button>
+              );
+            })}
+          </div>
+          {chosenName ? (
+            <p className="mt-3 text-sm text-muted">
+              اخترتم: <span className="font-bold text-ivory">{chosenName}</span>
+            </p>
+          ) : null}
+          {split ? <p className="mt-2 text-sm text-gold">لم تتفقوا بعد. إذا تعادلت الاختيارات تُختار الضحية بالقرعة.</p> : null}
+      </>
+    );
+  }
 
   if (me?.narrator) return <MafiaNarratorPanel roomId={roomId} roomCode={roomCode} roomStatus={roomStatus} isHost={false} />;
 
@@ -1117,52 +1597,84 @@ export function MafiaPlayerPanel({
               ) : null}
             </SecretCard>
           )}
-          {inspectLocked ? (
-            <p className="mt-3 rounded-2xl border border-gold/40 bg-gold/10 p-3 text-sm text-ivory">
-              حققت الليلة مع <b>{me?.pending_inspect}</b>. النتيجة تظهر بعد انتهاء الليل.
-            </p>
-          ) : null}
           {!iAmAlive && !over ? <GhostView roomId={roomId} phase={phase} /> : null}
         </>
       )}
 
       {lastResult ? <p className="mt-4 text-sm font-bold text-ivory">{lastResult}</p> : null}
 
-      {phase === "night" && me?.started === true && iAmAlive && !canAct && !inspectLocked && role !== "spy" ? (
-        <p className="mt-4 text-sm text-muted">اغمضوا أعينكم. الليل لأصحاب الأدوار.</p>
-      ) : null}
       {phase === "night" && nightLeft !== null && me?.started ? (
         <p dir="ltr" className={cx("mt-3 font-display text-2xl font-extrabold tabular-nums", nightLeft <= 10 ? "text-wrong" : "text-gold")}>
           🌙 {mmss(nightLeft)}
         </p>
       ) : null}
-      {phase === "night" && role === "spy" && iAmAlive ? (
-        <div className="mt-4 rounded-2xl border border-wrong/40 bg-wrong-fill/10 p-4">
-          <p className="text-sm text-muted">افتح عينك مع المافيا. لا تختار ضحية معهم.</p>
-          {me?.spy_ready ? (
-            <>
-              <p className="mt-2 text-sm font-bold text-ivory">🕶️ تحقّق من لاعب: مواطن عادي أم صاحب دور خاص؟</p>
+      {phase === "night" && me?.started === true && iAmAlive ? (
+        <NightPanel>
+          <p className="text-xs font-bold text-violet-text">
+            {ROLE_ICONS[role] ?? ""} {ROLE_NAMES[role] ?? ""}
+          </p>
+          {role === "mafia" && firstSafe ? (
+            <p className="mt-2 text-sm text-ivory">
+              الليلة الأولى للتعارف: تعرّفوا على زملائكم{teammates.length ? ` (${teammates.join("، ")})` : ""}، ولا ضحية الليلة.
+            </p>
+          ) : null}
+          {role === "mafia" && (me?.spy_checks ?? []).length ? <SpyChecks checks={me?.spy_checks ?? []} /> : null}
+          {inspectLocked ? (
+            <p className="mt-2 rounded-2xl border border-gold/40 bg-gold/10 p-3 text-sm text-ivory">
+              حققت الليلة مع <b>{me?.pending_inspect}</b>. النتيجة تظهر بعد انتهاء الليل.
+            </p>
+          ) : null}
+          {role === "spy" ? (
+            <div className="mt-2">
+              <p className="text-sm text-muted">افتح عينك مع المافيا. لا تختار ضحية معهم.</p>
+              {me?.spy_ready ? (
+                <>
+                  <p className="mt-2 text-sm font-bold text-ivory">🕶️ تحقّق من لاعب: مواطن عادي أم صاحب دور خاص؟</p>
+                  <div className="mt-3 flex flex-wrap justify-center gap-2">
+                    {rows
+                      .filter((p) => p.alive && p.player_id !== meId && !teammates.includes(p.player_name))
+                      .map((p) => (
+                        <button key={p.player_id} type="button" disabled={busy} onClick={() => spyCheck(p.player_id)} className="min-h-11 rounded-full border border-line px-4 text-sm font-bold text-ivory">
+                          {p.player_name}
+                        </button>
+                      ))}
+                  </div>
+                </>
+              ) : (
+                <p className="mt-2 text-sm text-muted">التحقق كل جولتين: تقدر تتحقق مرة ثانية الجولة القادمة.</p>
+              )}
+              {(me?.spy_checks ?? []).length ? <SpyChecks checks={me?.spy_checks ?? []} /> : null}
+            </div>
+          ) : null}
+          {canAct ? (
+            <div className="mt-2">
+              <p className="text-sm text-muted">اختر:</p>
+              {renderTargets()}
+            </div>
+          ) : null}
+          {!["mafia", "doctor", "detective", "bodyguard", "spy"].includes(role) ? (
+            <div className="mt-2">
+              <p className="text-sm font-bold text-ivory">🤔 من تشك فيه الليلة؟</p>
+              <p className="text-xs text-muted">اختيارك لا يؤثر على اللعب، وفي النهاية نعرف أكثر من اشتبهتم فيه.</p>
               <div className="mt-3 flex flex-wrap justify-center gap-2">
-                {rows
-                  .filter((p) => p.alive && p.player_id !== meId && !teammates.includes(p.player_name))
-                  .map((p) => (
-                    <button key={p.player_id} type="button" disabled={busy} onClick={() => spyCheck(p.player_id)} className="min-h-11 rounded-full border border-line px-4 text-sm font-bold text-ivory">
-                      {p.player_name}
-                    </button>
-                  ))}
+                {suspects.map((p) => (
+                  <button
+                    key={p.player_id}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => pickSuspect(p.player_id)}
+                    aria-pressed={suspect === p.player_id}
+                    className={cx("min-h-11 rounded-full border px-4 text-sm font-bold", suspect === p.player_id ? "border-gold bg-gold/10 text-gold" : "border-line text-ivory")}
+                  >
+                    {p.player_name}
+                  </button>
+                ))}
               </div>
-            </>
-          ) : (
-            <p className="mt-2 text-sm text-muted">التحقق كل جولتين: تقدر تتحقق مرة ثانية الجولة القادمة.</p>
-          )}
-          {(me?.spy_checks ?? []).length ? <SpyChecks checks={me?.spy_checks ?? []} /> : null}
-        </div>
+            </div>
+          ) : null}
+        </NightPanel>
       ) : null}
-      {phase === "night" && role === "mafia" && iAmAlive && (me?.spy_checks ?? []).length ? (
-        <div className="mt-4">
-          <SpyChecks checks={me?.spy_checks ?? []} />
-        </div>
-      ) : null}
+      {phase === "night" && !iAmAlive && me?.started ? <p className="mt-4 text-sm text-muted">الليل… تابع بصمت.</p> : null}
       {phase === "day" ? (
         <p className="mt-4 text-sm text-muted">
           النهار: ناقشوا من تظنون أنه مافيا.
@@ -1184,7 +1696,7 @@ export function MafiaPlayerPanel({
         </p>
       ) : null}
       {phase === "vote" && voteLeft !== null && canAct && !picked ? (
-        <p className="mt-1 text-xs text-muted">صوّت قبل انتهاء الوقت، وإلا يصوّت النظام عنك عشوائيًا.</p>
+        <p className="mt-1 text-xs text-muted">صوّت قبل انتهاء الوقت، وإلا يُحسب صوتك ممتنعًا.</p>
       ) : null}
       {phase === "vote" && progress?.phase === "vote" ? (
         <p className="mt-3 text-sm text-muted">
@@ -1250,41 +1762,14 @@ export function MafiaPlayerPanel({
         </SecretAbility>
       ) : null}
 
-      {canAct ? (
+      {canAct && phase === "vote" ? (
         <div className="mt-5">
-          <p className="text-sm text-muted">{phase === "vote" ? (runoff ? "إعادة التصويت بين المتعادلين:" : "صوّتوا لإقصاء لاعب:") : "اختاروا:"}</p>
-          <div className="mt-3 flex flex-wrap justify-center gap-2">
-            {targets.map((p) => {
-              const why = blocked(p.player_id);
-              const team = role === "mafia" && phase === "night" ? picks.filter((x) => x.target_id === p.player_id) : [];
-              return (
-                <button
-                  key={p.player_id}
-                  type="button"
-                  disabled={busy || !!why}
-                  onClick={() => pick(p.player_id)}
-                  aria-pressed={picked === p.player_id}
-                  className={cx(
-                    "grid min-h-11 place-items-center rounded-full border px-4 py-1 text-sm font-bold transition disabled:opacity-45",
-                    picked === p.player_id ? "border-gold bg-gold/10 text-gold" : "border-line text-ivory",
-                  )}
-                >
-                  {p.is_mayor ? "👑 " : ""}
-                  {isUnmasked(state, p.player_id) ? "🎭 " : ""}
-                  {p.player_name}
-                  {why ? <span className="text-[11px] font-normal text-muted">{why}</span> : null}
-                  {team.length > 0 ? <span className="text-[11px] font-normal text-wrong">🔪 {team.map((x) => x.player_name).join("، ")}</span> : null}
-                </button>
-              );
-            })}
-          </div>
-          {chosenName ? (
-            <p className="mt-3 text-sm text-muted">
-              اخترتم: <span className="font-bold text-ivory">{chosenName}</span>
-            </p>
-          ) : null}
-          {split ? <p className="mt-2 text-sm text-gold">لم تتفقوا بعد. إذا تعادلت الاختيارات تُختار الضحية بالقرعة.</p> : null}
+          <p className="text-sm text-muted">{runoff ? "إعادة التصويت بين المتعادلين:" : nominees ? "صوّتوا على أحد المرشحين:" : "صوّتوا لإقصاء لاعب:"}</p>
+          {renderTargets()}
         </div>
+      ) : null}
+      {(phase === "vote" || phase === "day") && oral && iAmAlive ? (
+        <p className="mt-4 rounded-2xl border border-line bg-deep-2/60 p-3 text-sm text-ivory">✋ التصويت برفع اليد، والراوي يسجّل النتيجة.</p>
       ) : null}
 
       {over ? (
@@ -1327,6 +1812,7 @@ function GhostView({ roomId, phase }: { roomId: string; phase: string }) {
       <p className="text-sm font-bold text-ivory">👻 أنت خارج اللعبة</p>
       <p className="text-xs leading-6 text-muted">تابع بصمت: لا تتكلم ولا تلمّح بأي شيء تعرفه، حتى بتعابير وجهك.</p>
       {roles.length > 0 ? (
+        <HoldToSee label="👁️ أدوار الجميع: المس مطوّلًا لتراها، ولا تُرِها لأحد.">
         <ul className="grid grid-cols-2 gap-1.5 text-sm">
           {roles.map((r) => (
             <li key={r.player_id} className={cx("flex min-w-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5", r.role === "mafia" || r.role === "spy" ? "bg-wrong-fill/20" : "bg-deep/60", !r.alive && "opacity-50 line-through")}>
@@ -1339,6 +1825,7 @@ function GhostView({ roomId, phase }: { roomId: string; phase: string }) {
             </li>
           ))}
         </ul>
+        </HoldToSee>
       ) : null}
     </div>
   );
