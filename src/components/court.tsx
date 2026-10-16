@@ -56,7 +56,18 @@ export type CourtState = {
   /** The last slot of the automatic stand order the server applied (court_v5.sql). */
   stand_slot?: number | null;
   accused?: AccusedRow[];
-  objection?: { by?: string; kind: CourtKind; name: string; at: string; n: number; status?: "pending" | "accepted" | "rejected"; ruled_at?: string } | null;
+  objection?: {
+    by?: string;
+    kind: CourtKind;
+    name: string;
+    at: string;
+    n: number;
+    status?: "pending" | "accepted" | "rejected";
+    ruled_at?: string;
+    /** With the system as judge (court_v9.sql): the jury's votes, and the count once settled. */
+    votes?: Record<string, boolean>;
+    tally?: { yes: number; no: number };
+  } | null;
   queue?: QueueRow[];
   asking?: string | null;
   golden?: { by: string; by_name: string; target: string; target_name: string; at: string } | null;
@@ -100,7 +111,8 @@ type CourtSettings = {
   turn_seconds?: number;
   read_seconds?: number;
   golden?: "jurors" | "all" | "off";
-  judge?: "host" | "random";
+  /** «النظام» (court_v9.sql): nobody judges by hand, the server runs the session. */
+  judge?: "host" | "random" | "system";
   new_evening?: boolean;
   question_seconds?: number;
   closing_seconds?: number;
@@ -302,6 +314,11 @@ function useCourtCues(state: CourtState, opts: { sound?: boolean; vibe?: boolean
   }, [state.flash?.at, state.flash?.kind, opts.sound, opts.vibe]);
 }
 
+/** The system is the judge (court_v9.sql): the server moves the session and the jury settles objections. */
+const systemJudge = (s: CourtState) => s.settings?.judge === "system";
+/** How long a pending objection waits: the jury votes for 15 seconds, a judge rules within 10. */
+const objectionMs = (s: CourtState) => (systemJudge(s) ? 15000 : 10000);
+
 /** The judge paused this step (court_v6.sql). A pause from an earlier step no longer counts. */
 const isPaused = (s: CourtState) => !!s.paused && s.paused.step === s.step;
 /** How long a turn to ask lasts (45 seconds unless the host chose otherwise). */
@@ -326,12 +343,12 @@ function useAutoTick(roomId: string, state: CourtState, delayMs: number) {
   }, []);
   const asked = useRef<string | null>(null);
   const step = state.step ?? -1;
-  // Deadlines the server acts on: the step timer (when automatic), the turn to ask (45 s),
-  // and a pending objection (10 s).
+  // Deadlines the server acts on: the step timer (when automatic, and with the system as judge the
+  // introduction and the verdict too), the turn to ask (45 s), and a pending objection (10 or 15 s).
   const deadlines: Array<[string, number]> = [];
   if (state.settings?.auto && state.ends_at) deadlines.push(["step", Date.parse(state.ends_at)]);
   if (state.phase === "question" && state.asking && state.asking_since && !isPaused(state)) deadlines.push([`turn:${state.asking_since}`, Date.parse(state.asking_since) + turnMs(state)]);
-  if (state.objection?.status === "pending" && state.objection.at) deadlines.push([`obj:${state.objection.at}`, Date.parse(state.objection.at) + 10000]);
+  if (state.objection?.status === "pending" && state.objection.at) deadlines.push([`obj:${state.objection.at}`, Date.parse(state.objection.at) + objectionMs(state)]);
   // The next turn on the stand (court_v5.sql): the server moves it when its slot starts.
   const esc = escalation(state);
   if (esc && esc.nextAt !== null) deadlines.push([`esc:${esc.nextIndex}`, esc.nextAt]);
@@ -720,7 +737,8 @@ function ObjectionFlash({ state, big = false }: { state: CourtState; big?: boole
       </p>
       <p className={cx("font-bold text-ivory", big ? "text-[clamp(18px,2vw,40px)]" : "text-[15px]")}>
         {KINDS[o.kind]?.label}: {o.name}
-        {pending ? " · بانتظار القاضي" : accepted ? " · السؤال ملغى" : " · أكمِل"}
+        {pending ? (systemJudge(state) ? " · الهيئة تصوّت" : " · بانتظار القاضي") : accepted ? " · السؤال ملغى" : " · أكمِل"}
+        {!pending && o.tally ? ` (👍 ${o.tally.yes} · 👎 ${o.tally.no})` : ""}
       </p>
     </div>
   );
@@ -1175,7 +1193,9 @@ function Hint({ state, kind }: { state: CourtState; kind?: CourtKind }) {
         ? "قد تُستدعى للمنصة. أجب بما تعرفه حسب بطاقتك."
         : kind === "prosecutor" || kind === "lawyer"
           ? "اسأل المتهم والشهود، وابحث عن التناقض بين الأقوال والأدلة."
-          : "اضغط «أبي أسأل» لتدخل الدور، والمضيف يعطيك الكلمة.";
+          : systemJudge(state)
+            ? "اضغط «أبي أسأل» لتدخل الدور، والدور يجيك بالترتيب."
+            : "اضغط «أبي أسأل» لتدخل الدور، والقاضي يعطيك الكلمة.";
   else if (p === "closing") {
     const mine = (state.side === "prosecutor" && kind === "prosecutor") || (state.side === "lawyer" && kind === "lawyer");
     text = mine ? "دورك الآن! لخّص حجتك أمام المحلفين قبل نهاية الوقت." : "استمع للمرافعة، ولا تقاطع.";
@@ -1329,10 +1349,18 @@ function Actions({ roomId, state, card, reloadCard }: { roomId: string; state: C
   const voted = ballots.every((b) => verdictOf(b.key) !== null && verdictOf(b.key) !== undefined) && (!suspects.length || !!card.pick) && (!rates || !!card.pleading);
   return (
     <div className="grid gap-3">
+      {systemJudge(state) && state.objection?.status === "pending" && (card.kind === "juror" || card.kind === "witness" || card.kind === "detective") && state.objection.by !== me ? (
+        <ObjectionVote state={state} mine={state.objection.votes?.[me]} busy={busy} onVote={(v) => run("court_objection_vote", { p_accept: v })} />
+      ) : null}
       {state.phase === "question" ? (
         <div className="grid gap-2">
           {asking ? (
-            <p className="beat rounded-[16px] border-2 border-gold bg-gold/15 p-3 text-center text-[18px] font-extrabold text-gold">🎙️ دورك تسأل الآن!</p>
+            <div className="grid gap-2">
+              <p className="beat rounded-[16px] border-2 border-gold bg-gold/15 p-3 text-center text-[18px] font-extrabold text-gold">🎙️ دورك تسأل الآن!</p>
+              <Button tone="quiet" className="min-h-12" disabled={busy} onClick={() => run("court_raise", { p_on: false })}>
+                ✅ انتهى سؤالي
+              </Button>
+            </div>
           ) : (
             <Button tone={place >= 0 ? "quiet" : "primary"} className="min-h-14 text-[17px]" disabled={busy} onClick={() => run("court_raise", { p_on: place < 0 })}>
               {place >= 0 ? `✋ أنت رقم ${place + 1} في الدور · إلغاء` : "✋ أبي أسأل"}
@@ -1477,6 +1505,39 @@ function Actions({ roomId, state, card, reloadCard }: { roomId: string; state: C
         </Button>
       ) : null}
       <ErrorLine error={error} />
+    </div>
+  );
+}
+
+/** With the system as judge: the jury rules on an objection, in 15 seconds. */
+function ObjectionVote({ state, mine, busy, onVote }: { state: CourtState; mine?: boolean; busy: boolean; onVote: (accept: boolean) => Promise<boolean> }) {
+  const o = state.objection;
+  const at = o?.at ? Date.parse(o.at) : 0;
+  const left = useSecondsLeft(at ? new Date(at + objectionMs(state)).toISOString() : null);
+  if (!o) return null;
+  return (
+    <div className="beat grid gap-2 rounded-[20px] border-2 border-wrong bg-[#2b0f1d] p-3 text-center">
+      <p className="text-[17px] font-extrabold text-wrong">
+        ✋ اعتراض من {KINDS[o.kind]?.label}! تقبله؟
+      </p>
+      <p className="text-[13px] text-mist">أنتم القضاة هنا: الأكثرية تقبله فيُلغى السؤال. {left !== null ? `باقي ${left} ث.` : ""}</p>
+      <div className="grid grid-cols-2 gap-2">
+        {[
+          { v: true, label: "👍 مقبول" },
+          { v: false, label: "👎 مرفوض" },
+        ].map((x) => (
+          <button
+            key={x.label}
+            type="button"
+            disabled={busy}
+            aria-pressed={mine === x.v}
+            onClick={() => onVote(x.v)}
+            className={cx("min-h-12 rounded-[16px] border-2 text-[16px] font-bold transition", mine === x.v ? "border-gold bg-gold/15 text-gold" : "border-line-strong/70 bg-deep-2/60 text-ivory hover:border-gold/60")}
+          >
+            {x.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1688,7 +1749,8 @@ export function CourtHostPanel({ roomId, tools }: { roomId: string; tools?: Reac
       </>
     );
 
-  const judgeIsOther = !!state.judge_id && state.judge_id !== me?.id;
+  // Someone else judges: a player drawn by lot, or the system (court_v9.sql). The host's tools fold.
+  const judgeIsOther = (!!state.judge_id && state.judge_id !== me?.id) || systemJudge(state);
   const over = state.phase === "over";
   const controls = <JudgeControls state={state} players={players} run={run} busy={busy} error={error} />;
   // The host judges and plays a role: one screen, the judge's tools first and the card folded below.
@@ -1712,10 +1774,16 @@ export function CourtHostPanel({ roomId, tools }: { roomId: string; tools?: Reac
         <>
           <div className="surface grid gap-2 rounded-[24px] p-4">
             <CaseHeader state={state} />
-            <p className="text-center text-[14px] text-mist">⚖️ القاضي {state.judge_name} يدير الجلسة من جواله.</p>
+            <p className="text-center text-[14px] text-mist">
+              {systemJudge(state)
+                ? "🤖 القاضي هو النظام: ينقل الجلسة ويعطي الأدوار والهيئة تحسم الاعتراضات. العب معهم براحتك."
+                : `⚖️ القاضي ${state.judge_name} يدير الجلسة من جواله.`}
+            </p>
           </div>
           <details className="surface rounded-[20px] p-4">
-            <summary className="cursor-pointer text-[15px] font-semibold text-ivory">🛠️ أدوات احتياطية (إذا تعطّل جوال القاضي)</summary>
+            <summary className="cursor-pointer text-[15px] font-semibold text-ivory">
+              {systemJudge(state) ? "🛠️ أدوات احتياطية (إيقاف الوقت، التالي، استبدال لاعب)" : "🛠️ أدوات احتياطية (إذا تعطّل جوال القاضي)"}
+            </summary>
             <div className="mt-3 grid gap-4">{controls}</div>
           </details>
         </>
@@ -2052,7 +2120,7 @@ function TimerControls({ state, busy, run }: { state: CourtState; busy: boolean;
 /** A pending objection: accept or reject. It is rejected by itself after 10 seconds. */
 function RulingPanel({ state, busy, onRule }: { state: CourtState; busy: boolean; onRule: (accept: boolean) => Promise<boolean> }) {
   const at = state.objection?.at ? Date.parse(state.objection.at) : 0;
-  const left = useSecondsLeft(at ? new Date(at + 10000).toISOString() : null);
+  const left = useSecondsLeft(at ? new Date(at + objectionMs(state)).toISOString() : null);
   if (!state.objection) return null;
   return (
     <div className="beat grid gap-3 rounded-[24px] border-2 border-wrong bg-[#2b0f1d] p-4 text-center shadow-[0_16px_50px_#000a]">
@@ -2060,7 +2128,9 @@ function RulingPanel({ state, busy, onRule }: { state: CourtState; busy: boolean
         ✋ اعتراض من {KINDS[state.objection.kind]?.label}: {state.objection.name}
       </p>
       <p className="text-[13px] text-mist">
-        احكم: المقبول يُلغي السؤال ويعطي صاحبه 50 نقطة. {left !== null ? `يُرفض وحده بعد ${left} ث.` : ""}
+        {systemJudge(state)
+          ? `الهيئة تصوّت الآن${left !== null ? ` (${left} ث)` : ""}، ولك أن تحسم بدلها. المقبول يُلغي السؤال ويعطي صاحبه 50 نقطة.`
+          : `احكم: المقبول يُلغي السؤال ويعطي صاحبه 50 نقطة. ${left !== null ? `يُرفض وحده بعد ${left} ث.` : ""}`}
       </p>
       <div className="grid grid-cols-2 gap-3">
         <Button tone="primary" className="min-h-12" disabled={busy} onClick={() => onRule(true)}>
@@ -2320,7 +2390,7 @@ type SetupPrefs = {
   v: number;
   auto: boolean;
   quick: boolean;
-  judge: "host" | "random";
+  judge: "host" | "random" | "system";
   escalate: boolean;
   objections: number;
   turn: number;
@@ -2328,11 +2398,13 @@ type SetupPrefs = {
   golden: "jurors" | "all" | "off";
 };
 const PREFS_KEY = "al3sh.court.setup";
-const DEFAULT_PREFS: SetupPrefs = { hostPlays: true, q: 180, c: 60, v: 60, auto: false, quick: true, judge: "host", escalate: true, objections: 2, turn: 45, read: 30, golden: "jurors" };
+// The system judges by default (court_v9.sql): everyone plays, and nobody has to run the session.
+const DEFAULT_PREFS: SetupPrefs = { hostPlays: true, q: 180, c: 60, v: 60, auto: true, quick: false, judge: "system", escalate: true, objections: 2, turn: 45, read: 30, golden: "jurors" };
 const PRESETS: Array<{ key: string; title: string; sub: string; prefs: Partial<SetupPrefs> }> = [
-  { key: "quick", title: "⚡ سهرة سريعة", sub: "جولة واحدة وانتقال تلقائي", prefs: { quick: true, auto: true, escalate: true, judge: "host" } },
-  { key: "full", title: "⚖️ جلسة كاملة", sub: "كل جولات الأدلة، وأنت تنقل الجلسة", prefs: { quick: false, q: 180, c: 60, v: 60, auto: false, escalate: true, judge: "host" } },
-  { key: "free", title: "🤝 بدون مضيف", sub: "قاضٍ بالقرعة وانتقال تلقائي، وأنت تلعب", prefs: { judge: "random", hostPlays: true, auto: true, escalate: true } },
+  { key: "system", title: "🤖 النظام يحكم", sub: "كل جولات الأدلة، والنظام يدير الجلسة والكل يلعب", prefs: { quick: false, judge: "system", hostPlays: true, auto: true, escalate: true } },
+  { key: "quick", title: "⚡ سهرة سريعة", sub: "جولة أدلة واحدة، والنظام يحكم", prefs: { quick: true, judge: "system", hostPlays: true, auto: true, escalate: true } },
+  { key: "full", title: "⚖️ أنت القاضي", sub: "كل جولات الأدلة، وأنت تنقل الجلسة بيدك", prefs: { quick: false, q: 180, c: 60, v: 60, auto: false, escalate: true, judge: "host", hostPlays: false } },
+  { key: "free", title: "🎲 قاضٍ بالقرعة", sub: "لاعب يحكم من جواله، وأنت تلعب", prefs: { judge: "random", hostPlays: true, auto: true, escalate: true } },
 ];
 
 function readPrefs(): Partial<SetupPrefs> | null {
@@ -2443,7 +2515,7 @@ function CourtSetup({
       ...(typeof d.auto === "boolean" ? { auto: d.auto } : {}),
       ...(typeof d.quick === "boolean" ? { quick: d.quick } : {}),
       ...(typeof d.escalate === "boolean" ? { escalate: d.escalate } : {}),
-      ...(d.judge === "host" || d.judge === "random" ? { judge: d.judge } : {}),
+      ...(d.judge === "host" || d.judge === "random" || d.judge === "system" ? { judge: d.judge } : {}),
       ...([0, 120, 180, 300].includes(d.question_seconds ?? -1) ? { q: d.question_seconds as number } : {}),
       ...([0, 30, 45, 60, 90].includes(d.closing_seconds ?? -1) ? { c: d.closing_seconds as number } : {}),
       ...([0, 30, 60, 90].includes(d.vote_seconds ?? -1) ? { v: d.vote_seconds as number } : {}),
@@ -2495,11 +2567,11 @@ function CourtSetup({
     question_seconds: p.q,
     closing_seconds: p.c,
     vote_seconds: p.v,
-    auto: p.auto,
+    auto: p.auto || p.judge === "system",
     quick: p.quick,
     judge: p.judge,
     new_evening: newEvening,
-    escalate: p.escalate,
+    escalate: p.escalate || p.judge === "system",
     objections: p.objections,
     turn_seconds: p.turn,
     read_seconds: p.read,
@@ -2531,7 +2603,7 @@ function CourtSetup({
         <p className="text-[14px] leading-6 text-mist">
           في الجلسة {n} {n >= 3 && n <= 10 ? "لاعبين" : "لاعبًا"}. يأخذ كل لاعب دورًا: المتهم والمدعي والمحامي أولًا، ثم الشهود والمحقق، والباقي محلّفون. تحتاجون 4 لاعبين على الأقل، وحتى 20.
         </p>
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-2">
           {PRESETS.map((x) => (
             <button
               key={x.key}
@@ -2564,12 +2636,20 @@ function CourtSetup({
         <Choice
           label="القاضي (يدير الأسئلة والاعتراضات وينقل الجلسة)"
           value={p.judge}
-          onChange={(x) => set("judge", x as "host" | "random")}
+          onChange={(x) =>
+            setP((cur) => ({ ...cur, judge: x as SetupPrefs["judge"], ...(x === "system" ? { q: cur.q || 180, c: cur.c || 60, v: cur.v || 60 } : {}) }))
+          }
           options={[
+            { value: "system", label: "🤖 النظام" },
             { value: "host", label: "المضيف" },
             { value: "random", label: "لاعب بالقرعة" },
           ]}
         />
+        ) : null}
+        {p.judge === "system" && open ? (
+          <p className="-mt-1 text-[13px] leading-6 text-mist">
+            النظام يدير الجلسة وحده: ينقل المراحل مع الوقت، ويغيّر من على المنصة، ويعطي دور الأسئلة بالترتيب، والمحلّفون والشهود يحسمون الاعتراضات بالتصويت، ثم يعلن الحكم ويكشف الحقيقة. والكل يلعب، وتبقى معك أدوات احتياطية.
+          </p>
         ) : null}
         {p.judge === "random" && open ? <p className="-mt-1 text-[13px] text-mist">القاضي يُختار بالقرعة، ويدير الجلسة من جواله ولا يأخذ دورًا. وأنت تبقى معك أدوات احتياطية.</p> : null}
         {conflict ? (
@@ -2600,7 +2680,7 @@ function CourtSetup({
         ) : (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-[14px] border border-line bg-deep-2/40 p-3">
             <p className="text-[13px] leading-6 text-mist">
-              {p.judge === "random" ? "قاضٍ بالقرعة" : "القاضي: المضيف"} · {p.quick ? "جولة واحدة" : "كل جولات الأدلة"} · {p.auto ? "انتقال تلقائي" : "القاضي ينقل الجلسة"}
+              {p.judge === "system" ? "🤖 القاضي: النظام" : p.judge === "random" ? "قاضٍ بالقرعة" : "القاضي: المضيف"} · {p.quick ? "جولة واحدة" : "كل جولات الأدلة"} · {p.auto || p.judge === "system" ? "انتقال تلقائي" : "القاضي ينقل الجلسة"}
               {p.escalate ? " · منصة تلقائية" : ""}
             </p>
             <button type="button" className="text-[14px] font-semibold text-gold underline-offset-4 hover:underline" onClick={() => setCustom(true)}>
@@ -2702,11 +2782,15 @@ function CourtSetup({
         <h2 className="text-[18px] leading-7">المؤقتات {p.quick ? <span className="text-[13px] font-normal text-mist">(السريعة تثبّتها: استجواب دقيقتان، مرافعة 30 ث، تصويت 30 ث)</span> : null}</h2>
         {p.quick ? null : (
           <>
-            <Choice label="الاستجواب (لكل جولة)" value={String(p.q)} onChange={(x) => set("q", Number(x))} options={[{ value: "0", label: "بدون" }, { value: "120", label: "2 د" }, { value: "180", label: "3 د" }, { value: "300", label: "5 د" }]} />
-            <Choice label="المرافعة (لكل طرف)" value={String(p.c)} onChange={(x) => set("c", Number(x))} options={[{ value: "0", label: "بدون" }, { value: "45", label: "45 ث" }, { value: "60", label: "دقيقة" }, { value: "90", label: "90 ث" }]} />
-            <Choice label="التصويت" value={String(p.v)} onChange={(x) => set("v", Number(x))} options={[{ value: "0", label: "بدون" }, { value: "30", label: "30 ث" }, { value: "60", label: "دقيقة" }, { value: "90", label: "90 ث" }]} />
+            <Choice label="الاستجواب (لكل جولة)" value={String(p.q)} onChange={(x) => set("q", Number(x))} options={[...(p.judge === "system" ? [] : [{ value: "0", label: "بدون" }]), { value: "120", label: "2 د" }, { value: "180", label: "3 د" }, { value: "300", label: "5 د" }]} />
+            <Choice label="المرافعة (لكل طرف)" value={String(p.c)} onChange={(x) => set("c", Number(x))} options={[...(p.judge === "system" ? [] : [{ value: "0", label: "بدون" }]), { value: "45", label: "45 ث" }, { value: "60", label: "دقيقة" }, { value: "90", label: "90 ث" }]} />
+            <Choice label="التصويت" value={String(p.v)} onChange={(x) => set("v", Number(x))} options={[...(p.judge === "system" ? [] : [{ value: "0", label: "بدون" }]), { value: "30", label: "30 ث" }, { value: "60", label: "دقيقة" }, { value: "90", label: "90 ث" }]} />
           </>
         )}
+        {p.judge === "system" ? (
+          <p className="text-[13px] leading-6 text-mist">🤖 مع النظام قاضيًا: الانتقال تلقائي، والمنصة تتصعّد وحدها، ولكل مرحلة وقت (قراءة البطاقات 90 ثانية، والحكم 20 ثانية قبل كشف الحقيقة).</p>
+        ) : (
+        <>
         <Choice
           label="الانتقال"
           value={p.auto ? "auto" : "manual"}
@@ -2735,6 +2819,8 @@ function CourtSetup({
               : "التصعيد يحتاج مؤقتًا للاستجواب."
             : "القاضي يستدعي من يشاء للمنصة."}
         </p>
+        </>
+        )}
         <details className="rounded-[16px] border border-line bg-deep-2/40 p-3">
           <summary className="cursor-pointer text-[15px] font-semibold text-ivory">⚙️ إعدادات متقدمة</summary>
           <div className="mt-3 grid gap-4">
@@ -3025,7 +3111,7 @@ export function CourtTv({ roomId }: { roomId: string }) {
           <p className="rise rounded-[1.6vw] border border-gold/40 bg-night/60 p-[1.6vw] text-[clamp(18px,2vw,40px)] leading-relaxed text-ivory">{state.case?.intro}</p>
           <CastGrid state={state} big />
           <p className="text-center text-[clamp(14px,1.4vw,28px)] text-mist">
-            📱 كل لاعب يقرأ بطاقته السرية في جواله.{state.judge_name ? ` ⚖️ القاضي: ${state.judge_name}.` : ""}
+            📱 كل لاعب يقرأ بطاقته السرية في جواله.{systemJudge(state) ? " 🤖 القاضي: النظام." : state.judge_name ? ` ⚖️ القاضي: ${state.judge_name}.` : ""}
             {(state.case?.versions ?? 1) > 1 ? ` لهذه القضية ${state.case?.versions} حقائق ممكنة.` : ""}
           </p>
         </>
