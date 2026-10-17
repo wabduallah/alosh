@@ -70,7 +70,7 @@ function mafiaIntro(role: string): IntroStep[] {
   const info = ROLE_INFO[role];
   if (!info) return [];
   return [
-    { icon: ROLE_ICONS[role] ?? "🎭", title: `دورك: ${ROLE_NAMES[role] ?? ""}`, text: `فريقك: ${info.team}. احفظ دورك سرًّا، وتراه في أي وقت بلمس «بطاقتك السرية» مطوّلًا.` },
+    { icon: ROLE_ICONS[role] ?? "🎭", title: `دورك: ${ROLE_NAMES[role] ?? ""}`, text: `فريقك: ${info.team}. احفظ دورك سرًّا، وتراه في أي وقت بلمس «بطاقتك السرية»، ويختفي حين ترفع إصبعك.` },
     { icon: "🌙", title: "ماذا تفعل ومتى", text: `${info.does} ${info.when}` },
     { icon: "🏆", title: "كيف تفوز", text: `${info.wins} في النهار ناقشوا وصوّتوا، ولا تُرِ جوالك لأحد.` },
   ];
@@ -144,7 +144,7 @@ function SecretCard({ children }: { children: ReactNode }) {
       role="button"
       tabIndex={0}
       aria-pressed={open}
-      aria-label="بطاقتك السرية: المس مطولًا لتراها"
+      aria-label="بطاقتك السرية: المس لتراها"
       onPointerDown={show}
       onPointerUp={hide}
       onPointerLeave={hide}
@@ -171,7 +171,7 @@ function SecretCard({ children }: { children: ReactNode }) {
             🂠
           </span>
           <p className="text-[16px] font-extrabold text-ivory">بطاقتك السرية</p>
-          <p className="text-[13px] text-muted">المس الشاشة مطوّلًا لترى دورك، ويختفي حين ترفع إصبعك.</p>
+          <p className="text-[13px] text-muted">المس هنا لترى دورك، ويختفي حين ترفع إصبعك.</p>
         </div>
       )}
     </div>
@@ -194,105 +194,78 @@ function SpyChecks({ checks }: { checks: Array<{ round: number; name: string; sp
 }
 
 /**
- * A private ability (the sniper's shot, the seer's look) behind a neutral button that every
- * living player has, so having it gives nothing away. It closes by itself after 20 seconds.
+ * «المس لتظهر»: one tap opens the panel (no long press: phones, iPhone above all, often cancel a
+ * held touch as their own gesture, so the names never showed). The player chooses, then closes it
+ * with «أخفِ اللوحة» at the bottom. It also closes by itself when the phone is locked or the tab is
+ * left, or after a minute, so an open phone on the table shows nothing for long.
  */
-function SecretAbility({ children, has }: { children: ReactNode; has: boolean }) {
+function TapPanel({ trigger, children, label }: { trigger: ReactNode; children: ReactNode; label: string }) {
   const [open, setOpen] = useState(false);
-  const timer = useRef<number | null>(null);
   useEffect(() => {
     if (!open) return;
-    const t = window.setTimeout(() => setOpen(false), 20000);
-    const hide = () => setOpen(false);
+    const t = window.setTimeout(() => setOpen(false), 60000);
+    const hide = () => {
+      if (document.visibilityState === "hidden") setOpen(false);
+    };
     document.addEventListener("visibilitychange", hide);
     return () => {
       window.clearTimeout(t);
       document.removeEventListener("visibilitychange", hide);
     };
   }, [open]);
-  const start = () => {
-    timer.current = window.setTimeout(() => setOpen(true), 500);
-  };
-  const cancel = () => {
-    if (timer.current) window.clearTimeout(timer.current);
-    timer.current = null;
-  };
   if (!open)
     return (
-      <button
-        type="button"
-        onPointerDown={start}
-        onPointerUp={cancel}
-        onPointerLeave={cancel}
-        onPointerCancel={cancel}
-        onContextMenu={(e) => e.preventDefault()}
-        onKeyDown={(e) => (e.key === " " || e.key === "Enter") && setOpen(true)}
-        className="mt-4 min-h-11 touch-none select-none rounded-full border border-line px-5 text-sm font-bold text-mist"
-      >
-        🤫 قدرتي السرية (المس مطوّلًا)
+      <button type="button" aria-label={label} onClick={() => setOpen(true)} onContextMenu={(e) => e.preventDefault()} className="mt-4 block w-full select-none [-webkit-touch-callout:none]">
+        {trigger}
       </button>
     );
   return (
-    <div className="mt-4">
-      {has ? children : <p className="rounded-2xl border border-line bg-deep-2/60 p-3 text-sm text-muted">ليس لديك قدرة الآن. شارك في النقاش والتصويت.</p>}
-      <button type="button" onClick={() => setOpen(false)} className="mt-2 text-xs text-muted underline">
-        إخفاء
+    <div className="mt-4 rounded-[22px] border-2 border-gold/50 bg-night/70 p-4">
+      {children}
+      <button
+        type="button"
+        onClick={() => setOpen(false)}
+        className="mt-4 min-h-12 w-full rounded-full border border-line-strong/70 bg-deep-2/60 text-[15px] font-bold text-ivory hover:border-gold"
+      >
+        🙈 أخفِ اللوحة
       </button>
     </div>
   );
 }
 
 /**
- * The night, the same on every phone: a neutral button that opens on a long press. Inside, each
- * role finds its own choice (citizens pick whom they suspect), so a glance at a phone or the sound
- * of tapping gives nothing away. Closes by itself after 30 seconds, or when the phone is locked.
+ * A private ability (the sniper's shot, the seer's look) behind a neutral button that every living
+ * player has, so having it gives nothing away.
+ */
+function SecretAbility({ children, has }: { children: ReactNode; has: boolean }) {
+  return (
+    <TapPanel label="قدرتي السرية: المس لتظهر" trigger={<span className="inline-flex min-h-11 items-center rounded-full border border-line px-5 text-sm font-bold text-mist">🤫 قدرتي السرية (المس لتظهر)</span>}>
+      {has ? children : <p className="rounded-2xl border border-line bg-deep-2/60 p-3 text-sm text-muted">ليس لديك قدرة الآن. شارك في النقاش والتصويت.</p>}
+    </TapPanel>
+  );
+}
+
+/**
+ * The night, the same on every phone: a neutral card that opens with a tap. Inside, each role finds
+ * its own choice (citizens pick whom they suspect), so a glance at a phone or the sound of tapping
+ * gives nothing away.
  */
 function NightPanel({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const timer = useRef<number | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    const t = window.setTimeout(() => setOpen(false), 30000);
-    const hide = () => setOpen(false);
-    document.addEventListener("visibilitychange", hide);
-    return () => {
-      window.clearTimeout(t);
-      document.removeEventListener("visibilitychange", hide);
-    };
-  }, [open]);
-  const start = () => {
-    timer.current = window.setTimeout(() => setOpen(true), 500);
-  };
-  const cancel = () => {
-    if (timer.current) window.clearTimeout(timer.current);
-    timer.current = null;
-  };
-  if (!open)
-    return (
-      <button
-        type="button"
-        onPointerDown={start}
-        onPointerUp={cancel}
-        onPointerLeave={cancel}
-        onPointerCancel={cancel}
-        onContextMenu={(e) => e.preventDefault()}
-        onKeyDown={(e) => (e.key === " " || e.key === "Enter") && setOpen(true)}
-        className="mt-4 grid min-h-24 w-full touch-none select-none place-items-center gap-1 rounded-[22px] border-2 border-dashed border-violet-text/50 bg-violet-fill/10 p-4 [-webkit-touch-callout:none]"
-      >
-        <span aria-hidden="true" className="text-[28px] leading-none">
-          🌙
-        </span>
-        <span className="text-[15px] font-extrabold text-ivory">لوحتك الليلية</span>
-        <span className="text-[12px] text-muted">المس مطوّلًا لتفتحها. كل اللاعبين يختارون الليلة.</span>
-      </button>
-    );
   return (
-    <div className="mt-4 rounded-[22px] border-2 border-gold/50 bg-night/70 p-4">
+    <TapPanel
+      label="لوحتك الليلية: المس لتظهر الأسماء"
+      trigger={
+        <span className="grid min-h-24 w-full place-items-center gap-1 rounded-[22px] border-2 border-dashed border-violet-text/50 bg-violet-fill/10 p-4">
+          <span aria-hidden="true" className="text-[28px] leading-none">
+            🌙
+          </span>
+          <span className="text-[15px] font-extrabold text-ivory">لوحتك الليلية</span>
+          <span className="text-[12px] leading-5 text-muted">المس لتظهر الأسماء، اختر، ثم «أخفِ اللوحة». كل اللاعبين يختارون الليلة.</span>
+        </span>
+      }
+    >
       {children}
-      <button type="button" onClick={() => setOpen(false)} className="mt-3 min-h-10 text-xs text-muted underline">
-        أخفِ اللوحة
-      </button>
-    </div>
+    </TapPanel>
   );
 }
 
@@ -404,7 +377,10 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
       const { data, error: rpcError } = await supabase.rpc(fn, { p_room_id: roomId, ...args });
       if (rpcError) throw rpcError;
       const result = data as { ok: boolean; reason?: string };
-      if (!result.ok) setError(MAFIA_HOST_ERRORS[result.reason ?? ""] ?? "تعذّر تنفيذ الخطوة.");
+      // The phase already moved on (the automatic move, a timer, or a second tap got there first):
+      // nothing to report, the screen just catches up.
+      if (!result.ok && result.reason === "WRONG_PHASE") await loadAll();
+      else if (!result.ok) setError(MAFIA_HOST_ERRORS[result.reason ?? ""] ?? "تعذّر تنفيذ الخطوة.");
     } catch {
       setError("تعذّر تنفيذ الخطوة.");
     } finally {
@@ -509,7 +485,9 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
   const dayLeft = useCountdown(phase === "day" ? state.day_ends_at : null);
   const voteLeft = useCountdown(phase === "vote" ? state.vote_ends_at : null);
   const nightLeft = useCountdown(phase === "night" ? state.night_ends_at : null);
-  const complete = !!progress && progress.phase === phase && (phase === "night" || phase === "vote") && (progress.total ?? 0) > 0 && (progress.done ?? 0) >= (progress.total ?? 0);
+  // Everyone has chosen, and at night the mafia agree (mafia_v12.sql: no kill otherwise).
+  const complete =
+    !!progress && progress.phase === phase && (phase === "night" || phase === "vote") && (progress.total ?? 0) > 0 && (progress.done ?? 0) >= (progress.total ?? 0) && !(phase === "night" && progress.mafia_split);
   const stepKey = `${phase}:${round}:${runoff ? "r" : ""}`;
 
   // Everyone has chosen: move on by itself after 5 seconds, unless the host turns it off.
@@ -805,7 +783,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
               <input type="checkbox" checked={deadSee} onChange={(e) => setDeadSee(e.target.checked)} className="mt-1 size-5 accent-[var(--color-gold)]" />
               <span>
                 <b className="text-ivory">👻 المقتولون يرون الأدوار</b>
-                <span className="block text-xs text-muted">من يخرج يتابع اللعبة ويرى أدوار الجميع في جواله (بلمس مطوّل)، بشرط ألا يتكلم أو يلمّح.</span>
+                <span className="block text-xs text-muted">من يخرج يتابع اللعبة ويرى أدوار الجميع في جواله (باللمس)، بشرط ألا يتكلم أو يلمّح.</span>
               </span>
             </label>
             </div>
@@ -831,7 +809,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
               {phase === "night" ? "اختار" : "صوّت"} <span className="tabular-nums text-gold">{progress.done ?? 0}</span> من{" "}
               <span className="tabular-nums">{progress.total ?? 0}</span>
             </p>
-            {phase === "night" && progress.mafia_split ? <p className="text-xs text-muted">المافيا لم تتفق بعد على ضحية واحدة.</p> : null}
+            {phase === "night" && progress.mafia_split ? <p className="text-xs font-semibold text-gold">⚠️ المافيا لم تتفق بعد على ضحية واحدة. الانتقال التلقائي ينتظر اتفاقهم، وإذا أنهيت الليلة وهم مختلفون فلا قتل.</p> : null}
             {waitingText(progress.waiting) ? (
               <p className="text-sm text-gold">⏳ {phase === "night" ? "لم يختر بعد" : "لم يصوّت بعد"}: {waitingText(progress.waiting)}</p>
             ) : null}
@@ -1240,7 +1218,11 @@ function NightReport({ roomId, round }: { roomId: string; round: number }) {
   }, [roomId, round]);
   if (!r) return null;
   const lines = [
-    r.target ? `🔪 المافيا اختارت ${r.target}${r.picks.length > 1 ? ` (${r.picks.map((x) => `${x.by} ← ${x.target}`).join("، ")})` : ""}` : "🔪 المافيا لم تختر أحدًا",
+    r.target
+      ? `🔪 المافيا اختارت ${r.target}${r.picks.length > 1 ? ` (${r.picks.map((x) => `${x.by} ← ${x.target}`).join("، ")})` : ""}`
+      : r.picks.length
+        ? `🔪 المافيا لم تتفق، فلا قتل (${r.picks.map((x) => `${x.by} ← ${x.target}`).join("، ")})`
+        : "🔪 المافيا لم تختر أحدًا",
     r.save ? `🩺 الطبيب حمى ${r.save}${r.saved ? " وأنقذه!" : ""}` : "🩺 الطبيب لم يحمِ أحدًا",
     r.guard ? `🛡️ ${r.guard_by ?? "الحارس"} حرس ${r.guard}` : null,
     r.inspect ? `🔍 ${r.inspect.by} حقق مع ${r.inspect.target}: ${r.inspect.mafia ? "مافيا" : "ليس مافيا"}` : null,
@@ -1391,7 +1373,7 @@ type MafiaRow = MafiaPlayerRow;
 type MafiaPick = { player_name: string; target_id: string; target_name: string };
 
 const MAFIA_PLAYER_ERRORS: Record<string, string> = {
-  WRONG_PHASE: "هذه الخطوة غير متاحة الآن.",
+  WRONG_PHASE: "انتهت هذه المرحلة قبل اختيارك. تابع المرحلة الجديدة.",
   NOT_ACTIVE: "لا يمكنك التصرف الآن.",
   BAD_TARGET: "هذا الاختيار غير صالح.",
   NOT_IN_ROOM: "تعذّر التعرف عليك في الغرفة.",
@@ -1626,7 +1608,13 @@ export function MafiaPlayerPanel({
   const chosenName = rows.find((p) => p.player_id === picked)?.player_name ?? null;
   const over = phase === "over";
   const recap = useMafiaRecap(roomId, over);
-  const split = role === "mafia" && phase === "night" && new Set(picks.map((x) => x.target_id)).size > 1;
+  // The mafia kill only when they agree (mafia_v12.sql): every living mafia member on the same name.
+  const mafiaNight = role === "mafia" && phase === "night";
+  const livingMafia = 1 + teammates.filter((n) => rows.some((r) => r.player_name === n && r.alive)).length;
+  const pickedTargets = new Set(picks.map((x) => x.target_id));
+  const split = mafiaNight && pickedTargets.size > 1;
+  const agreed = mafiaNight && pickedTargets.size === 1 && picks.length >= livingMafia ? (picks[0]?.target_name ?? null) : null;
+  const waitingTeam = mafiaNight && livingMafia > 1 && !split && !agreed;
 
   /** The target buttons, for the vote and the night roles. */
   function renderTargets() {
@@ -1662,7 +1650,9 @@ export function MafiaPlayerPanel({
               اخترتم: <span className="font-bold text-ivory">{chosenName}</span>
             </p>
           ) : null}
-          {split ? <p className="mt-2 text-sm text-gold">لم تتفقوا بعد. إذا تعادلت الاختيارات تُختار الضحية بالقرعة.</p> : null}
+          {split ? <p className="mt-2 text-sm font-bold text-wrong">⚠️ لم تتفقوا بعد: الضحية لا تُعتمد إلا إذا اختار كل المافيا الاسم نفسه. إذا انتهت الليلة وأنتم مختلفون فلا قتل.</p> : null}
+          {agreed ? <p className="mt-2 text-sm font-bold text-correct">✅ اتفقتم على {agreed}.</p> : null}
+          {waitingTeam ? <p className="mt-2 text-sm text-muted">صوّتوا على اسم واحد: الضحية تُعتمد حين يختارها كل المافيا.</p> : null}
       </>
     );
   }
@@ -1972,7 +1962,7 @@ function GhostView({ roomId, phase }: { roomId: string; phase: string }) {
       <p className="text-sm font-bold text-ivory">👻 أنت خارج اللعبة</p>
       <p className="text-xs leading-6 text-muted">تابع بصمت: لا تتكلم ولا تلمّح بأي شيء تعرفه، حتى بتعابير وجهك.</p>
       {roles.length > 0 ? (
-        <HoldToSee label="👁️ أدوار الجميع: المس مطوّلًا لتراها، ولا تُرِها لأحد.">
+        <HoldToSee label="👁️ أدوار الجميع: المس هنا لتراها، ولا تُرِها لأحد.">
         <ul className="grid grid-cols-2 gap-1.5 text-sm">
           {roles.map((r) => (
             <li key={r.player_id} className={cx("flex min-w-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5", r.role === "mafia" || r.role === "spy" ? "bg-wrong-fill/20" : "bg-deep/60", !r.alive && "opacity-50 line-through")}>
