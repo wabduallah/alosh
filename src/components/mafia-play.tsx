@@ -39,6 +39,8 @@ type StateData = Record<string, unknown> & { phase?: unknown; round?: unknown };
 type MafiaState = MafiaPublicState;
 
 const MAFIA_HOST_ERRORS: Record<string, string> = {
+  NOT_NARRATOR: "هذا للراوي فقط.",
+  NOT_STARTED: "لم تبدأ اللعبة بعد.",
   ROOM_NOT_PLAYING: "ابدأ الغرفة أولًا.",
   ALREADY_STARTED: "اللعبة بدأت بالفعل.",
   NOT_ENOUGH_PLAYERS: "تحتاج المافيا إلى 5 لاعبين على الأقل غير الراوي.",
@@ -324,6 +326,8 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
   const [voteSeconds, setVoteSeconds] = useState(60);
   const [nightSeconds, setNightSeconds] = useState(60);
   const [randomNarrator, setRandomNarrator] = useState(0);
+  // If the narrator goes away (mafia_v13.sql): 0 = the server goes on with the timers, 1 = it waits.
+  const [hostAway, setHostAway] = useState(0);
   const [lovers, setLovers] = useState(false);
   const [deadSee, setDeadSee] = useState(false);
   const [nominate, setNominate] = useState(false);
@@ -367,7 +371,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
   useLivePoll(`mafia-narrator-${roomId}`, [{ table: "room_game_state", filter: `room_id=eq.${roomId}` }, { table: "room_players", filter: `room_id=eq.${roomId}` }], loadAll);
 
   async function step(
-    fn: "mafia_start" | "mafia_resolve_night" | "mafia_open_vote" | "mafia_close_vote" | "mafia_reset" | "mafia_vote_timeout" | "mafia_nominate" | "mafia_oral_result",
+    fn: "mafia_start" | "mafia_resolve_night" | "mafia_open_vote" | "mafia_close_vote" | "mafia_reset" | "mafia_vote_timeout" | "mafia_nominate" | "mafia_oral_result" | "mafia_redeal",
     args: Record<string, unknown> = {},
   ) {
     if (!supabase || busy) return;
@@ -389,6 +393,17 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
   }
 
   const phase = state.phase ?? "";
+  // The narrator's phone says «I'm here» every 15 seconds (mafia_v13.sql). Without it for a minute,
+  // the server goes on by itself or waits, as the setup chose.
+  const narrating = phase === "night" || phase === "day" || phase === "vote";
+  useEffect(() => {
+    if (!supabase || !narrating) return;
+    const client = supabase;
+    const ping = () => void client.rpc("mafia_narrator_ping", { p_room_id: roomId });
+    ping();
+    const t = window.setInterval(ping, 15000);
+    return () => window.clearInterval(t);
+  }, [roomId, narrating]);
   const round = state.round ?? 1;
   const over = phase === "over";
   const alive = rows.filter((p) => p.alive).length;
@@ -445,6 +460,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
     setVoteSeconds(last.vote_seconds ?? 60);
     setNightSeconds(last.night_seconds ?? 0);
     setRandomNarrator(last.narrator === "random" ? 1 : 0);
+    setHostAway(last.host_away === "pause" ? 1 : 0);
     setLovers(!!last.lovers);
     setDeadSee(last.dead_see_roles === true);
     setDisguised(!!last.disguised);
@@ -676,6 +692,15 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
             <summary className="cursor-pointer text-sm font-bold text-ivory">⚙️ إعدادات متقدمة</summary>
             <div className="mt-3 grid gap-4">
             <MafiaChoice
+              label="إذا غاب الراوي أكثر من دقيقة"
+              value={hostAway}
+              onChange={setHostAway}
+              options={[
+                { value: 0, label: "🤖 يكمل النظام بالوقت" },
+                { value: 1, label: "⏸️ تتوقف حتى يرجع" },
+              ]}
+            />
+            <MafiaChoice
               label="طريقة التصويت"
               value={voteMode === "phone" ? 0 : voteMode === "pick" ? 1 : 2}
               onChange={(v) => setVoteMode(v === 1 ? "pick" : v === 2 ? "count" : "phone")}
@@ -867,6 +892,7 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
                     vote_seconds: voteSeconds,
                     night_seconds: nightSeconds,
                     narrator: randomNarrator ? "random" : "host",
+                    host_away: hostAway ? "pause" : "auto",
                     jester,
                     mayor,
                     bodyguard,
@@ -926,6 +952,20 @@ export function MafiaNarratorPanel({ roomId, roomCode, roomStatus, isHost = true
           <p role="alert" className="mt-3 text-sm text-wrong">
             {error}
           </p>
+        ) : null}
+        {phase !== "" ? (
+          <div className="mt-6 border-t border-line pt-4">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                if (window.confirm("إعادة توزيع الأدوار من جديد؟ تبدأ مباراة جديدة بنفس الإعدادات، والحالية تنتهي بلا نتيجة.")) void step("mafia_redeal");
+              }}
+              className="mx-auto flex min-h-11 items-center gap-2 rounded-full border border-line-strong/70 px-5 text-sm font-bold text-mist hover:border-gold hover:text-ivory"
+            >
+              🔄 إعادة توزيع الأدوار
+            </button>
+          </div>
         ) : null}
       </div>
 
@@ -1411,6 +1451,16 @@ export function MafiaPlayerPanel({
   const [message, setMessage] = useState<string | null>(null);
 
   const phase = String(state.phase ?? "");
+  // The narrator away (mafia_v13.sql): every phone asks the server now and then. It does nothing while
+  // the narrator is there; otherwise the server moves the phase on its timer, or waits.
+  const inPlay = phase === "night" || phase === "day" || phase === "vote";
+  const hostAway = (state as MafiaState).host_away ?? null;
+  useEffect(() => {
+    if (!supabase || !inPlay || me?.narrator) return;
+    const client = supabase;
+    const t = window.setInterval(() => void client.rpc("mafia_auto_step", { p_room_id: roomId }), 15000 + Math.floor(Math.random() * 5000));
+    return () => window.clearInterval(t);
+  }, [roomId, inPlay, me?.narrator]);
   const round = Number(state.round ?? 1);
   const winner = typeof state.winner === "string" ? state.winner : null;
   const lastResult = typeof state.last_result === "string" ? state.last_result : null;
@@ -1666,6 +1716,11 @@ export function MafiaPlayerPanel({
         المافيا · الجولة {round || 1}
         {narratorName ? ` · الراوي: ${narratorName}` : ""}
       </p>
+      {hostAway && inPlay ? (
+        <p role="status" className="mx-auto mt-3 max-w-md rounded-2xl border border-gold/50 bg-gold/10 px-3 py-2 text-sm font-bold text-gold">
+          {hostAway === "pause" ? "⏸️ الراوي غاب. اللعبة متوقفة حتى يرجع." : "🤖 الراوي غاب. النظام يكمل اللعبة بالوقت."}
+        </p>
+      ) : null}
 
       {!me?.started ? (
         me?.late || (phase !== "" && phase !== "over" && !!me) ? (

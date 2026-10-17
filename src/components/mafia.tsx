@@ -36,6 +36,8 @@ export type MafiaSettings = {
   preset?: "quick" | "diwaniya" | "beginners" | null;
   /** mafia_v10.sql: «حاولت المافيا القتل… لكن الطبيب أنقذ الضحية». */
   announce_saves?: boolean;
+  /** When the narrator is away (mafia_v13.sql). */
+  host_away?: "auto" | "pause";
 };
 export type MafiaVote = { voter: string; target: string; weight: number; auto?: boolean };
 /** What everyone sees after a vote: how many votes each player got, without who cast them. */
@@ -65,6 +67,8 @@ export type MafiaPublicState = {
   nominees?: string[] | null;
   /** mafia_v10.sql: a paused timer, the reveal at the end, and the evening across matches. */
   timer_paused?: { key: string; left: number } | null;
+  /** The narrator is away (mafia_v13.sql): the server goes on by itself («auto») or waits («pause»). */
+  host_away?: "auto" | "pause" | null;
   reveal_i?: number | null;
   evening?: unknown;
 };
