@@ -57,3 +57,4 @@ court_v9.sql
 mafia_v11.sql
 mafia_v12.sql
 mafia_v13.sql
+duel_online_v1.sql

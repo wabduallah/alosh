@@ -13,6 +13,16 @@ begin
   perform set_config('test.uid', v_uid::text, false);
   return v_pid;
 end $$;
+-- لاعب من الهيئة (محلف أو شاهد أو محقق): بعض القضايا بلا محلفين في غرفة من 7.
+create or replace function public.t9c_any(p_n int) returns uuid language plpgsql as $$
+declare v_pid uuid; v_uid uuid;
+begin
+  select r.player_id, p.user_id into v_pid, v_uid from room_court_roles r join room_players p on p.id = r.player_id
+   where r.room_id = 'c9000000-0000-0000-0000-000000000007' and r.kind in ('juror', 'witness', 'detective')
+   order by r.kind, r.role_key offset p_n - 1 limit 1;
+  perform set_config('test.uid', v_uid::text, false);
+  return v_pid;
+end $$;
 -- الوقت انتهى: نرجع ends_at للماضي ثم نسأل الخادم.
 create or replace function public.t9c_expire() returns jsonb language plpgsql as $$
 begin
@@ -44,13 +54,13 @@ begin
   assert public.t9c_sd()->>'phase' = 'question', 'question';
 
   -- «انتهى سؤالي»: الدور لمن بعده.
-  a := public.t9c_as('juror', 1);
+  a := public.t9c_any(1);
   perform public.court_raise(r, true);
   assert public.t9c_sd()->>'asking' = a::text, 'first asks';
-  b := public.t9c_as('witness', 1);
+  b := public.t9c_any(2);
   perform public.court_raise(r, true);
   assert jsonb_array_length(public.t9c_sd()->'queue') = 1, 'second waits';
-  perform public.t9c_as('juror', 1);
+  perform public.t9c_any(1);
   assert (public.court_raise(r, false)->>'done')::boolean, 'asker ends';
   assert public.t9c_sd()->>'asking' = b::text and jsonb_array_length(public.t9c_sd()->'queue') = 0, 'next asks';
 
@@ -101,5 +111,5 @@ begin
   assert public.t9c_sd()->'ends_at' is null or public.t9c_sd()->'ends_at' = 'null'::jsonb, 'no intro timer';
   assert public.t9c_sd()->'last_settings' is null or true, 'ok';
 end $$;
-drop function public.t9c_sd(); drop function public.t9c_as(text, int); drop function public.t9c_expire();
+drop function public.t9c_any(int); drop function public.t9c_sd(); drop function public.t9c_as(text, int); drop function public.t9c_expire();
 select 'ok court9';
