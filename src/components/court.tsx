@@ -11,7 +11,7 @@ import { useSiteSettings } from "@/lib/site-settings";
 import { setVoicePreference, speak, voicePreference } from "@/components/mafia";
 import { phaseGuide, suggestQuestions } from "@/lib/court-phase-guide";
 import { ANSWER_RULES, OBJECTION_RULES, answerRulesFor, objectionHint } from "@/lib/court-rules";
-import { GUIDE_PHASES, HOST_START, PLAYER_START, ROLE_GUIDES, SPEECHES, fillSpeech, type GuidePhase, type GuideRole } from "@/lib/court-guide";
+import { GUIDE_PHASES, HOST_START, MEMO, PLAYER_START, ROLE_GUIDES, SPEECHES, fillSpeech, type GuidePhase, type GuideRole } from "@/lib/court-guide";
 import type { Generated } from "@/lib/court-ai";
 import { GameIntro, type IntroStep } from "@/components/game-intro";
 import type { CourtCase } from "@/components/admin/cases";
@@ -1131,13 +1131,13 @@ function RoleCard({ card, fresh }: { card: MyCard; fresh: boolean }) {
             <span aria-hidden="true" className="text-[26px]">
               👆
             </span>
-            <span className="text-[15px] font-bold text-ivory">اضغط مطوّلًا لقراءة بطاقتك السرية</span>
+            <span className="text-[15px] font-bold text-ivory">المس البطاقة وأبقِ إصبعك لتقرأ سرّك</span>
             <span className="text-[12px] text-mist">تختفي حين ترفع إصبعك.</span>
           </span>
         )}
       </button>
       {fresh ? (
-        <p className="beat rounded-[12px] bg-gold/15 p-2 text-center text-[14px] font-bold text-gold">✉️ وصلتك معلومة جديدة! اضغط مطوّلًا على البطاقة</p>
+        <p className="beat rounded-[12px] bg-gold/15 p-2 text-center text-[14px] font-bold text-gold">✉️ وصلتك معلومة جديدة! المس البطاقة لتقرأها</p>
       ) : card.later_pending ? (
         <p className="text-[13px] text-mist">✉️ ستصلك معلومة إضافية في جولة لاحقة.</p>
       ) : null}
@@ -1209,6 +1209,136 @@ function Hint({ state, kind }: { state: CourtState; kind?: CourtKind }) {
  * «📘 دليل دورك»: what to do in this phase, questions to ask, and the rules that concern the role
  * (objections for the prosecutor and the lawyer, answers for the accused and witnesses).
  */
+/**
+ * The stand order (the same as the server's escalation, court_v5.sql): the witnesses, then the
+ * detective, then the accused. With a questioning timer and the stand moving by itself, each one's
+ * turn starts at a known minute of every questioning round.
+ */
+function standPlan(state: CourtState) {
+  const rank = (k: CourtKind) => (k === "witness" ? 1 : k === "detective" ? 2 : k === "accused" ? 3 : 0);
+  const order = (state.cast ?? [])
+    .map((c, i) => ({ c, i }))
+    .filter((x) => rank(x.c.kind) > 0)
+    .sort((a, b) => rank(a.c.kind) - rank(b.c.kind) || a.i - b.i)
+    .map((x) => x.c);
+  const secs = (state.steps ?? []).find((st) => st.phase === "question")?.seconds ?? 0;
+  const auto = state.settings?.escalate !== false && secs > 0;
+  const slot = order.length ? Math.max(30, secs / order.length) : 0;
+  // «at»: seconds into each questioning round when their turn starts.
+  return order.map((c, i) => ({ c, at: auto ? Math.round(i * slot) : null, auto }));
+}
+
+/** Who asks first, on whoever is on the stand: the prosecutor, the lawyer, then everyone else by turn. */
+function askPlan(state: CourtState) {
+  const cast = state.cast ?? [];
+  const one = (k: CourtKind) => cast.find((c) => c.kind === k);
+  return [
+    { label: "المدعي العام", who: one("prosecutor")?.player_name ?? "", icon: KINDS.prosecutor.icon },
+    { label: "المحامي", who: one("lawyer")?.player_name ?? "", icon: KINDS.lawyer.icon },
+    { label: "المحقق والمحلّفون والشهود", who: "بالدور: «✋ أبي أسأل»", icon: "🙋" },
+  ];
+}
+
+/**
+ * «خطة الاستجواب»: who takes the stand, in order (and from which minute when it moves by itself),
+ * and who asks first on each one. The same on phones and on the TV, so nobody needs to ask.
+ */
+function SessionPlan({ state, meId = null, big = false }: { state: CourtState; meId?: string | null; big?: boolean }) {
+  const stand = standPlan(state);
+  const asks = askPlan(state);
+  if (!stand.length) return null;
+  const t = (small: string, large: string) => (big ? large : small);
+  const auto = stand[0]?.auto;
+  return (
+    <div className={cx("grid gap-3 rounded-[22px] border border-gold/40 bg-night/60 p-4", big && "rounded-[1.6vw] p-[1.4vw]")}>
+      <p className={cx("font-bold text-gold", t("text-[14px]", "text-[clamp(16px,1.6vw,32px)]"))}>📋 خطة الاستجواب</p>
+      <div className={cx("grid gap-3", big ? "grid-cols-2 gap-[1.4vw]" : "sm:grid-cols-2")}>
+        <div className="grid content-start gap-1.5">
+          <p className={cx("font-semibold text-ivory", t("text-[13px]", "text-[clamp(14px,1.4vw,28px)]"))}>🎙️ من يصعد المنصة بالترتيب</p>
+          <ol className="grid gap-1">
+            {stand.map(({ c, at }, i) => {
+              const mine = !!meId && c.player_id === meId;
+              const now = state.phase === "question" && state.stand === c.player_id;
+              return (
+                <li
+                  key={c.player_id}
+                  className={cx(
+                    "flex items-center gap-2 rounded-[12px] px-2.5 py-1.5",
+                    now ? "bg-gold/20" : mine ? "bg-violet-text/15" : "bg-deep-2/50",
+                    t("text-[13px]", "text-[clamp(13px,1.3vw,26px)]"),
+                  )}
+                >
+                  <span className="w-5 shrink-0 font-bold tabular-nums text-gold">{i + 1}</span>
+                  <span aria-hidden="true">{KINDS[c.kind].icon}</span>
+                  <span className="min-w-0 flex-1 truncate text-ivory">
+                    {c.name} <span className="text-mist">({c.player_name})</span>
+                  </span>
+                  {mine ? <span className={cx("shrink-0 font-bold text-violet-text", t("text-[11px]", "text-[0.8em]"))}>أنت</span> : null}
+                  {now ? <span className={cx("shrink-0 font-bold text-gold", t("text-[11px]", "text-[0.8em]"))}>الآن</span> : at !== null ? <span dir="ltr" className={cx("shrink-0 text-mist tabular-nums", t("text-[11px]", "text-[0.8em]"))}>{mmss(at)}</span> : null}
+                </li>
+              );
+            })}
+          </ol>
+          <p className={cx("text-mist", t("text-[12px]", "text-[clamp(12px,1.1vw,22px)]"))}>
+            {auto ? "تنتقل المنصة وحدها مع الوقت في كل جولة استجواب، والوقت جنب الاسم متى يبدأ دوره من بداية الجولة." : "القاضي يستدعي للمنصة، وهذا الترتيب المقترح."}
+          </p>
+        </div>
+        <div className="grid content-start gap-1.5">
+          <p className={cx("font-semibold text-ivory", t("text-[13px]", "text-[clamp(14px,1.4vw,28px)]"))}>✋ من يسأل أولًا (على كل من يصعد)</p>
+          <ol className="grid gap-1">
+            {asks.map((x, i) => (
+              <li key={x.label} className={cx("flex items-center gap-2 rounded-[12px] bg-deep-2/50 px-2.5 py-1.5", t("text-[13px]", "text-[clamp(13px,1.3vw,26px)]"))}>
+                <span className="w-5 shrink-0 font-bold tabular-nums text-gold">{i + 1}</span>
+                <span aria-hidden="true">{x.icon}</span>
+                <span className="min-w-0 flex-1 text-ivory">
+                  {x.label} {x.who ? <span className="text-mist">({x.who})</span> : null}
+                </span>
+              </li>
+            ))}
+          </ol>
+          <p className={cx("text-mist", t("text-[12px]", "text-[clamp(12px,1.1vw,22px)]"))}>سؤال واحد واضح في كل دور، ثم الدور للي بعدك.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * «احفظها وارفع راسك»: three lines a player can remember, so they play looking at the room, not
+ * the phone. Plus their own place: on the stand (number and minute), or first or second to ask.
+ */
+function MemoCard({ state, card, meId = null }: { state: CourtState; card: MyCard; meId?: string | null }) {
+  if (!card.kind || card.kind === ("judge" as CourtKind)) return null;
+  const lines = [...MEMO[card.kind as Exclude<GuideRole, "judge">]];
+  if (card.kind === "juror" && (state.settings?.golden === "off" || card.golden_left === false)) lines[2] = "زرّك: «✋ أبي أسأل». وفي النهاية صوّت على كل متهم.";
+  const stand = standPlan(state);
+  const me = card.player_id ?? meId;
+  const n = stand.findIndex((x) => x.c.player_id === me);
+  const place =
+    n >= 0
+      ? `📍 أنت رقم ${n + 1} على المنصة${stand[n].at !== null ? `، يبدأ دورك عند ${mmss(stand[n].at ?? 0)} من كل جولة استجواب` : ""}.`
+      : card.kind === "prosecutor"
+        ? "📍 أنت أول من يسأل، وأول من يترافع."
+        : card.kind === "lawyer"
+          ? "📍 تسأل بعد المدعي، وتترافع بعده."
+          : "📍 تسأل بعد المدعي والمحامي، بالضغط على «أبي أسأل».";
+  return (
+    <div className="grid gap-2 rounded-[22px] border-2 border-gold/60 bg-[linear-gradient(160deg,#2a1d08cc,#140c2bcc)] p-4">
+      <p className="text-[14px] font-extrabold text-gold">🧠 احفظها وارفع راسك</p>
+      <ol className="grid gap-1.5">
+        {lines.map((x, i) => (
+          <li key={x} className="flex gap-2 text-[15px] leading-7 text-ivory">
+            <span className="btn-gold grid size-6 shrink-0 place-items-center rounded-full text-[12px] font-bold">{i + 1}</span>
+            <span>{x}</span>
+          </li>
+        ))}
+      </ol>
+      <p className="rounded-[12px] bg-violet-text/15 px-3 py-2 text-[14px] font-semibold leading-6 text-ivory">{place}</p>
+      <p className="text-[12px] text-mist">وسرّك في البطاقة تحت: اقرأه مرة واحدة، والجوال يقدر ينقفل.</p>
+    </div>
+  );
+}
+
 /** A titled list, the building block of the guides. */
 function GuideList({ title, items, tone = "mist" }: { title?: string; items: string[]; tone?: "mist" | "ivory" }) {
   if (!items.length) return null;
@@ -1280,8 +1410,8 @@ function RoleGuide({ state, kind }: { state: CourtState; kind?: CourtKind | "jud
   const dual = (state.accused?.length ?? 0) > 1;
   const golden = state.settings?.golden ?? "jurors";
   return (
-    <details className="surface rounded-[20px] p-4" open={state.phase === "intro"}>
-      <summary className="cursor-pointer text-[15px] font-semibold text-ivory">📘 دليل {kind === "judge" ? "القاضي" : `دورك: ${KINDS[kind].label}`}</summary>
+    <details className="surface rounded-[20px] p-4">
+      <summary className="cursor-pointer text-[15px] font-semibold text-ivory">📘 {kind === "judge" ? "دليل القاضي" : `الدليل الكامل لدورك: ${KINDS[kind].label}`}</summary>
       <div className="mt-3 grid gap-4">
         <p className="rounded-[14px] border border-line bg-deep-2/60 p-3 text-[14px] leading-6 text-ivory">🎯 {doc.mission}</p>
         {now.length ? (
@@ -1729,6 +1859,7 @@ function PlayView({ roomId, state, meId, card, reloadCard, host = false }: { roo
       </div>
       {tab === "role" ? (
         <div role="tabpanel" className="grid gap-3">
+          {card?.started ? <MemoCard state={state} card={card} meId={meId} /> : null}
           {card?.started ? <RoleCard card={card} fresh={fresh} /> : null}
           {card?.started ? <RoleGuide state={state} kind={card.kind} /> : null}
           {card?.started ? <Notes roomId={roomId} caseId={state.case?.id} /> : null}
@@ -1754,10 +1885,13 @@ function PlayView({ roomId, state, meId, card, reloadCard, host = false }: { roo
         <div role="tabpanel" className="grid gap-3">
           <SessionBoard state={state} />
           {state.phase === "closing" ? <ClosingBanner state={state} /> : null}
-          <div className="surface rounded-[20px] p-4">
-            <p className="mb-3 text-[15px] font-semibold text-ivory">أطراف القضية</p>
-            <CastGrid state={state} />
-          </div>
+          <SessionPlan state={state} meId={card?.player_id ?? meId} />
+          <details className="surface rounded-[20px] p-4">
+            <summary className="cursor-pointer text-[15px] font-semibold text-ivory">👥 أطراف القضية</summary>
+            <div className="mt-3">
+              <CastGrid state={state} />
+            </div>
+          </details>
         </div>
       ) : null}
     </div>
@@ -1936,6 +2070,7 @@ function Spectator({ state, judge = false }: { state: CourtState; judge?: boolea
         </>
       ) : null}
       {state.phase === "intro" ? <Note>{state.case?.intro}</Note> : null}
+      {state.phase === "intro" || state.phase === "question" ? <SessionPlan state={state} /> : null}
       {!over && (state.evidence ?? []).length ? (
         <>
           <Timeline items={state.evidence ?? []} stage={state.phase === "evidence" ? state.stage : undefined} />
@@ -3206,6 +3341,7 @@ export function CourtTv({ roomId }: { roomId: string }) {
         <>
           <p className="rise rounded-[1.6vw] border border-gold/40 bg-night/60 p-[1.6vw] text-[clamp(18px,2vw,40px)] leading-relaxed text-ivory">{state.case?.intro}</p>
           <CastGrid state={state} big />
+          <SessionPlan state={state} big />
           <p className="text-center text-[clamp(14px,1.4vw,28px)] text-mist">
             📱 كل لاعب يقرأ بطاقته السرية في جواله.{systemJudge(state) ? " 🤖 القاضي: النظام." : state.judge_name ? ` ⚖️ القاضي: ${state.judge_name}.` : ""}
             {(state.case?.versions ?? 1) > 1 ? ` لهذه القضية ${state.case?.versions} حقائق ممكنة.` : ""}
