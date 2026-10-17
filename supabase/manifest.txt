@@ -55,3 +55,4 @@ court_v8.sql
 court_cases_v7.sql
 court_v9.sql
 mafia_v11.sql
+mafia_v12.sql
