@@ -1406,26 +1406,50 @@ function SpeechGuide({ state, side, open = false, live = false }: { state: Court
   const sp = SPEECHES[side];
   const names = accusedNames(state);
   const total = sp.parts.reduce((n, x) => n + x.seconds, 0);
-  return (
-    <details className={cx("rounded-[20px] border p-4", live ? "border-gold bg-gold/10 shadow-glow-gold" : "border-gold/40 bg-night/50")} open={open}>
-      <summary className="cursor-pointer text-[15px] font-bold text-gold">
-        🎤 {live ? "دورك الآن: " : ""}قالب {sp.title} <span className="text-[12px] font-normal text-mist">(خمسة أجزاء في قرابة {total} ثانية)</span>
-      </summary>
-      <ol className="mt-3 grid gap-2">
+  // Five words to glance at while speaking; the hints and examples fold below.
+  const words = (
+    <ol className="grid gap-1.5">
+      {sp.parts.map((x, i) => (
+        <li key={x.title} className="flex items-center gap-2 rounded-[12px] bg-deep-2/60 px-3 py-2">
+          <span className="btn-gold grid size-7 shrink-0 place-items-center rounded-full text-[13px] font-bold">{i + 1}</span>
+          <span className="flex-1 text-[17px] font-extrabold text-ivory">{x.title}</span>
+          <span className="rounded-full bg-deep-2 px-2 text-[12px] font-semibold tabular-nums text-gold">{x.seconds} ث</span>
+        </li>
+      ))}
+    </ol>
+  );
+  const more = (
+    <details className="rounded-[12px] border border-line p-2.5">
+      <summary className="cursor-pointer text-[13px] font-semibold text-mist">الشرح والأمثلة</summary>
+      <ol className="mt-2 grid gap-2">
         {sp.parts.map((x, i) => (
-          <li key={x.title} className="grid gap-0.5 rounded-[14px] border border-line bg-deep-2/50 p-2.5">
-            <p className="flex items-center gap-2 text-[14px] font-bold text-ivory">
-              <span className="btn-gold grid size-6 shrink-0 place-items-center rounded-full text-[12px]">{i + 1}</span>
-              {x.title}
-              <span className="ms-auto rounded-full bg-deep-2 px-2 text-[11px] font-semibold tabular-nums text-gold">{x.seconds} ث</span>
-            </p>
-            <p className="text-[13px] leading-6 text-mist">{x.hint}</p>
-            <p className="text-[13px] leading-6 text-ivory">«{fillSpeech(x.example, names)}»</p>
+          <li key={x.title} className="grid gap-0.5 text-[13px] leading-6">
+            <span className="font-bold text-ivory">
+              {i + 1}. {x.title}: <span className="font-normal text-mist">{x.hint}</span>
+            </span>
+            <span className="text-ivory">«{fillSpeech(x.example, names)}»</span>
           </li>
         ))}
       </ol>
-      <div className="mt-3">
+      <div className="mt-2">
         <GuideList items={sp.tips} />
+      </div>
+    </details>
+  );
+  if (live)
+    return (
+      <div className="grid gap-2 rounded-[20px] border-2 border-gold bg-gold/10 p-3 shadow-glow-gold">
+        <p className="text-[14px] font-bold text-gold">🎤 {sp.title} · قرابة {total} ثانية</p>
+        {words}
+        {more}
+      </div>
+    );
+  return (
+    <details className="rounded-[20px] border border-gold/40 bg-night/50 p-3" open={open}>
+      <summary className="cursor-pointer text-[14px] font-bold text-gold">🎤 حضّر {sp.title} · قرابة {total} ثانية</summary>
+      <div className="mt-2 grid gap-2">
+        {words}
+        {more}
       </div>
     </details>
   );
@@ -1910,13 +1934,11 @@ function PlayView({ roomId, state, meId, card, reloadCard, host = false }: { roo
       </div>
     );
   const onStand = state.phase === "question" && !!me && state.stand === me;
-  const speaking = state.phase === "closing" && !!card?.kind && state.side === card.kind;
   return (
     <div className="grid gap-3">
       {flashes}
       {state.phase === "verdict" ? <VerdictCard state={state} /> : null}
       {onStand ? <p className="beat rounded-[16px] border-2 border-gold bg-gold/15 p-3 text-center text-[17px] font-extrabold text-gold">🎙️ أنت على المنصة الحين: أجب باختصار</p> : null}
-      {speaking ? <p className="beat rounded-[16px] border-2 border-gold bg-gold/15 p-3 text-center text-[17px] font-extrabold text-gold">🎤 دورك تترافع الحين</p> : null}
       <Actions roomId={roomId} state={state} card={card} reloadCard={reloadCard} part="top" />
       <div role="tablist" aria-label="أقسام الجلسة" className="sticky top-0 z-10 grid grid-cols-3 gap-1 rounded-[16px] border border-line bg-night/90 p-1 backdrop-blur">
         {tabs.map((t) => (
@@ -1959,8 +1981,7 @@ function PlayView({ roomId, state, meId, card, reloadCard, host = false }: { roo
       ) : null}
       {tab === "session" ? (
         <div role="tabpanel" className="grid gap-3">
-          {state.phase === "closing" ? <ClosingBanner state={state} /> : null}
-          <SessionPlan state={state} meId={me} />
+          {state.phase === "closing" ? <ClosingBanner state={state} /> : <SessionPlan state={state} meId={me} />}
         </div>
       ) : null}
       <Actions roomId={roomId} state={state} card={card} reloadCard={reloadCard} part="bar" />
