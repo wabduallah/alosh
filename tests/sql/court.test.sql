@@ -60,6 +60,8 @@ begin
   v := public.court_start(r, '{"host_plays": true}');
   assert (v->>'ok')::boolean, 'start 16: ' || v::text;
   assert (select count(*) from room_court_roles where room_id = r) = 16, 'all dealt';
-  assert (select count(*) from room_court_roles where room_id = r and kind = 'juror') >= 9, 'extras are jurors';
+  -- القضية عشوائية: الباقي بعد أكبر قضية (أدوارها كلها موزعة) محلّفون.
+  assert (select count(*) from room_court_roles where room_id = r and kind = 'juror')
+         >= 16 - (select max(jsonb_array_length(roles)) from court_cases where is_active), 'extras are jurors';
 end $$;
 select 'ok court';
