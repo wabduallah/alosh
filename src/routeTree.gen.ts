@@ -15,6 +15,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as PlayRouteImport } from './routes/play'
 import { Route as PremiumRouteImport } from './routes/premium'
 import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as DuelRouteImport } from './routes/duel'
 import { Route as FaqRouteImport } from './routes/faq'
 import { Route as CopyrightRouteImport } from './routes/copyright'
 import { Route as ProfileRouteImport } from './routes/profile'
@@ -61,6 +62,11 @@ const PremiumRoute = PremiumRouteImport.update({
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DuelRoute = DuelRouteImport.update({
+  id: '/duel',
+  path: '/duel',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FaqRoute = FaqRouteImport.update({
@@ -156,6 +162,7 @@ export interface FileRoutesByFullPath {
   '/play': typeof PlayRoute
   '/premium': typeof PremiumRoute
   '/privacy': typeof PrivacyRoute
+  '/duel': typeof DuelRoute
   '/faq': typeof FaqRoute
   '/copyright': typeof CopyrightRoute
   '/profile': typeof ProfileRoute
@@ -181,6 +188,7 @@ export interface FileRoutesByTo {
   '/play': typeof PlayRoute
   '/premium': typeof PremiumRoute
   '/privacy': typeof PrivacyRoute
+  '/duel': typeof DuelRoute
   '/faq': typeof FaqRoute
   '/copyright': typeof CopyrightRoute
   '/profile': typeof ProfileRoute
@@ -207,6 +215,7 @@ export interface FileRoutesById {
   '/play': typeof PlayRoute
   '/premium': typeof PremiumRoute
   '/privacy': typeof PrivacyRoute
+  '/duel': typeof DuelRoute
   '/faq': typeof FaqRoute
   '/copyright': typeof CopyrightRoute
   '/profile': typeof ProfileRoute
@@ -234,6 +243,7 @@ export interface FileRouteTypes {
     | '/play'
     | '/premium'
     | '/privacy'
+    | '/duel'
     | '/faq'
     | '/copyright'
     | '/profile'
@@ -259,6 +269,7 @@ export interface FileRouteTypes {
     | '/play'
     | '/premium'
     | '/privacy'
+    | '/duel'
     | '/faq'
     | '/copyright'
     | '/profile'
@@ -284,6 +295,7 @@ export interface FileRouteTypes {
     | '/play'
     | '/premium'
     | '/privacy'
+    | '/duel'
     | '/faq'
     | '/copyright'
     | '/profile'
@@ -310,6 +322,7 @@ export interface RootRouteChildren {
   PlayRoute: typeof PlayRoute
   PremiumRoute: typeof PremiumRoute
   PrivacyRoute: typeof PrivacyRoute
+  DuelRoute: typeof DuelRoute
   FaqRoute: typeof FaqRoute
   CopyrightRoute: typeof CopyrightRoute
   ProfileRoute: typeof ProfileRoute
@@ -371,6 +384,13 @@ declare module '@tanstack/react-router' {
       path: '/privacy'
       fullPath: '/privacy'
       preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/duel': {
+      id: '/duel'
+      path: '/duel'
+      fullPath: '/duel'
+      preLoaderRoute: typeof DuelRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/faq': {
@@ -481,6 +501,7 @@ const rootRouteChildren: RootRouteChildren = {
   PlayRoute: PlayRoute,
   PremiumRoute: PremiumRoute,
   PrivacyRoute: PrivacyRoute,
+  DuelRoute: DuelRoute,
   FaqRoute: FaqRoute,
   CopyrightRoute: CopyrightRoute,
   ProfileRoute: ProfileRoute,

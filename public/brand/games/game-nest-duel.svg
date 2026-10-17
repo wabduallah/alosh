@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><linearGradient id="ndA" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7fb2ff"/><stop offset="1" stop-color="#2563eb"/></linearGradient><linearGradient id="ndB" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff8aa0"/><stop offset="1" stop-color="#e11d48"/></linearGradient><linearGradient id="ndBolt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd34d"/><stop offset="1" stop-color="#ff8a1f"/></linearGradient><radialGradient id="ndGlow" cx="50%" cy="50%" r="60%"><stop offset="0" stop-color="#a855f766"/><stop offset="1" stop-color="#a855f700"/></radialGradient></defs>
+<circle cx="60" cy="60" r="50" fill="url(#ndGlow)"/>
+<circle cx="30" cy="66" r="22" fill="url(#ndA)"/><ellipse cx="25" cy="57" rx="9" ry="5" fill="#fff" opacity=".45"/>
+<circle cx="90" cy="66" r="22" fill="url(#ndB)"/><ellipse cx="85" cy="57" rx="9" ry="5" fill="#fff" opacity=".45"/>
+<path d="M66 12 L44 64 H58 L50 108 L78 52 H63 Z" fill="url(#ndBolt)" stroke="#fff6" stroke-width="2" stroke-linejoin="round"/>
+<path d="M10 24 l8 6 M16 12 l4 9 M110 24 l-8 6 M104 12 l-4 9" stroke="#ffd34d" stroke-width="4" stroke-linecap="round"/></svg>

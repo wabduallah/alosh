@@ -87,6 +87,11 @@ function GamePage() {
           <p className={cx("text-[17px] leading-[30px]", soft)}>{game.blurb}</p>
           {game.soon ? (
             <span className={cx("inline-flex min-h-12 w-fit items-center rounded-full border border-dashed border-white/50 px-6 text-[16px] font-semibold", soft)}>قريبًا</span>
+          ) : card.local ? (
+            <Link to={card.local} className={cx(buttonBase, "min-h-14 w-full bg-ivory px-8 text-[17px] font-bold text-ink shadow-[0_8px_20px_-8px_#0008] hover:brightness-95 sm:w-fit")}>
+              <Glyph name="gamepad" />
+              ابدأ {game.title}
+            </Link>
           ) : (
             <Link to="/play" search={{ game: game.id }} className={cx(buttonBase, "min-h-14 w-full bg-ivory px-8 text-[17px] font-bold text-ink shadow-[0_8px_20px_-8px_#0008] hover:brightness-95 sm:w-fit")}>
               <Glyph name="users" />
@@ -140,11 +145,18 @@ function GamePage() {
             <Glyph name="tv" className="size-6 text-gold" />
             ماذا تحتاجون؟
           </h2>
+          {card.local ? (
+            <ul className="grid gap-2 text-[15px] leading-[27px] text-mist">
+              <li>• جوال واحد فقط، يتشاركه اللاعبون. لا غرفة ولا رمز.</li>
+              <li>• لا تسجيل ولا تحميل ولا دفع.</li>
+            </ul>
+          ) : (
           <ul className="grid gap-2 text-[15px] leading-[27px] text-mist">
             <li>• شاشة كبيرة إن وُجدت: تلفزيون أو لابتوب أو تابلت. وبدونها يعرض المضيف الشاشة من جواله بزر «اعرض هنا».</li>
             <li>• جوال لكل لاعب، ينضم بمسح رمز QR أو بكتابة رمز الغرفة.</li>
             <li>• لا تسجيل ولا تحميل ولا دفع.</li>
           </ul>
+          )}
         </section>
 
         {seo.examples ? (

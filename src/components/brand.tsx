@@ -187,6 +187,7 @@ export const GAME_STYLE: Record<string, { c1: string; c2: string; ink: "light" |
   "secret-code": { c1: "#5b3fd0", c2: "#2a1d7a", ink: "light" },
   "one-word": { c1: "#0f7f8a", c2: "#0b4352", ink: "light" },
   court: { c1: "#8a5a1c", c2: "#3a2210", ink: "light" },
+  "nest-duel": { c1: "#4c1d95", c2: "#0b1a5c", ink: "light" },
 };
 
 export function gameStyle(id: string) {
