@@ -7,7 +7,7 @@ export const Route = createFileRoute("/sitemap.xml")({
     handlers: {
       GET: async ({ request }) => {
         const origin = new URL(request.url).origin;
-        const urls = ["", "/games", ...CATALOG.map((g) => `/games/${g.id}`), "/play", "/join", "/faq", "/privacy", "/copyright"];
+        const urls = ["", "/games", ...CATALOG.map((g) => `/games/${g.id}`), "/play", "/duel", "/join", "/faq", "/privacy", "/copyright"];
         const body = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${urls.map((path) => `  <url><loc>${origin}${path}</loc></url>`).join("\n")}

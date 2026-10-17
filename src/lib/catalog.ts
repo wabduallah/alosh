@@ -13,6 +13,8 @@ export type GameCard = {
   blurb: string;
   /** The site has a room for this game (host, players, TV). Without one it can only show as «قريبًا». */
   live: boolean;
+  /** A game played on one device, with no room: its own page. Playable without a games-table row. */
+  local?: "/duel";
   /** Short rules shown in the "كيف تُلعب؟" sheet. Only live games have them. */
   howTo?: { goal: string; minutes: string; steps: string[]; roles?: RoleNote[] };
 };
@@ -60,6 +62,29 @@ export const CATALOG: GameCard[] = [
         "كل من ليس في النزال يتوقع: ينجح أو يفشل؟ والتوقع الصحيح = 50 نقطة. ومن يخرج من الحلبة يصير مشجعًا يتوقع ويشارك في الجولات الجماعية.",
         "كل عدة جولات تأتي جولة جماعية: الكل يكتب لنفس الموضوع في دقيقة، وكل إجابة صحيحة ما كتبها غيرك = 100 نقطة.",
         "الفائز حسب ما يختار المضيف: صاحب أعلى نقاط، أو آخر من يبقى في الحلبة. وفي النهاية ملخص بأبرز اللحظات يمكن مشاركته.",
+      ],
+    },
+  },
+  {
+    id: "nest-duel",
+    title: "منافسة العش",
+    icon: "⚡",
+    players: "2-14",
+    category: "classic",
+    blurb: "بطولة مواجهات سريعة 1 ضد 1 على جوال واحد: ردة الفعل، النقر المتسارع، إيقاف المؤشر، والذاكرة الخاطفة.",
+    live: true,
+    local: "/duel",
+    howTo: {
+      goal: "مواجهات خاطفة لاعب ضد لاعب على جوال واحد. أول من يصل إلى 10 نقاط يفوز بالبطولة.",
+      minutes: "10 إلى 30 دقيقة",
+      steps: [
+        "اكتبوا أسماءكم، من لاعبين إلى 14، وتقدرون تعدّلون أي اسم أو تحذفونه قبل البداية. لا غرفة ولا رمز: جوال واحد يكفي.",
+        "كل مواجهة لاعب ضد لاعب بالقرعة. في كل جولة يلعب الجميع مرة، وإذا كان العدد فرديًا يرتاح لاعب واحد، ولا يرتاح أحد جولتين متتاليتين.",
+        "قبل كل مواجهة تظهر لكل لاعب اللعبة المصغّرة وتعليمتها، ويضغط كل واحد «جاهز»، ثم عدّ تنازلي 3، 2، 1.",
+        "الألعاب المصغّرة بالقرعة: «ردة الفعل» (اضغط فور الأخضر، والضغط على الأحمر يعطي الجولة لخصمك)، «النقر المتسارع» (أكثر نقرات في 5 ثوانٍ)، «إيقاف المؤشر» (أوقفه في المنطقة الخضراء)، و«الذاكرة الخاطفة» (أعد 4 ألوان بالترتيب).",
+        "الفوز = نقطة، التعادل = نصف نقطة لكل لاعب، الخسارة = صفر. ولوحة الصدارة تظهر بعد كل مواجهة.",
+        "أول من يصل إلى 10 نقاط يفوز، أو 3 أو 5 لبطولة أقصر.",
+        "العبوا بشاشة مقسومة (لكل لاعب نصف، متقابلين أو بجانب بعض) أو بالتناوب (كل لاعب دوره على الشاشة كاملة ثم يسلّم الجوال).",
       ],
     },
   },
@@ -297,9 +322,10 @@ export function mergeCatalog(rows: DbGame[] | null): GameEntry[] {
   const out: GameEntry[] = [];
   for (const card of CATALOG) {
     const row = bySlug.get(card.id);
-    const status = row?.home_status ?? (row ? (row.is_active ? "live" : "soon") : "soon");
+    // A game played on one device needs no row: it is playable until the admin adds a row that says otherwise.
+    const status = row?.home_status ?? (row ? (row.is_active ? "live" : "soon") : card.local ? "live" : "soon");
     if (status === "hidden") continue;
-    const playable = card.live && !!row?.is_active && status === "live";
+    const playable = card.live && (row ? row.is_active : !!card.local) && status === "live";
     // Until polish_v1.sql adds home_status, the table still holds the old names: keep the catalogue's copy.
     const managed = row && row.home_status !== undefined ? row : null;
     out.push({
@@ -332,7 +358,7 @@ export function mergeCatalog(rows: DbGame[] | null): GameEntry[] {
 }
 
 /** The slugs the site can open a room for. */
-export const PLAYABLE_SLUGS = new Set(CATALOG.filter((g) => g.live).map((g) => g.id));
+export const PLAYABLE_SLUGS = new Set(CATALOG.filter((g) => g.live && !g.local).map((g) => g.id));
 
 export const findCard = (slug: string) => CATALOG.find((g) => g.id === slug) ?? null;
 

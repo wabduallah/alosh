@@ -119,10 +119,17 @@ function GameTile({ game, index, onHowTo }: { game: GameEntry; index: number; on
         >
           كيف تُلعب؟
         </Button>
-        <Link to="/play" search={{ game: game.id }} className={cx(buttonBase, "min-h-11 w-full bg-ivory px-3 font-bold text-ink shadow-[0_8px_20px_-8px_#0008] hover:brightness-95")}>
-          ابدأ الغرفة
-          <Glyph name="forward" className="size-[18px]" />
-        </Link>
+        {game.local ? (
+          <Link to={game.local} className={cx(buttonBase, "min-h-11 w-full bg-ivory px-3 font-bold text-ink shadow-[0_8px_20px_-8px_#0008] hover:brightness-95")}>
+            ابدأ اللعب
+            <Glyph name="forward" className="size-[18px]" />
+          </Link>
+        ) : (
+          <Link to="/play" search={{ game: game.id }} className={cx(buttonBase, "min-h-11 w-full bg-ivory px-3 font-bold text-ink shadow-[0_8px_20px_-8px_#0008] hover:brightness-95")}>
+            ابدأ الغرفة
+            <Glyph name="forward" className="size-[18px]" />
+          </Link>
+        )}
       </div>
     </article>
   );
@@ -183,9 +190,15 @@ function HowToSheet({ game, onClose }: { game: GameEntry | null; onClose: () => 
         </ol>
 
         <div className="mt-6 grid gap-2 sm:grid-cols-2">
-          <Link to="/play" search={{ game: game.id }} className={cx(buttonBase, buttonTone("primary"), "min-h-14 w-full text-[17px]")}>
-            ابدأ الغرفة
-          </Link>
+          {game.local ? (
+            <Link to={game.local} className={cx(buttonBase, buttonTone("primary"), "min-h-14 w-full text-[17px]")}>
+              ابدأ اللعب
+            </Link>
+          ) : (
+            <Link to="/play" search={{ game: game.id }} className={cx(buttonBase, buttonTone("primary"), "min-h-14 w-full text-[17px]")}>
+              ابدأ الغرفة
+            </Link>
+          )}
           <Link to="/games/$slug" params={{ slug: game.id }} className={cx(buttonBase, buttonTone("quiet"), "min-h-14 w-full")}>
             صفحة اللعبة
           </Link>

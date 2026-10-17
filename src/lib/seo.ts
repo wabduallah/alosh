@@ -54,6 +54,15 @@ const SEO: Record<string, GameSeo> = {
       { q: "من يرى نتيجة التصويت؟", a: "الجميع يرى عدد الأصوات لكل لاعب، أما «من صوّت على من» فللراوي فقط." },
     ],
   },
+  "nest-duel": {
+    keywords: "لعبة تحدي سرعة، لعبة ردة فعل جماعية، لعبة جوال واحد لشخصين، بطولة ألعاب سريعة، ألعاب سهرة",
+    examples: { title: "الألعاب المصغّرة", items: ["ردة الفعل", "النقر المتسارع", "إيقاف المؤشر", "الذاكرة الخاطفة"] },
+    faq: [
+      { q: "هل أحتاج جوالًا لكل لاعب؟", a: "لا. منافسة العش تُلعب على جوال واحد: شاشة مقسومة للاعبين معًا، أو بالتناوب." },
+      { q: "كيف تُحسب النقاط؟", a: "الفوز نقطة، والتعادل نصف نقطة لكل لاعب، والخسارة صفر. أول من يصل إلى 10 نقاط يفوز، أو 3 أو 5 لبطولة أقصر." },
+      { q: "ماذا لو كان عدد اللاعبين فرديًا؟", a: "يرتاح لاعب واحد في كل جولة بالتناوب، ولا يرتاح أحد جولتين متتاليتين." },
+    ],
+  },
   court: {
     keywords: "لعبة محكمة جماعية، لعبة قضايا وأدلة، لعبة تحقيق بوليسية، لعبة أدوار سرية، ألعاب سهرة",
     examples: { title: "الأدوار", items: ["المتهم", "المدعي العام", "المحامي", "المحقق", "الشهود", "هيئة المحلفين"] },
@@ -75,7 +84,10 @@ const COMMON: Array<{ q: string; a: string }> = [
 export function gameSeo(card: GameCard) {
   const s = SEO[card.id];
   const [min, max] = card.players.split("-").map((n) => Number(n));
-  const faq = [{ q: `كم عدد لاعبي ${card.title}؟`, a: `من ${min} إلى ${max ?? min} لاعبين، ولكل لاعب جواله.` }, ...(s?.faq ?? []), ...COMMON];
+  // A one-device game has no room, QR code or TV: only the questions that are true of it.
+  const common = card.local ? COMMON.slice(0, 1) : COMMON;
+  const each = card.local ? "على جوال واحد" : "ولكل لاعب جواله";
+  const faq = [{ q: `كم عدد لاعبي ${card.title}؟`, a: `من ${min} إلى ${max ?? min} لاعبين، ${each}.` }, ...(s?.faq ?? []), ...common];
   return { keywords: s?.keywords ?? "", examples: s?.examples ?? null, faq };
 }
 
