@@ -64,6 +64,10 @@ function PlayerBoard() {
   const isHalba = gameSlug === "alhalba";
   const isGrid = gameSlug === "tactical-grid";
   const isCourt = gameSlug === "court";
+  // «منافسة العش» online has its own screen for both players.
+  useEffect(() => {
+    if (gameSlug === "nest-duel") window.location.replace(`/duel/${code.toUpperCase()}`);
+  }, [gameSlug, code]);
   const [error, setError] = useState<string | null>(null);
 
   // Load the room, its public questions, its state, and its players.

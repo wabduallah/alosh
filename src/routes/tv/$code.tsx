@@ -108,6 +108,10 @@ function TvScreen() {
   const isHalba = slug === "alhalba";
   const isGrid = slug === "tactical-grid";
   const isCourt = slug === "court";
+  // «منافسة العش» online has its own screen for both players.
+  useEffect(() => {
+    if (slug === "nest-duel") window.location.replace(`/duel/${code.toUpperCase()}`);
+  }, [slug, code]);
   const isBoard = !isOutsider && !isHeads && !isMafia && !isHalba && !isGrid && !isCourt;
 
   // Load the room once, then its game and its public questions (no answers).

@@ -30,6 +30,7 @@ import { Route as JoinIndexRouteImport } from './routes/join/index'
 import { Route as JoinCodeRouteImport } from './routes/join/$code'
 import { Route as PadCodeRouteImport } from './routes/pad/$code'
 import { Route as PlayCodeRouteImport } from './routes/play_.$code'
+import { Route as DuelCodeRouteImport } from './routes/duel_.$code'
 import { Route as TvCodeRouteImport } from './routes/tv/$code'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiPaymentsWebhookRouteImport } from './routes/api/payments/webhook'
@@ -139,6 +140,11 @@ const PlayCodeRoute = PlayCodeRouteImport.update({
   path: '/play/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DuelCodeRoute = DuelCodeRouteImport.update({
+  id: '/duel_/$code',
+  path: '/duel/$code',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TvCodeRoute = TvCodeRouteImport.update({
   id: '/tv/$code',
   path: '/tv/$code',
@@ -175,6 +181,7 @@ export interface FileRoutesByFullPath {
   '/join/$code': typeof JoinCodeRoute
   '/pad/$code': typeof PadCodeRoute
   '/play/$code': typeof PlayCodeRoute
+  '/duel/$code': typeof DuelCodeRoute
   '/tv/$code': typeof TvCodeRoute
   '/games/': typeof GamesIndexRoute
   '/join/': typeof JoinIndexRoute
@@ -201,6 +208,7 @@ export interface FileRoutesByTo {
   '/join/$code': typeof JoinCodeRoute
   '/pad/$code': typeof PadCodeRoute
   '/play/$code': typeof PlayCodeRoute
+  '/duel/$code': typeof DuelCodeRoute
   '/tv/$code': typeof TvCodeRoute
   '/games': typeof GamesIndexRoute
   '/join': typeof JoinIndexRoute
@@ -228,6 +236,7 @@ export interface FileRoutesById {
   '/join/$code': typeof JoinCodeRoute
   '/pad/$code': typeof PadCodeRoute
   '/play_/$code': typeof PlayCodeRoute
+  '/duel_/$code': typeof DuelCodeRoute
   '/tv/$code': typeof TvCodeRoute
   '/games/': typeof GamesIndexRoute
   '/join/': typeof JoinIndexRoute
@@ -256,6 +265,8 @@ export interface FileRouteTypes {
     | '/join/$code'
     | '/pad/$code'
     | '/play/$code'
+    | '/duel/$code'
+    | '/duel/$code'
     | '/tv/$code'
     | '/games/'
     | '/join/'
@@ -282,6 +293,8 @@ export interface FileRouteTypes {
     | '/join/$code'
     | '/pad/$code'
     | '/play/$code'
+    | '/duel/$code'
+    | '/duel/$code'
     | '/tv/$code'
     | '/games'
     | '/join'
@@ -308,6 +321,7 @@ export interface FileRouteTypes {
     | '/join/$code'
     | '/pad/$code'
     | '/play_/$code'
+    | '/duel_/$code'
     | '/tv/$code'
     | '/games/'
     | '/join/'
@@ -335,6 +349,7 @@ export interface RootRouteChildren {
   JoinCodeRoute: typeof JoinCodeRoute
   PadCodeRoute: typeof PadCodeRoute
   PlayCodeRoute: typeof PlayCodeRoute
+  DuelCodeRoute: typeof DuelCodeRoute
   TvCodeRoute: typeof TvCodeRoute
   GamesIndexRoute: typeof GamesIndexRoute
   JoinIndexRoute: typeof JoinIndexRoute
@@ -470,6 +485,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlayCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/duel_/$code': {
+      id: '/duel_/$code'
+      path: '/duel/$code'
+      fullPath: '/duel/$code'
+      preLoaderRoute: typeof DuelCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/tv/$code': {
       id: '/tv/$code'
       path: '/tv/$code'
@@ -514,6 +536,7 @@ const rootRouteChildren: RootRouteChildren = {
   JoinCodeRoute: JoinCodeRoute,
   PadCodeRoute: PadCodeRoute,
   PlayCodeRoute: PlayCodeRoute,
+  DuelCodeRoute: DuelCodeRoute,
   TvCodeRoute: TvCodeRoute,
   GamesIndexRoute: GamesIndexRoute,
   JoinIndexRoute: JoinIndexRoute,

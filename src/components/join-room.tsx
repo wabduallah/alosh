@@ -104,13 +104,20 @@ export function JoinRoom({ initialCode = "" }: { initialCode?: string }) {
       // 1) Find the room by its code. Reading is public per RLS.
       const { data: found, error: findError } = await supabase
         .from("game_rooms")
-        .select("id, room_code, status")
+        .select("id, room_code, status, game_id")
         .eq("room_code", cleanCode)
         .maybeSingle();
       if (findError) throw findError;
       if (!found) return setError("لم نجد غرفة بهذا الرمز.");
       const target = found as RoomRow;
       if (target.status === "finished") return setError("انتهت هذه الغرفة.");
+
+      // «منافسة العش» online: its own page joins and starts the match.
+      const { data: duelGame } = await supabase.from("games").select("slug").eq("id", (found as { game_id?: string }).game_id ?? "").maybeSingle();
+      if ((duelGame as { slug?: string } | null)?.slug === "nest-duel") {
+        window.location.assign(`/duel/${target.room_code}`);
+        return;
+      }
 
       // 2) Already in this room on this device? Just show the lobby.
       const { data: existing } = await supabase
